@@ -1,12 +1,21 @@
 import { requireUser } from "@/lib/auth";
+import { listBirthdays, unreadCount } from "@/lib/group/query";
+import { todayIso } from "@/lib/tz";
+import { firstName } from "@/lib/utils";
 import { TabBar } from "@/components/features/tab-bar";
+import { BirthdayBanner } from "@/components/group/birthday-banner";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  await requireUser();
+  const user = await requireUser();
+  const today = todayIso();
+  const [unread, birthdays] = await Promise.all([unreadCount(user.groupId, user.id, user.feedSeenAt), listBirthdays(user.groupId, today)]);
+  const todays = birthdays.filter((b) => b.daysUntil === 0).map((b) => ({ id: b.id, fullName: b.fullName, firstName: firstName(b.fullName) }));
+
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-lg flex-col">
+      <BirthdayBanner today={today} people={todays} meId={user.id} />
       <div className="flex-1 pb-safe">{children}</div>
-      <TabBar />
+      <TabBar unread={unread} />
     </div>
   );
 }
