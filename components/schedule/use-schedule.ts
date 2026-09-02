@@ -46,7 +46,10 @@ export function useSchedule(initial: SchedulePayload | null) {
       const next = (await res.json()) as SchedulePayload;
       setData(next);
       writeLocal(next);
-      setStatus("fresh");
+      // Service worker отдаёт кеш как обычный ответ: офлайн распознаём по navigator.onLine и возрасту данных.
+      const ageMs = Date.now() - new Date(next.generatedAt).getTime();
+      const offline = typeof navigator !== "undefined" && !navigator.onLine;
+      setStatus(offline || ageMs > 20 * 60_000 ? "offline" : "fresh");
     } catch {
       setStatus(typeof navigator !== "undefined" && !navigator.onLine ? "offline" : "error");
     } finally {
@@ -60,8 +63,9 @@ export function useSchedule(initial: SchedulePayload | null) {
     } else {
       const cached = readLocal();
       if (cached) setData(cached);
-      void refresh();
     }
+    // Всегда дёргаем API при открытии: так service worker держит свежую копию для офлайна.
+    void refresh();
     const onVisible = () => document.visibilityState === "visible" && void refresh();
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("online", refresh);

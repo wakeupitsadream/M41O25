@@ -17,6 +17,15 @@ const serwist = new Serwist({
   navigationPreload: true,
   runtimeCaching: [
     {
+      // Документы (навигации): свежая версия из сети, при плохой связи через 4 с — последняя сохранённая.
+      matcher: ({ request, sameOrigin }) => sameOrigin && request.mode === "navigate",
+      handler: new NetworkFirst({
+        cacheName: "raspison-pages",
+        networkTimeoutSeconds: 4,
+        plugins: [new ExpirationPlugin({ maxEntries: 40, maxAgeSeconds: 60 * 60 * 24 * 14 })],
+      }),
+    },
+    {
       // Расписание: в универе связь плохая — 3 секунды ждём сеть, потом отдаём последнюю сохранённую версию.
       matcher: ({ url, sameOrigin }) => sameOrigin && url.pathname.startsWith("/api/schedule"),
       handler: new NetworkFirst({
