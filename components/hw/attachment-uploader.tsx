@@ -16,7 +16,7 @@ export function AttachmentUploader({
   onChange,
   max = 6,
 }: {
-  entityType?: "homework" | "news" | "task";
+  entityType?: "homework" | "news" | "task" | "scan";
   value: UploadedFile[];
   onChange: (files: UploadedFile[]) => void;
   max?: number;

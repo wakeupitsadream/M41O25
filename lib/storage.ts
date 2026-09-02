@@ -1,7 +1,7 @@
 import "server-only";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { env } from "@/lib/env";
 
 /**
@@ -12,6 +12,7 @@ export interface Storage {
   put(key: string, body: Buffer, contentType: string): Promise<void>;
   get(key: string): Promise<{ body: Buffer; contentType: string } | null>;
   delete(key: string): Promise<void>;
+  list(prefix: string): Promise<string[]>;
   readonly kind: "r2" | "local";
 }
 
@@ -41,6 +42,11 @@ class R2Storage implements Storage {
 
   async delete(key: string) {
     await this.client.send(new DeleteObjectCommand({ Bucket: env.r2.bucket, Key: key }));
+  }
+
+  async list(prefix: string) {
+    const res = await this.client.send(new ListObjectsV2Command({ Bucket: env.r2.bucket, Prefix: prefix, MaxKeys: 1000 }));
+    return (res.Contents ?? []).map((o) => o.Key!).filter(Boolean);
   }
 }
 
@@ -73,6 +79,16 @@ class LocalStorage implements Storage {
   async delete(key: string) {
     const file = this.resolve(key);
     await Promise.allSettled([unlink(file), unlink(`${file}.meta`)]);
+  }
+
+  async list(prefix: string) {
+    const dir = this.resolve(prefix);
+    try {
+      const names = await readdir(dir);
+      return names.filter((n) => !n.endsWith(".meta")).map((n) => `${prefix.replace(/\/?$/, "/")}${n}`);
+    } catch {
+      return [];
+    }
   }
 }
 

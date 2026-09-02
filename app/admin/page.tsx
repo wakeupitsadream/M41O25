@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { and, count, eq, desc } from "drizzle-orm";
-import { CalendarPlus, ChevronRight, KeyRound, Users2, BookMarked } from "lucide-react";
+import { CalendarPlus, ChevronRight, DatabaseBackup, KeyRound, Users2, BookMarked, Wallet } from "lucide-react";
+import { lastBackup, polzaBalance } from "@/lib/admin/status";
+import { storage } from "@/lib/storage";
 import { db } from "@/lib/db";
 import { groups, subjects, users, weeks } from "@/lib/db/schema";
 import { requireRole } from "@/lib/auth";
@@ -19,6 +21,7 @@ export default async function AdminHome() {
   const nextMonday = addDaysIso(thisMonday, 7);
   const current = recent.find((w) => w.startsOn === thisMonday);
   const next = recent.find((w) => w.startsOn === nextMonday);
+  const [polza, backup] = user.role === "admin" ? await Promise.all([polzaBalance(), lastBackup()]) : [null, null];
 
   return (
     <div className="space-y-4">
@@ -42,6 +45,25 @@ export default async function AdminHome() {
         <Tile href="/admin/users" icon={<Users2 className="size-5" />} label="Люди" value={String(people)} />
         <Tile href="/admin/subjects" icon={<BookMarked className="size-5" />} label="Предметы" value={String(subj)} />
       </div>
+
+      {user.role === "admin" && (
+        <div className="grid grid-cols-2 gap-3">
+          <Card>
+            <div className="flex items-center gap-2 text-muted">
+              <Wallet className="size-4" /> <span className="text-[12px] font-medium">PolzaAI</span>
+            </div>
+            <div className="mt-2 font-display text-xl font-bold tnum">{polza?.balance !== null && polza?.balance !== undefined ? `${polza.balance.toFixed(0)} ₽` : "—"}</div>
+            <div className="truncate text-[11px] text-dim">{polza?.error ?? "остаток на распознавание"}</div>
+          </Card>
+          <Card>
+            <div className="flex items-center gap-2 text-muted">
+              <DatabaseBackup className="size-4" /> <span className="text-[12px] font-medium">Бэкап</span>
+            </div>
+            <div className="mt-2 font-display text-xl font-bold tnum">{backup ?? "нет"}</div>
+            <div className="truncate text-[11px] text-dim">{storage.kind === "r2" ? "ежедневно в R2" : "локальная папка"}</div>
+          </Card>
+        </div>
+      )}
 
       {user.role === "admin" && (
         <Card className="flex items-center gap-3">

@@ -11,7 +11,10 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed": "tsx scripts/seed.ts",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "db:restore": "tsx scripts/restore.ts",
+    "icons": "node scripts/icons.mjs",
+    "e2e": "node e2e/shoot.mjs && node e2e/schedule.mjs && node e2e/admin.mjs && node e2e/hw.mjs && node e2e/group.mjs && node e2e/ocr.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1124.0",

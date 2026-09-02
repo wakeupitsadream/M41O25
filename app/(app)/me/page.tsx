@@ -7,6 +7,7 @@ import { Field, Input } from "@/components/ui/input";
 import { SubmitButton } from "@/components/admin/forms";
 import { logout, toggleShowHwDone, updateProfile } from "./actions";
 import { cn } from "@/lib/utils";
+import { InstallHint } from "@/components/features/install-hint";
 
 export const metadata = { title: "Профиль" };
 
@@ -16,6 +17,7 @@ export default async function MePage() {
     <>
       <PageHeader title="Профиль" subtitle={user.group.shortName} />
       <div className="space-y-4 px-5">
+        <InstallHint />
         <Card className="flex items-center gap-4">
           <Avatar user={user} size="lg" />
           <div className="min-w-0">

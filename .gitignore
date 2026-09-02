@@ -43,3 +43,8 @@ next-env.d.ts
 # local data (uploads, shots)
 /.data
 /e2e/shots
+
+# service worker генерируется Serwist при сборке
+/public/sw.js
+/public/sw.js.map
+/public/swe-worker*.js

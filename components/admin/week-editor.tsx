@@ -12,6 +12,7 @@ import { Sheet } from "@/components/ui/sheet";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { Badge } from "@/components/ui/primitives";
 import { ConfirmButton } from "./forms";
+import { ScanRecognizer } from "./scan-recognizer";
 import { cn, pluralRu } from "@/lib/utils";
 
 type EditorLesson = {
@@ -107,15 +108,18 @@ export function WeekEditor({ week, lessons, subjects, semesters, slotTimes }: Pr
               </span>
             </div>
           </div>
-          {published ? (
-            <ConfirmButton variant="secondary" size="sm" confirmText="Снять с публикации? Студенты перестанут видеть неделю." action={() => setWeekStatus(week.id, "draft").then(() => router.refresh())}>
-              <Undo2 className="size-4" /> В черновик
-            </ConfirmButton>
-          ) : (
-            <Button size="sm" loading={pending} onClick={() => run(() => setWeekStatus(week.id, "published"))}>
-              <Check className="size-4" /> Опубликовать
-            </Button>
-          )}
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            {published ? (
+              <ConfirmButton variant="secondary" size="sm" confirmText="Снять с публикации? Студенты перестанут видеть неделю." action={() => setWeekStatus(week.id, "draft").then(() => router.refresh())}>
+                <Undo2 className="size-4" /> В черновик
+              </ConfirmButton>
+            ) : (
+              <Button size="sm" loading={pending} onClick={() => run(() => setWeekStatus(week.id, "published"))}>
+                <Check className="size-4" /> Опубликовать
+              </Button>
+            )}
+            <ScanRecognizer weekId={week.id} hasLessons={lessons.length > 0} subjects={subjects.map((s) => ({ id: s.id, name: s.name }))} />
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-2">
