@@ -5,7 +5,6 @@ import { usePathname } from "next/navigation";
 import { BookOpen, CalendarDays, Plus, UserRound, Users } from "lucide-react";
 import { motion } from "motion/react";
 import { cn } from "@/lib/utils";
-import type { Role } from "@/lib/db/schema";
 
 const tabs = [
   { href: "/s", label: "Расписание", icon: CalendarDays, match: /^\/s(\/|$)/ },
@@ -14,7 +13,7 @@ const tabs = [
   { href: "/me", label: "Профиль", icon: UserRound, match: /^\/(me|admin)(\/|$)/ },
 ] as const;
 
-export function TabBar({ role: _role }: { role: Role }) {
+export function TabBar() {
   const pathname = usePathname();
   const left = tabs.slice(0, 2);
   const right = tabs.slice(2);
