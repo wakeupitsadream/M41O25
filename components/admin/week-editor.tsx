@@ -50,8 +50,18 @@ export function WeekEditor({ week, lessons, subjects, semesters, slotTimes }: Pr
   const [pending, start] = useTransition();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const days = useMemo(() => [0, 1, 2, 3, 4, 5].map((i) => addDaysIso(week.startsOn, i)), [week.startsOn]);
-  const slots = slotTimes.length ? slotTimes : [1, 2, 3, 4, 5, 6].map((s) => ({ slot: s, start: "", end: "" }));
+  const sunday = addDaysIso(week.startsOn, 6);
+  const days = useMemo(
+    () => [...[0, 1, 2, 3, 4, 5].map((i) => addDaysIso(week.startsOn, i)), ...(lessons.some((l) => l.date === sunday) ? [sunday] : [])],
+    [week.startsOn, lessons, sunday],
+  );
+  const baseSlots = slotTimes.length ? slotTimes : [1, 2, 3, 4, 5, 6].map((s) => ({ slot: s, start: "", end: "" }));
+  // Пары со слотом вне сетки звонков (например, из скана) тоже должны быть видны и кликабельны.
+  const extraSlots = [...new Set(lessons.map((l) => l.slot).filter((sl) => !baseSlots.some((b) => b.slot === sl)))].map((sl) => {
+    const l = lessons.find((x) => x.slot === sl)!;
+    return { slot: sl, start: l.startsAt, end: l.endsAt };
+  });
+  const slots = [...baseSlots, ...extraSlots].sort((a, b) => a.slot - b.slot);
   const published = week.status === "published";
   const activeCount = lessons.filter((l) => !l.isCancelled).length;
 
@@ -77,7 +87,11 @@ export function WeekEditor({ week, lessons, subjects, semesters, slotTimes }: Pr
 
   const run = (fn: () => Promise<unknown>) =>
     start(async () => {
-      await fn();
+      const res = (await fn()) as { ok?: boolean; error?: string } | undefined;
+      if (res && res.ok === false) {
+        setError(res.error ?? "Не удалось");
+        return;
+      }
       setDraft(null);
       router.refresh();
     });

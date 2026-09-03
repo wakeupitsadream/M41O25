@@ -12,7 +12,7 @@ export function middleware(req: NextRequest) {
   const isPublic = PUBLIC.some((re) => re.test(pathname));
 
   if (!token) {
-    if (isPublic) return NextResponse.next();
+    if (isPublic || req.headers.get("next-action")) return NextResponse.next();
     if (pathname.startsWith("/api/")) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
     const url = req.nextUrl.clone();
     url.pathname = "/enter";

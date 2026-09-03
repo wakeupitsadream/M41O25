@@ -38,3 +38,16 @@ export type ActionResult<T = undefined> = { ok: true; data?: T } | { ok: false; 
 
 export const fail = (error: string): ActionResult<never> => ({ ok: false, error });
 export const ok = <T>(data?: T): ActionResult<T> => ({ ok: true, data });
+
+const INVITE_ALPHABET = "ABCDEFGHJKMNPQRSTVWXYZ23456789";
+
+/** Суффикс инвайт-кода: 8 символов без похожих букв (0/O, 1/I/L) — ~39 бит, формат XXXX-XXXX. */
+export const generateInviteSuffix = () => {
+  const bytes = globalThis.crypto.getRandomValues(new Uint8Array(8));
+  const chars = Array.from(bytes, (b) => INVITE_ALPHABET[b % INVITE_ALPHABET.length]);
+  return `${chars.slice(0, 4).join("")}-${chars.slice(4).join("")}`;
+};
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+/** Строка из URL/формы → uuid или null (в Postgres невалидный uuid даёт 500 вместо 404). */
+export const asUuid = (v: unknown): string | null => (typeof v === "string" && UUID_RE.test(v) ? v : null);

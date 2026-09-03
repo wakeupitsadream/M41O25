@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { gzipSync } from "node:zlib";
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { db, schema } from "@/lib/db";
-import { attachments } from "@/lib/db/schema";
+import { anonQuota, attachments, authAttempts, deviceSessions, users } from "@/lib/db/schema";
+import { getTableColumns } from "drizzle-orm";
 import { env } from "@/lib/env";
 import { storage } from "@/lib/storage";
 import { todayIso } from "@/lib/tz";
@@ -46,7 +47,16 @@ export async function GET(req: Request) {
   if (!env.cronSecret || auth !== `Bearer ${env.cronSecret}`) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
   const dump: Record<string, unknown[]> = {};
-  for (const [name, table] of Object.entries(TABLES)) dump[name] = await db.select().from(table);
+  for (const [name, table] of Object.entries(TABLES)) {
+    if (name === "users") {
+      // pin_hash в бэкап не кладём: 4-значный PIN перебирается офлайн за секунды. После восстановления PIN задаются заново.
+      const { pinHash: _omit, ...cols } = getTableColumns(users);
+      void _omit;
+      dump[name] = await db.select(cols).from(users);
+    } else {
+      dump[name] = await db.select().from(table);
+    }
+  }
   const payload = gzipSync(Buffer.from(JSON.stringify({ version: 1, createdAt: new Date().toISOString(), tables: dump })));
   const key = `backups/${todayIso()}.json.gz`;
   await storage.put(key, payload, "application/gzip");
@@ -62,5 +72,19 @@ export async function GET(req: Request) {
     await db.delete(attachments).where(eq(attachments.id, s.id));
   }
 
-  return NextResponse.json({ ok: true, backup: key, bytes: payload.length, removedBackups: stale.length, removedScans: oldScans.length });
+  // Гигиена: квоты анонимных вопросов за прошлые дни (сужает окно деанонимизации), попытки входа, мёртвые сессии, сироты-вложения.
+  const today = todayIso();
+  await db.delete(anonQuota).where(lt(anonQuota.day, today));
+  await db.delete(authAttempts).where(lt(authAttempts.createdAt, new Date(Date.now() - 24 * 3600_000)));
+  await db.delete(deviceSessions).where(or(lt(deviceSessions.createdAt, new Date(Date.now() - 366 * 86_400_000)), sql`${deviceSessions.revokedAt} < now() - interval '7 days'`));
+  const orphans = await db
+    .select()
+    .from(attachments)
+    .where(and(isNull(attachments.entityId), sql`${attachments.entityType} <> 'scan'`, lt(attachments.createdAt, new Date(Date.now() - 24 * 3600_000))));
+  for (const o of orphans) {
+    await storage.delete(o.fileKey).catch(() => {});
+    await db.delete(attachments).where(eq(attachments.id, o.id));
+  }
+
+  return NextResponse.json({ ok: true, backup: key, bytes: payload.length, removedBackups: stale.length, removedScans: oldScans.length, removedOrphans: orphans.length });
 }

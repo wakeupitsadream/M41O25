@@ -70,7 +70,7 @@ export function NewsCard({ item, canManage, isAdmin, meId }: { item: NewsItem; c
         <ul className="mt-3 space-y-1.5">
           {docs.map((a) => (
             <li key={a.id}>
-              <a href={`/api/files/${a.id}`} className="flex items-center gap-2.5 rounded-md bg-surface-2 px-3 py-2 text-[13px] active:bg-surface-3">
+              <a href={`/api/files/${a.id}`} target="_blank" rel="noreferrer" className="flex items-center gap-2.5 rounded-md bg-surface-2 px-3 py-2 text-[13px] active:bg-surface-3">
                 <FileText className="size-4 text-muted" />
                 <span className="min-w-0 flex-1 truncate font-medium">{a.name}</span>
                 <span className="text-dim">{fmtBytes(a.size)}</span>

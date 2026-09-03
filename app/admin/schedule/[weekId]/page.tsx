@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { asUuid } from "@/lib/utils";
 import { and, asc, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { groups, lessons, semesters, subjects, weeks } from "@/lib/db/schema";
@@ -7,7 +8,8 @@ import { WeekEditor } from "@/components/admin/week-editor";
 
 export default async function WeekEditorPage({ params }: { params: Promise<{ weekId: string }> }) {
   const user = await requireRole("admin");
-  const { weekId } = await params;
+  const weekId = asUuid((await params).weekId);
+  if (!weekId) notFound();
   const [week] = await db.select().from(weeks).where(and(eq(weeks.id, weekId), eq(weeks.groupId, user.groupId)));
   if (!week) notFound();
 

@@ -55,11 +55,11 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
   const images = hw.attachments.filter((a) => a.mime.startsWith("image/"));
   const docs = hw.attachments.filter((a) => !a.mime.startsWith("image/"));
 
-  const run = (fn: () => Promise<{ ok: boolean; error?: string }>, after?: () => void) => {
+  const run = (fn: () => Promise<{ ok: boolean; error?: string } | void>, after?: () => void) => {
     setError(null);
     start(async () => {
       const res = await fn();
-      if (!res.ok) return setError(res.error ?? "Ошибка");
+      if (res && !res.ok) return setError(res.error ?? "Ошибка");
       after?.();
       router.refresh();
     });
@@ -119,7 +119,7 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
         <ul className="space-y-2">
           {docs.map((a) => (
             <li key={a.id}>
-              <a href={`/api/files/${a.id}`} className="flex items-center gap-3 rounded-md bg-surface px-3.5 py-3 hairline active:bg-surface-2">
+              <a href={`/api/files/${a.id}`} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-md bg-surface px-3.5 py-3 hairline active:bg-surface-2">
                 <FileText className="size-5 text-muted" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[14px] font-medium">{a.name}</span>
@@ -226,7 +226,7 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
           type="button"
           className="mx-auto flex items-center gap-1.5 text-[13px] text-dim"
           onClick={() => {
-            if (window.confirm("Удалить запись? Дополнения и комментарии уйдут вместе с ней.")) run(() => deleteHomework(hw.id), () => router.replace("/hw"));
+            if (window.confirm("Удалить запись? Дополнения и комментарии уйдут вместе с ней.")) run(() => deleteHomework(hw.id));
           }}
         >
           <Trash2 className="size-3.5" /> Удалить запись

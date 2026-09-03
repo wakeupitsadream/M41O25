@@ -21,7 +21,9 @@ function parseView(pathname: string, today: string): View {
   if (seg[0] === "semester") return { level: "semester" };
   if (seg[0] === "w" && isIso(seg[1])) return { level: "week", weekStart: mondayOf(seg[1]) };
   if (seg[0] === "d" && isIso(seg[1])) return { level: "day", date: seg[1] };
-  return { level: "week", weekStart: mondayOf(today) };
+  // В воскресенье учебная неделя уже прошла — по умолчанию показываем следующую.
+  const monday = mondayOf(today);
+  return { level: "week", weekStart: addDaysIso(monday, 6) === today ? addDaysIso(monday, 7) : monday };
 }
 
 const viewKey = (v: View) => (v.level === "week" ? `w:${v.weekStart}` : v.level === "day" ? `d:${v.date}` : "semester");
@@ -53,19 +55,21 @@ export function ScheduleApp({ initialData, serverToday }: { initialData: Schedul
 
   // Сколько раз мы сами углублялись — чтобы «назад» уходил по истории, а не выбрасывал из приложения.
   const pushed = useRef(0);
+  const toTop = () => window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
   const go = useCallback((path: string) => {
     window.history.pushState(null, "", path);
     pushed.current += 1;
+    toTop();
   }, []);
-  const replace = useCallback((path: string) => window.history.replaceState(null, "", path), []);
+  const replace = useCallback((path: string) => {
+    window.history.replaceState(null, "", path);
+    toTop();
+  }, []);
+  // «Назад» списывает pushed только в popstate — иначе один возврат считался бы дважды.
   const up = useCallback(
     (fallback: string) => {
-      if (pushed.current > 0) {
-        pushed.current -= 1;
-        window.history.back();
-      } else {
-        replace(fallback);
-      }
+      if (pushed.current > 0) window.history.back();
+      else replace(fallback);
     },
     [replace],
   );

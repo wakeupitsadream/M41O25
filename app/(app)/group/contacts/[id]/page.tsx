@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { asUuid } from "@/lib/utils";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { contacts } from "@/lib/db/schema";
@@ -12,7 +13,8 @@ export const metadata = { title: "Контакт" };
 
 export default async function EditContactPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireRole("moderator");
-  const { id } = await params;
+  const id = asUuid((await params).id);
+  if (!id) notFound();
   const [c] = await db.select().from(contacts).where(and(eq(contacts.id, id), eq(contacts.groupId, user.groupId)));
   if (!c) notFound();
   return (

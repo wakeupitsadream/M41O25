@@ -82,7 +82,7 @@ export function ScanRecognizer({ weekId, hasLessons, subjects }: { weekId: strin
             <p className="text-[13px] text-muted">
               Фото или скан документа со всеми группами — 1–3 изображения. Модель вытащит только нашу группу, дальше проверишь и поправишь тапом.
             </p>
-            <AttachmentUploader entityType="scan" value={files} onChange={setFiles} max={3} />
+            <AttachmentUploader entityType="scan" value={files} onChange={setFiles} max={3} accept="image/jpeg,image/png,image/webp" />
             {error && (
               <div className="flex items-start gap-2 rounded-md bg-danger/10 px-3 py-2.5 text-[13px] text-danger">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" /> {error}

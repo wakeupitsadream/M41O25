@@ -3,12 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { and, eq } from "drizzle-orm";
-import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { groups, semesters, subjects, type SlotTime } from "@/lib/db/schema";
 import { actionUser } from "@/lib/auth";
-import { ok, type ActionResult } from "@/lib/utils";
+import { generateInviteSuffix, ok, type ActionResult } from "@/lib/utils";
 
 const iso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -126,8 +125,7 @@ export async function deleteSemester(id: string): Promise<ActionResult> {
 
 export async function rotateInviteCode(): Promise<ActionResult<{ code: string }>> {
   const admin = await actionUser("admin");
-  const suffix = randomBytes(3).toString("hex").toUpperCase().slice(0, 4);
-  const code = `${admin.group.shortName.replace(/[^A-ZА-Я0-9]/gi, "").slice(0, 3).toUpperCase()}-${suffix}`;
+  const code = `${admin.group.shortName.replace(/[^A-ZА-Я0-9]/gi, "").slice(0, 3).toUpperCase()}-${generateInviteSuffix()}`;
   await db.update(groups).set({ inviteCode: code }).where(eq(groups.id, admin.groupId));
   revalidatePath("/admin/settings");
   revalidatePath("/admin");

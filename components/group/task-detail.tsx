@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useOptimistic, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 import { Check, Lock, Trash2, Undo2 } from "lucide-react";
 import { motion } from "motion/react";
 import type { getTask } from "@/lib/group/query";
@@ -26,7 +26,13 @@ export function TaskDetail({ task, me, today }: { task: Task; me: { id: string; 
   const due = task.dueDate ? dueLabel(task.dueDate, today) : null;
   const mine = people.find((p) => p.id === me.id);
 
-  const run = (fn: () => Promise<unknown>) => start(async () => { await fn(); router.refresh(); });
+  const [error, setError] = useState<string | null>(null);
+  const run = (fn: () => Promise<unknown>) =>
+    start(async () => {
+      const res = (await fn()) as { ok?: boolean; error?: string } | undefined;
+      if (res && res.ok === false) return setError(res.error ?? "Не удалось");
+      router.refresh();
+    });
 
   return (
     <div className="space-y-4 pb-6">
@@ -79,6 +85,8 @@ export function TaskDetail({ task, me, today }: { task: Task; me: { id: string; 
         </>
       )}
 
+      {error && <div className="text-[13px] text-danger">{error}</div>}
+
       {me.isMod && (
         <div className="flex gap-2 pt-2">
           <Button variant="secondary" className="flex-1" loading={pending} onClick={() => run(() => setTaskClosed(task.id, !task.closed))}>
@@ -97,7 +105,7 @@ export function TaskDetail({ task, me, today }: { task: Task; me: { id: string; 
             size="icon"
             aria-label="Удалить"
             onClick={() => {
-              if (window.confirm("Удалить задачу?")) run(() => deleteTask(task.id).then(() => router.replace("/group/tasks")));
+              if (window.confirm("Удалить задачу?")) run(() => deleteTask(task.id));
             }}
           >
             <Trash2 className="size-4" />

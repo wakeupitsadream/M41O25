@@ -97,7 +97,10 @@ export async function getHomework(groupId: string, id: string, userId: string) {
       .from(homework)
       .where(and(eq(homework.duplicateOfId, id), isNull(homework.deletedAt))),
     row.hw.duplicateOfId
-      ? db.select({ id: homework.id, body: homework.body, title: homework.title }).from(homework).where(eq(homework.id, row.hw.duplicateOfId))
+      ? db
+          .select({ id: homework.id, body: homework.body, title: homework.title })
+          .from(homework)
+          .where(and(eq(homework.id, row.hw.duplicateOfId), eq(homework.groupId, groupId), isNull(homework.deletedAt)))
       : Promise.resolve([]),
   ]);
 

@@ -2,8 +2,9 @@ import "server-only";
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { cache } from "react";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { deviceSessions, groups, users, type Group, type Role, type User } from "@/lib/db/schema";
 
@@ -90,7 +91,14 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
     .from(deviceSessions)
     .innerJoin(users, eq(users.id, deviceSessions.userId))
     .innerJoin(groups, eq(groups.id, users.groupId))
-    .where(and(eq(deviceSessions.tokenHash, hashToken(token)), isNull(deviceSessions.revokedAt), eq(users.status, "active")))
+    .where(
+      and(
+        eq(deviceSessions.tokenHash, hashToken(token)),
+        isNull(deviceSessions.revokedAt),
+        gt(deviceSessions.createdAt, new Date(Date.now() - SESSION_MAX_AGE * 1000)),
+        eq(users.status, "active"),
+      ),
+    )
     .limit(1);
   const row = rows[0];
   if (!row) return null;
@@ -98,11 +106,14 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
   // Отметки «был онлайн» — не чаще раза в 10 минут, чтобы не писать в БД на каждый запрос.
   const stale = !row.user.lastSeenAt || Date.now() - row.user.lastSeenAt.getTime() > 10 * 60_000;
   if (stale) {
-    const now = new Date();
-    void Promise.all([
-      db.update(users).set({ lastSeenAt: now }).where(eq(users.id, row.user.id)),
-      db.update(deviceSessions).set({ lastUsedAt: now }).where(eq(deviceSessions.id, row.session.id)),
-    ]).catch(() => {});
+    // after(): на serverless «выстрелил и забыл» может не выполниться до заморозки функции.
+    after(async () => {
+      const now = new Date();
+      await Promise.all([
+        db.update(users).set({ lastSeenAt: now }).where(eq(users.id, row.user.id)),
+        db.update(deviceSessions).set({ lastUsedAt: now }).where(eq(deviceSessions.id, row.session.id)),
+      ]).catch(() => {});
+    });
   }
   return { ...row.user, group: row.group, sessionId: row.session.id };
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { AnimatePresence, motion, useDragControls } from "motion/react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -13,18 +13,31 @@ type SheetProps = {
   className?: string;
 };
 
-/** Нижний лист: тянется вниз для закрытия, учитывает safe-area, блокирует скролл фона. */
+/**
+ * Нижний лист: тянется вниз для закрытия, учитывает safe-area. Скролл фона блокируется «классическим» способом
+ * (body position:fixed), потому что iOS Safari игнорирует overflow:hidden на body.
+ */
 export function Sheet({ open, onClose, title, children, className }: SheetProps) {
   const controls = useDragControls();
+  const savedScroll = useRef(0);
 
   useEffect(() => {
     if (!open) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    savedScroll.current = window.scrollY;
+    const body = document.body;
+    const prev = { position: body.style.position, top: body.style.top, width: body.style.width, overflow: body.style.overflow };
+    body.style.position = "fixed";
+    body.style.top = `-${savedScroll.current}px`;
+    body.style.width = "100%";
+    body.style.overflow = "hidden";
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     return () => {
-      document.body.style.overflow = prev;
+      body.style.position = prev.position;
+      body.style.top = prev.top;
+      body.style.width = prev.width;
+      body.style.overflow = prev.overflow;
+      window.scrollTo({ top: savedScroll.current, behavior: "instant" as ScrollBehavior });
       window.removeEventListener("keydown", onKey);
     };
   }, [open, onClose]);
@@ -35,12 +48,13 @@ export function Sheet({ open, onClose, title, children, className }: SheetProps)
         <>
           <motion.div
             key="overlay"
-            className="fixed inset-0 z-40 bg-black/60"
+            className="fixed inset-0 z-40 touch-none bg-black/60"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             onClick={onClose}
+            onTouchMove={(e) => e.preventDefault()}
           />
           <motion.div
             key="panel"
@@ -48,10 +62,10 @@ export function Sheet({ open, onClose, title, children, className }: SheetProps)
             aria-modal
             className={cn(
               "fixed inset-x-0 bottom-0 z-50 mx-auto max-w-lg rounded-t-xl bg-surface shadow-float hairline",
-              "max-h-[92dvh] overflow-y-auto scrollbar-none",
+              "max-h-[92dvh] overflow-y-auto overscroll-contain scrollbar-none",
               className,
             )}
-            style={{ paddingBottom: "calc(var(--sab) + 1rem)" }}
+            style={{ paddingBottom: "calc(var(--sab) + 1rem)", WebkitOverflowScrolling: "touch" }}
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}

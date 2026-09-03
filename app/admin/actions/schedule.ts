@@ -11,7 +11,7 @@ import { addDaysIso, mondayIso } from "@/lib/tz";
 import { fail, ok, type ActionResult } from "@/lib/utils";
 
 const iso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-const hhmm = z.string().regex(/^\d{2}:\d{2}$/);
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Время в формате ЧЧ:ММ");
 
 const bump = (weekId: string) => {
   revalidatePath("/s", "layout");
@@ -93,7 +93,7 @@ const lessonInput = z.object({
   teacherName: z.string().trim().max(80).nullable(),
   kind: z.enum(["lecture", "practice", "lab", "exam", "credit", "consultation", "other"]),
   note: z.string().trim().max(200).nullable(),
-});
+}).refine((d) => d.endsAt > d.startsAt, { message: "Конец пары должен быть позже начала", path: ["endsAt"] });
 
 export type LessonInput = z.infer<typeof lessonInput>;
 

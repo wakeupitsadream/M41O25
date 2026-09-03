@@ -63,7 +63,8 @@ export async function updateUser(id: string, formData: FormData) {
 
 export async function resetPin(id: string): Promise<ActionResult> {
   const admin = await actionUser("admin");
-  await db.update(users).set({ pinHash: null }).where(and(eq(users.id, id), eq(users.groupId, admin.groupId)));
+  if (id === admin.id) return fail("Себе PIN сбросить нельзя — профиль админа стал бы свободным для захвата");
+  await db.update(users).set({ pinHash: null, pinFailedCount: 0, pinLockedUntil: null }).where(and(eq(users.id, id), eq(users.groupId, admin.groupId)));
   await db.update(deviceSessions).set({ revokedAt: new Date() }).where(and(eq(deviceSessions.userId, id), isNull(deviceSessions.revokedAt)));
   revalidatePath(`/admin/users/${id}`);
   return ok();

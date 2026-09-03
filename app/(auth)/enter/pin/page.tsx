@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { getSessionUser, readInviteGroupId } from "@/lib/auth";
 import { Avatar } from "@/components/ui/primitives";
+import { asUuid } from "@/lib/utils";
 import { PinForm } from "./pin-form";
 
 export const metadata = { title: "PIN" };
@@ -12,7 +13,7 @@ export default async function PinPage({ searchParams }: { searchParams: Promise<
   if (await getSessionUser()) redirect("/s");
   const groupId = await readInviteGroupId();
   if (!groupId) redirect("/enter");
-  const { u } = await searchParams;
+  const u = asUuid((await searchParams).u);
   if (!u) redirect("/enter/who");
 
   const [user] = await db

@@ -34,11 +34,15 @@ export function matchSubject(title: string, subjects: SubjectRef[]): string | nu
   if (!t) return null;
   const exact = subjects.find((s) => norm(s.name) === t || (s.shortName && norm(s.shortName) === t));
   if (exact) return exact.id;
-  const contains = subjects.find((s) => norm(s.name).includes(t) || t.includes(norm(s.name)) || (s.shortName && t.includes(norm(s.shortName))));
-  if (contains) return contains.id;
+  // Короткое имя — только как целое слово и от 3 символов: «ИЯ» не должно цеплять «История».
+  const tokens = new Set(t.split(" "));
+  const byShort = subjects.filter((s) => s.shortName && norm(s.shortName).length >= 3 && tokens.has(norm(s.shortName)));
+  if (byShort.length === 1) return byShort[0].id;
+  const contains = subjects.filter((s) => t.length >= 5 && (norm(s.name).includes(t) || t.includes(norm(s.name))));
+  if (contains.length === 1) return contains[0].id;
   const head = t.slice(0, 6);
-  const prefix = subjects.find((s) => head.length >= 5 && norm(s.name).startsWith(head));
-  return prefix?.id ?? null;
+  const prefix = subjects.filter((s) => head.length >= 5 && norm(s.name).startsWith(head));
+  return prefix.length === 1 ? prefix[0].id : null;
 }
 
 const pad = (t: string) => {
@@ -58,11 +62,13 @@ const addDays = (iso: string, n: number) => {
  */
 export function toDraft(result: OcrResult, weekStartsOn: string, weekParity: "upper" | "lower" | null, slotTimes: SlotTime[], subjects: SubjectRef[]): DraftLesson[] {
   const out: DraftLesson[] = [];
+  const perDay: Record<string, number> = {};
   result.lessons.forEach((l: OcrLesson, i) => {
     const dayIdx = DAY_CODES.indexOf(l.day);
     if (dayIdx < 0) return;
+    perDay[l.day] = (perDay[l.day] ?? 0) + 1;
     const slotTime = slotTimes.find((s) => s.slot === l.slot) ?? (l.time_start ? slotTimes.find((s) => s.start === pad(l.time_start!)) : undefined);
-    const slot = l.slot > 0 ? l.slot : slotTime?.slot ?? i + 1;
+    const slot = Math.min(10, Math.max(1, l.slot > 0 ? l.slot : slotTime?.slot ?? perDay[l.day]));
     const startsAt = l.time_start ? pad(l.time_start) : slotTime?.start ?? "08:30";
     const endsAt = l.time_end ? pad(l.time_end) : slotTime?.end ?? "10:00";
     const foreignParity = weekParity !== null && l.week_type !== "both" && l.week_type !== weekParity;
@@ -72,10 +78,10 @@ export function toDraft(result: OcrResult, weekStartsOn: string, weekParity: "up
       slot,
       startsAt,
       endsAt,
-      title: l.subject.trim(),
+      title: l.subject.trim().slice(0, 120),
       subjectId: matchSubject(l.subject, subjects),
-      room: l.room?.trim() || null,
-      teacherName: l.teacher?.trim() || null,
+      room: l.room?.trim().slice(0, 40) || null,
+      teacherName: l.teacher?.trim().slice(0, 80) || null,
       kind: l.lesson_type ? KIND_FROM_OCR[l.lesson_type] : "other",
       weekType: l.week_type,
       uncertain: l.uncertain,

@@ -44,8 +44,11 @@ export function useSchedule(initial: SchedulePayload | null) {
       }
       if (!res.ok) throw new Error(String(res.status));
       const next = (await res.json()) as SchedulePayload;
-      setData(next);
-      writeLocal(next);
+      // SW может отдать кеш старее localStorage — берём более свежее по generatedAt.
+      const local = readLocal();
+      const best = local && new Date(local.generatedAt) > new Date(next.generatedAt) ? local : next;
+      setData(best);
+      writeLocal(best);
       // Service worker отдаёт кеш как обычный ответ: офлайн распознаём по navigator.onLine и возрасту данных.
       const ageMs = Date.now() - new Date(next.generatedAt).getTime();
       const offline = typeof navigator !== "undefined" && !navigator.onLine;
@@ -58,11 +61,11 @@ export function useSchedule(initial: SchedulePayload | null) {
   }, []);
 
   useEffect(() => {
-    if (initial) {
+    const cached = readLocal();
+    if (initial && (!cached || new Date(initial.generatedAt) >= new Date(cached.generatedAt))) {
       writeLocal(initial);
-    } else {
-      const cached = readLocal();
-      if (cached) setData(cached);
+    } else if (cached) {
+      setData(cached);
     }
     // Всегда дёргаем API при открытии: так service worker держит свежую копию для офлайна.
     void refresh();

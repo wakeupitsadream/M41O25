@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { InviteForm } from "./invite-form";
+import { ClearLocal } from "@/components/features/clear-local";
 
 export const metadata = { title: "Вход" };
 
@@ -9,6 +10,7 @@ export default async function EnterPage() {
   if (user) redirect("/s");
   return (
     <div className="space-y-8">
+      <ClearLocal />
       <div className="space-y-3">
         <h1 className="font-display text-[34px] font-bold leading-[1.05]">
           Расписание, домашка

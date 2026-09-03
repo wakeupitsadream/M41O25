@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { asUuid } from "@/lib/utils";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { subjects } from "@/lib/db/schema";
@@ -10,7 +11,8 @@ import { ConfirmButton, SubmitButton } from "@/components/admin/forms";
 
 export default async function EditSubjectPage({ params }: { params: Promise<{ id: string }> }) {
   const admin = await requireRole("admin");
-  const { id } = await params;
+  const id = asUuid((await params).id);
+  if (!id) notFound();
   const [s] = await db.select().from(subjects).where(and(eq(subjects.id, id), eq(subjects.groupId, admin.groupId)));
   if (!s) notFound();
   return (

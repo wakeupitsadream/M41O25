@@ -7,6 +7,8 @@ const withSerwist = withSerwistInit({
   // Serwist собирается только webpack-сборкой; в dev (turbopack) service worker отключён.
   disable: process.env.NODE_ENV === "development",
   reloadOnOnline: false,
+  // Страница офлайн-фолбэка должна лежать в precache, иначе fallbacks никогда не сработает.
+  additionalPrecacheEntries: [{ url: "/~offline", revision: process.env.VERCEL_GIT_COMMIT_SHA ?? String(Date.now()) }],
 });
 
 const nextConfig: NextConfig = {

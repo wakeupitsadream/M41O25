@@ -1,7 +1,8 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { redirect } from "next/navigation";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { activity, attachments, comments, homework, hwDone, hwEdits } from "@/lib/db/schema";
@@ -95,15 +96,23 @@ export async function updateHomework(id: string, input: z.infer<typeof updateSch
 }
 
 export async function deleteHomework(id: string): Promise<ActionResult> {
-  return wrap(async () => {
+  const res = await wrap(async () => {
     const user = await actionUser();
     const [hw] = await db.select().from(homework).where(and(eq(homework.id, id), eq(homework.groupId, user.groupId), isNull(homework.deletedAt)));
     if (!hw) return fail("Запись не найдена");
     if (hw.createdBy !== user.id && !hasRole(user, "admin")) return fail("Удалять может автор или админ");
-    await db.update(homework).set({ deletedAt: new Date() }).where(eq(homework.id, id));
-    bump(id);
+    await db.transaction(async (tx) => {
+      await tx.update(homework).set({ deletedAt: new Date() }).where(eq(homework.id, id));
+      // Дубли удалённого оригинала снова становятся самостоятельными записями.
+      await tx.update(homework).set({ duplicateOfId: null, duplicateMarkedBy: null }).where(eq(homework.duplicateOfId, id));
+      await tx.delete(activity).where(and(eq(activity.entityType, "homework"), eq(activity.entityId, id)));
+    });
+    revalidatePath("/hw");
+    revalidatePath("/group/feed");
     return ok();
   });
+  if (!res.ok) return res;
+  redirect("/hw");
 }
 
 export async function addEdit(homeworkId: string, text: string): Promise<ActionResult> {
@@ -125,10 +134,16 @@ export async function addEdit(homeworkId: string, text: string): Promise<ActionR
 export async function deleteEdit(editId: string): Promise<ActionResult> {
   return wrap(async () => {
     const user = await actionUser();
-    const [e] = await db.select().from(hwEdits).where(eq(hwEdits.id, editId));
+    const [row] = await db
+      .select({ e: hwEdits })
+      .from(hwEdits)
+      .innerJoin(homework, eq(homework.id, hwEdits.homeworkId))
+      .where(and(eq(hwEdits.id, editId), eq(homework.groupId, user.groupId)));
+    const e = row?.e;
     if (!e) return fail("Не найдено");
     if (e.authorId !== user.id && !hasRole(user, "admin")) return fail("Удалять может автор дополнения или админ");
     await db.update(hwEdits).set({ deletedAt: new Date() }).where(eq(hwEdits.id, editId));
+    await db.delete(activity).where(and(eq(activity.eventType, "hw_edit_added"), sql`${activity.payload}->>'editId' = ${editId}`));
     bump(e.homeworkId);
     return ok();
   });
@@ -137,13 +152,14 @@ export async function deleteEdit(editId: string): Promise<ActionResult> {
 export async function toggleDone(homeworkId: string): Promise<ActionResult<{ done: boolean }>> {
   return wrap(async () => {
     const user = await actionUser();
-    const existing = await db.select().from(hwDone).where(and(eq(hwDone.userId, user.id), eq(hwDone.homeworkId, homeworkId)));
-    if (existing[0]) {
-      await db.delete(hwDone).where(and(eq(hwDone.userId, user.id), eq(hwDone.homeworkId, homeworkId)));
+    const [hw] = await db.select({ id: homework.id }).from(homework).where(and(eq(homework.id, homeworkId), eq(homework.groupId, user.groupId), isNull(homework.deletedAt)));
+    if (!hw) return fail("Запись не найдена");
+    const removed = await db.delete(hwDone).where(and(eq(hwDone.userId, user.id), eq(hwDone.homeworkId, homeworkId))).returning({ h: hwDone.homeworkId });
+    if (removed.length) {
       bump(homeworkId);
       return ok<{ done: boolean }>({ done: false });
     }
-    await db.insert(hwDone).values({ userId: user.id, homeworkId });
+    await db.insert(hwDone).values({ userId: user.id, homeworkId }).onConflictDoNothing();
     bump(homeworkId);
     return ok<{ done: boolean }>({ done: true });
   });
@@ -155,12 +171,19 @@ export async function markDuplicate(homeworkId: string, originalId: string | nul
     const [hw] = await db.select().from(homework).where(and(eq(homework.id, homeworkId), eq(homework.groupId, user.groupId), isNull(homework.deletedAt)));
     if (!hw) return fail("Запись не найдена");
     if (originalId === null) {
-      if (hw.duplicateMarkedBy !== user.id && !hasRole(user, "admin")) return fail("Снять отметку может тот, кто её поставил, или админ");
+      if (hw.duplicateMarkedBy !== user.id && hw.createdBy !== user.id && !hasRole(user, "moderator")) return fail("Снять отметку может тот, кто её поставил, автор записи или староста");
       await db.update(homework).set({ duplicateOfId: null, duplicateMarkedBy: null }).where(eq(homework.id, homeworkId));
     } else {
+      await assertRate(user);
       if (originalId === homeworkId) return fail("Запись не может быть дублем самой себя");
-      const [orig] = await db.select({ id: homework.id }).from(homework).where(and(eq(homework.id, originalId), eq(homework.groupId, user.groupId), isNull(homework.deletedAt)));
+      const [orig] = await db
+        .select({ id: homework.id, duplicateOfId: homework.duplicateOfId })
+        .from(homework)
+        .where(and(eq(homework.id, originalId), eq(homework.groupId, user.groupId), isNull(homework.deletedAt)));
       if (!orig) return fail("Оригинал не найден");
+      if (orig.duplicateOfId) return fail("Эта запись сама помечена как дубль — выбери оригинал");
+      const [hasOwnDups] = await db.select({ id: homework.id }).from(homework).where(and(eq(homework.duplicateOfId, homeworkId), isNull(homework.deletedAt))).limit(1);
+      if (hasOwnDups) return fail("У этой записи уже есть дубли — сначала сними их");
       await db.update(homework).set({ duplicateOfId: originalId, duplicateMarkedBy: user.id }).where(eq(homework.id, homeworkId));
     }
     bump(homeworkId);
@@ -192,6 +215,7 @@ export async function deleteComment(commentId: string): Promise<ActionResult> {
     if (!c) return fail("Не найдено");
     if (c.authorId !== user.id && !hasRole(user, "admin")) return fail("Удалять может автор или админ");
     await db.update(comments).set({ deletedAt: new Date() }).where(eq(comments.id, commentId));
+    await db.delete(activity).where(and(eq(activity.eventType, "comment_added"), sql`${activity.payload}->>'commentId' = ${commentId}`));
     bump(c.homeworkId);
     return ok();
   });

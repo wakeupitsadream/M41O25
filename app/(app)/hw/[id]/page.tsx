@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { asUuid } from "@/lib/utils";
 import { and, asc, eq } from "drizzle-orm";
 import { ChevronLeft } from "lucide-react";
 import { db } from "@/lib/db";
@@ -14,7 +15,8 @@ export const dynamic = "force-dynamic";
 
 export default async function HomeworkDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
-  const { id } = await params;
+  const id = asUuid((await params).id);
+  if (!id) notFound();
   const hw = await getHomework(user.groupId, id, user.id);
   if (!hw) notFound();
   const [candidates, subjectList] = await Promise.all([

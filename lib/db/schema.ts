@@ -60,6 +60,8 @@ export const users = pgTable(
     birthday: date("birthday"),
     showHwDone: boolean("show_hw_done").notNull().default(false),
     pinHash: text("pin_hash"),
+    pinFailedCount: integer("pin_failed_count").notNull().default(0),
+    pinLockedUntil: timestamp("pin_locked_until", { withTimezone: true }),
     status: userStatusEnum("status").notNull().default("active"),
     lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
     feedSeenAt: timestamp("feed_seen_at", { withTimezone: true }),
@@ -80,6 +82,17 @@ export const deviceSessions = pgTable(
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
   },
   (t) => [uniqueIndex("device_sessions_token_idx").on(t.tokenHash), index("device_sessions_user_idx").on(t.userId)],
+);
+
+// Попытки входа (код группы, PIN): лимит по IP и по профилю считается по этой таблице, чистится cron.
+export const authAttempts = pgTable(
+  "auth_attempts",
+  {
+    id: id(),
+    key: text("key").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("auth_attempts_key_created_idx").on(t.key, t.createdAt)],
 );
 
 export const semesters = pgTable("semesters", {
@@ -113,7 +126,7 @@ export const weeks = pgTable(
   {
     id: id(),
     groupId: uuid("group_id").notNull().references(() => groups.id),
-    semesterId: uuid("semester_id").references(() => semesters.id),
+    semesterId: uuid("semester_id").references(() => semesters.id, { onDelete: "set null" }),
     startsOn: date("starts_on").notNull(),
     parity: parityEnum("parity"),
     status: weekStatusEnum("status").notNull().default("draft"),

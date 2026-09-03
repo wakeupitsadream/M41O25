@@ -9,7 +9,7 @@ import { dueHeading } from "@/lib/hw/format";
 import { todayIso } from "@/lib/tz";
 import { EmptyState, PageHeader } from "@/components/ui/primitives";
 import { HwCard } from "@/components/hw/hw-card";
-import { cn } from "@/lib/utils";
+import { asUuid, cn } from "@/lib/utils";
 
 export const metadata = { title: "Домашка" };
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ export default async function HomeworkPage({ searchParams }: { searchParams: Pro
   const user = await requireUser();
   const sp = await searchParams;
   const archive = sp.archive === "1";
-  const subjectId = sp.subject ?? null;
+  const subjectId = asUuid(sp.subject);
   const today = todayIso();
 
   const [items, subjectList] = await Promise.all([

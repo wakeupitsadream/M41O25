@@ -9,8 +9,11 @@ import type { SchedulePayload, ScheduleWeek } from "./types";
 export async function getCurrentSemester(groupId: string) {
   const today = todayIso();
   const all = await db.select().from(semesters).where(eq(semesters.groupId, groupId)).orderBy(asc(semesters.startsOn));
+  // Приоритет: идёт семестр → идёт его хвост (сессия, до 60 дней после endsOn и до начала следующего) → ближайший будущий → последний.
+  const nextStart = (s: { startsOn: string }) => all.find((n) => n.startsOn > s.startsOn)?.startsOn ?? null;
   return (
     all.find((s) => s.startsOn <= today && s.endsOn >= today) ??
+    all.find((s) => s.endsOn < today && today <= addDaysIso(s.endsOn, 60) && (nextStart(s) === null || today < nextStart(s)!)) ??
     all.find((s) => s.startsOn > today) ??
     all.at(-1) ??
     null

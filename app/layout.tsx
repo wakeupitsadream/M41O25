@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Unbounded } from "next/font/google";
 import "./globals.css";
+import { ChunkReload } from "@/components/features/chunk-reload";
 
 const inter = Inter({
   subsets: ["latin", "cyrillic"],
@@ -45,7 +46,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ru" className={`${inter.variable} ${unbounded.variable}`}>
-      <body className="bg-bg text-fg antialiased">{children}</body>
+      <body className="bg-bg text-fg antialiased">
+        <ChunkReload />
+        {children}
+      </body>
     </html>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FileText, ImagePlus, Loader2, X } from "lucide-react";
 import { fmtBytes } from "@/lib/hw/format";
 import { cn } from "@/lib/utils";
@@ -10,27 +10,39 @@ export type UploadedFile = { id: string; name: string; mime: string; size: numbe
 const ACCEPT = "image/jpeg,image/png,image/webp,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt";
 
 /** Загрузка вложений: фото сжимаются на клиенте до ~1.5 МБ (лимит тела запроса на Vercel — 4.5 МБ). */
+const MAX_BYTES = 4 * 1024 * 1024;
+
 export function AttachmentUploader({
   entityType = "homework",
   value,
   onChange,
   max = 6,
+  accept = ACCEPT,
 }: {
   entityType?: "homework" | "news" | "task" | "scan";
   value: UploadedFile[];
   onChange: (files: UploadedFile[]) => void;
   max?: number;
+  accept?: string;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  // Актуальное значение для параллельных загрузок — иначе вторая пачка затирает первую устаревшим замыканием.
+  const latest = useRef(value);
+  useEffect(() => {
+    latest.current = value;
+  }, [value]);
+  const push = (files: UploadedFile[]) => {
+    latest.current = [...latest.current, ...files];
+    onChange(latest.current);
+  };
 
   const upload = async (files: FileList | null) => {
     if (!files?.length) return;
     setError(null);
-    const list = Array.from(files).slice(0, max - value.length);
+    const list = Array.from(files).slice(0, Math.max(0, max - latest.current.length));
     setBusy((b) => b + list.length);
-    const results: UploadedFile[] = [];
     for (const original of list) {
       try {
         let file = original;
@@ -39,20 +51,22 @@ export function AttachmentUploader({
           const blob = await compress(file, { maxSizeMB: 1.5, maxWidthOrHeight: 2200, useWebWorker: true, fileType: "image/jpeg", initialQuality: 0.85 });
           file = new File([blob], file.name.replace(/\.(heic|heif|png|webp)$/i, ".jpg"), { type: "image/jpeg" });
         }
+        if (file.size > MAX_BYTES) throw new Error(`«${original.name}» больше 4 МБ — сожми или пришли ссылкой`);
         const fd = new FormData();
         fd.set("file", file);
         fd.set("entityType", entityType);
         const res = await fetch("/api/upload", { method: "POST", body: fd });
-        const json = await res.json();
-        if (!res.ok) throw new Error(json.error ?? "Не загрузилось");
-        results.push(json as UploadedFile);
+        // Vercel может ответить не-JSON (413 до нашего кода) — не падаем на res.json().
+        const isJson = res.headers.get("content-type")?.includes("application/json");
+        const json = isJson ? await res.json() : null;
+        if (!res.ok) throw new Error(json?.error ?? (res.status === 413 ? "Файл слишком большой (до 4 МБ)" : `Не загрузилось (${res.status})`));
+        push([json as UploadedFile]);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Не загрузилось");
       } finally {
         setBusy((b) => b - 1);
       }
     }
-    if (results.length) onChange([...value, ...results]);
   };
 
   return (
@@ -91,7 +105,7 @@ export function AttachmentUploader({
           </button>
         )}
       </div>
-      <input ref={inputRef} type="file" accept={ACCEPT} multiple className="hidden" onChange={(e) => void upload(e.target.files).then(() => (e.target.value = ""))} />
+      <input ref={inputRef} type="file" accept={accept} multiple className="hidden" onChange={(e) => void upload(e.target.files).then(() => (e.target.value = ""))} />
       {error && <div className="text-[13px] text-danger">{error}</div>}
       <div className="text-[11px] text-dim">Фото, PDF, Word, Excel — до 4 МБ каждый. Большие методички лучше ссылкой в тексте.</div>
     </div>

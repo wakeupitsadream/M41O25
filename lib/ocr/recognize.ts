@@ -43,7 +43,9 @@ export async function recognizeSchedule(input: RecognizeInput): Promise<Recogniz
   if (env.polza.mock) return { result: mockResult(input.groupShort), model: "mock", attempts: 1 };
   if (!env.polza.apiKey) throw new Error("POLZA_API_KEY не задан — распознавание недоступно, заполни неделю вручную");
 
-  const client = new OpenAI({ apiKey: env.polza.apiKey, baseURL: env.polza.baseUrl, timeout: 90_000, maxRetries: 0 });
+  // Общий бюджет 95 с (maxDuration роута 120 с): первая попытка до 60 с, вторая — только если осталось ≥ 25 с.
+  const deadline = Date.now() + 95_000;
+  const client = new OpenAI({ apiKey: env.polza.apiKey, baseURL: env.polza.baseUrl, timeout: 60_000, maxRetries: 0 });
   const prompt = buildPrompt(input.groupShort, input.slotTimes);
   const content: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [
     { type: "text", text: prompt },
@@ -52,14 +54,19 @@ export async function recognizeSchedule(input: RecognizeInput): Promise<Recogniz
 
   let lastError = "";
   for (let attempt = 1; attempt <= 2; attempt++) {
+    const remaining = deadline - Date.now();
+    if (attempt === 2 && remaining < 25_000) break;
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [{ role: "user", content }];
     if (lastError) messages.push({ role: "user", content: `Предыдущий ответ не прошёл проверку схемы: ${lastError}. Верни исправленный JSON строго по схеме.` });
-    const res = await client.chat.completions.create({
-      model,
-      messages,
-      temperature: 0,
-      response_format: { type: "json_schema", json_schema: { name: "schedule", strict: true, schema: ocrJsonSchema as unknown as Record<string, unknown> } },
-    });
+    const res = await client.chat.completions.create(
+      {
+        model,
+        messages,
+        temperature: 0,
+        response_format: { type: "json_schema", json_schema: { name: "schedule", strict: true, schema: ocrJsonSchema as unknown as Record<string, unknown> } },
+      },
+      { timeout: Math.max(10_000, Math.min(60_000, remaining)) },
+    );
     const text = res.choices[0]?.message?.content ?? "";
     const json = extractJson(text);
     const parsed = ocrResultSchema.safeParse(json);

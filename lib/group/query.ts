@@ -1,5 +1,5 @@
 import "server-only";
-import { and, asc, count, desc, eq, gt, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { activity, anonQuestions, attachments, contacts, news, pollOptions, pollVotes, polls, reactions, taskChecks, tasks, users } from "@/lib/db/schema";
 
@@ -39,7 +39,7 @@ export async function hubCounts(groupId: string, userId: string, feedSeenAt: Dat
       .from(activity)
       .where(and(eq(activity.groupId, groupId), gt(activity.createdAt, since), sql`${activity.actorId} is distinct from ${userId}`)),
     db.select({ openTasks: count() }).from(tasks).where(and(eq(tasks.groupId, groupId), isNull(tasks.deletedAt), isNull(tasks.closedAt))),
-    db.select({ openPolls: count() }).from(polls).where(and(eq(polls.groupId, groupId), isNull(polls.deletedAt), isNull(polls.closedAt))),
+    db.select({ openPolls: count() }).from(polls).where(and(eq(polls.groupId, groupId), isNull(polls.deletedAt), isNull(polls.closedAt), or(isNull(polls.closesAt), gt(polls.closesAt, new Date())))),
     db.select({ unanswered: count() }).from(anonQuestions).where(and(eq(anonQuestions.groupId, groupId), isNull(anonQuestions.deletedAt), isNull(anonQuestions.answerBody))),
   ]);
   return { unread, openTasks, openPolls, unanswered };
@@ -90,7 +90,7 @@ export async function listTasks(groupId: string) {
       .select({
         task: tasks,
         author: person,
-        checked: sql<number>`(select count(*) from ${taskChecks} where ${taskChecks.taskId} = ${tasks.id})`.mapWith(Number),
+        checked: sql<number>`(select count(*) from ${taskChecks} tc join ${users} u on u.id = tc.user_id where tc.task_id = ${tasks.id} and u.status = 'active')`.mapWith(Number),
       })
       .from(tasks)
       .innerJoin(users, eq(users.id, tasks.createdBy))
@@ -200,8 +200,11 @@ export async function listBirthdays(groupId: string, todayIso: string) {
   return rows
     .map((u) => {
       const [, m, d] = (u.birthday as string).split("-").map(Number);
-      let next = Date.UTC(ty, m - 1, d);
-      if (next < today) next = Date.UTC(ty + 1, m - 1, d);
+      // 29 февраля в невисокосный год празднуем 28-го, а не 1 марта (Date.UTC переполняет месяц).
+      const isLeap = (y: number) => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+      const dayFor = (y: number) => (m === 2 && d === 29 && !isLeap(y) ? 28 : d);
+      let next = Date.UTC(ty, m - 1, dayFor(ty));
+      if (next < today) next = Date.UTC(ty + 1, m - 1, dayFor(ty + 1));
       const daysUntil = Math.round((next - today) / 86_400_000);
       return { ...u, birthday: u.birthday as string, daysUntil, monthDay: `${String(d).padStart(2, "0")}.${String(m).padStart(2, "0")}` };
     })

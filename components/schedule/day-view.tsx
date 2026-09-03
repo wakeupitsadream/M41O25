@@ -3,7 +3,7 @@
 import { motion } from "motion/react";
 import { ChevronLeft, ChevronRight, MapPin, UserRound } from "lucide-react";
 import type { NowParts } from "@/lib/schedule/time";
-import { capitalize, fmtDayMonth, fmtWeekday, mondayOf, toMinutes } from "@/lib/schedule/time";
+import { capitalize, fmtDayMonth, fmtWeekday, mondayOf, parseIso, toMinutes } from "@/lib/schedule/time";
 import { KIND_LABEL, PARITY_LABEL, type ScheduleLesson, type SchedulePayload } from "@/lib/schedule/types";
 import { kindTone, lessonsOn, weekFor } from "@/lib/schedule/derive";
 import { cn, pluralRu } from "@/lib/utils";
@@ -75,7 +75,7 @@ export function DayView({ data, now, today, date, onBack, onShiftDay }: Props) {
         {!data && <div className="h-40 rounded-lg skeleton" />}
         {data && lessons.length === 0 && (
           <div className="rounded-lg bg-surface p-6 text-center hairline">
-            <div className="text-4xl">{[0, 6].includes(new Date(date).getDay()) ? "😴" : "🎉"}</div>
+            <div className="text-4xl">{[0, 6].includes(parseIso(date).getDay()) ? "😴" : "🎉"}</div>
             <div className="mt-2 font-display text-lg font-bold">{week ? "Свободный день" : "Расписания пока нет"}</div>
             <p className="mt-1 text-[14px] text-muted">{week ? "Ни одной пары. Можно выспаться." : "Появится, когда неделю опубликуют."}</p>
           </div>
