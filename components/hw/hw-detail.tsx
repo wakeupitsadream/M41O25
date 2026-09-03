@@ -11,6 +11,8 @@ import { Sheet } from "@/components/ui/sheet";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { Avatar, Badge } from "@/components/ui/primitives";
 import { ImageGrid } from "@/components/ui/image-grid";
+import { ReactionBar } from "@/components/group/reaction-bar";
+import type { ReactionSummary } from "@/lib/group/query";
 import { cn, displayName } from "@/lib/utils";
 
 type Person = { id: string; fullName: string; nickname: string | null; avatarEmoji: string; color: string };
@@ -31,6 +33,7 @@ export type HwDetailData = {
   edits: { id: string; text: string; createdAt: string; author: Person }[];
   comments: { id: string; body: string; createdAt: string; author: Person }[];
   attachments: { id: string; name: string; mime: string; size: number; url: string }[];
+  reactions: ReactionSummary;
 };
 
 type Props = {
@@ -106,6 +109,7 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
         </div>
       </header>
 
+      <ReactionBar entityType="homework" entityId={hw.id} reactions={hw.reactions} />
       {images.length > 0 && <ImageGrid images={images} />}
       {docs.length > 0 && (
         <ul className="space-y-2">

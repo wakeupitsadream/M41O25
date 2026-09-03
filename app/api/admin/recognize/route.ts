@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, count, eq, gt, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { attachments, groups, scheduleImports, subjects, weeks } from "@/lib/db/schema";
@@ -10,6 +10,8 @@ import { toDraft } from "@/lib/ocr/draft";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
+
+const DAILY_CAP = 12;
 
 const bodySchema = z.object({
   weekId: z.string().uuid(),
@@ -33,6 +35,15 @@ export async function POST(req: Request) {
     .from(attachments)
     .where(and(inArray(attachments.id, attachmentIds), eq(attachments.groupId, user.groupId), eq(attachments.entityType, "scan")));
   if (files.length === 0) return NextResponse.json({ error: "Сканы не найдены" }, { status: 400 });
+  // Порядок фото = порядок загрузки (верх/низ страницы), а не порядок строк в базе.
+  files.sort((a, b) => attachmentIds.indexOf(a.id) - attachmentIds.indexOf(b.id));
+
+  // Потолок на день: субботний ритуал — это 2–4 прогона, а не бесконечные повторы за реальные рубли.
+  const [{ todayRuns }] = await db
+    .select({ todayRuns: count() })
+    .from(scheduleImports)
+    .where(and(eq(scheduleImports.groupId, user.groupId), gt(scheduleImports.createdAt, new Date(Date.now() - 24 * 3600_000))));
+  if (todayRuns >= DAILY_CAP) return NextResponse.json({ error: `Лимит распознаваний за сутки (${DAILY_CAP}) исчерпан — заполни неделю вручную, завтра лимит обновится` }, { status: 429 });
 
   const images: { dataUrl: string }[] = [];
   for (const f of files) {
@@ -48,21 +59,24 @@ export async function POST(req: Request) {
     .returning({ id: scheduleImports.id });
 
   try {
-    const { result, model, attempts } = await recognizeSchedule({ images, groupShort: group.shortName, slotTimes: group.slotTimes, strong });
+    const { result, model, attempts, usage, durationMs, schemaFallback } = await recognizeSchedule({ images, groupShort: group.shortName, slotTimes: group.slotTimes, strong });
     const subjectList = await db
       .select({ id: subjects.id, name: subjects.name, shortName: subjects.shortName })
       .from(subjects)
       .where(and(eq(subjects.groupId, user.groupId), eq(subjects.archived, false)))
       .orderBy(asc(subjects.name));
     const draft = toDraft(result, week.startsOn, week.parity, group.slotTimes, subjectList);
-    await db.update(scheduleImports).set({ status: "recognized", model, rawJson: result }).where(eq(scheduleImports.id, imp.id));
+    await db.update(scheduleImports).set({ status: "recognized", model, rawJson: result, usage, durationMs, attempts }).where(eq(scheduleImports.id, imp.id));
     await db.update(attachments).set({ entityId: imp.id }).where(inArray(attachments.id, files.map((f) => f.id)));
     return NextResponse.json({
       importId: imp.id,
       model,
       attempts,
       groupFound: result.group_found,
+      groupLabel: result.group_label_seen,
       weekType: result.week_type,
+      durationMs,
+      schemaFallback,
       notes: result.confidence_notes,
       draft,
     });

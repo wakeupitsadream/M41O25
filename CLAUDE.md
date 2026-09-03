@@ -9,6 +9,8 @@ Next.js 15.5 App Router (React 19, Server Actions), TypeScript strict, Tailwind 
 ```bash
 npm run dev                 # turbopack, SW отключён
 npm run typecheck && npm run lint
+npm test                    # unit-тесты чистой логики lib/**/*.test.ts (node:test через tsx)
+npm run db:check            # drizzle-kit check: миграции согласованы со схемой
 npm run build               # scripts/build.mjs → next build (webpack, нужен для Serwist)
 npm run db:generate         # drizzle-kit generate после правки lib/db/schema.ts
 npm run db:migrate          # применить drizzle/*.sql к DATABASE_URL
@@ -22,7 +24,7 @@ npm run e2e:offline         # только против production-сборки 
 ## Ветки и деплой
 
 - `main` — production. Push в `main` = production-сборка на Vercel: `scripts/build.mjs` применяет миграции к `DATABASE_URL` и при заданном `SEED_ADMIN_NAME` создаёт группу и админа, потом `next build`. Любая другая ветка — preview без миграций (если не задан `MIGRATE_ON_BUILD=1`).
-- Рабочие ветки `claude/*`; в `main` только после `typecheck`, `lint`, `build` и e2e. Никогда не force-push в `main`.
+- Рабочие ветки `claude/*`; в `main` только после `typecheck`, `lint`, `db:check`, `test`, `build` и e2e. То же самое на каждый push и PR делает GitHub Actions (`.github/workflows/ci.yml`, с Postgres-сервисом и e2e против production-сборки). Никогда не force-push в `main`.
 - Секреты только в Vercel → Environment Variables. В репозитории публичном (решение Максима) — никаких ключей, скриншотов с реальными людьми, реальных сканов, значений `SEED_*`.
 - Регион функций `fra1` (`vercel.json`), cron `/api/cron/daily` в 23:00 UTC работает только на production.
 
@@ -48,6 +50,10 @@ npm run e2e:offline         # только против production-сборки 
 - Всё на телефоне: safe-area через `--sat/--sab`, тап-таргеты ≥ 40px, `dvh`, без hover-зависимого поведения. `-webkit-touch-callout` подавлен только на кнопках и drag-списках.
 - Расписание — клиентский `ScheduleApp` с pushState-навигацией и офлайн-кешем (`/api/schedule` через SW и localStorage). Не ломать `additionalPrecacheEntries` для `/~offline`.
 
+## Известные проблемы
+
+- P0, не решено: в production-сборке клиентская навигация иногда не завершается (URL не меняется, ошибок нет, RSC-ответ пришёл целиком). Вероятность растёт с объёмом страницы назначения: контакты или новости из ~100 записей виснут почти всегда, домашка из 100 карточек — нет. На dev-сервере не воспроизводится. Service worker и prefetch исключены. Репро, матрица и гипотезы — `docs/ROADMAP.md`, раздел «Открытая проблема P0». Падающий `waitForURL` в e2e не считать флейком.
+
 ## Проверки перед push
 
-`npm run typecheck && npm run lint && npm run build`, затем e2e против production-сборки (`npx next start -p 3001`, `BASE=http://localhost:3001 PW_CHROMIUM=... npm run e2e`, `npm run e2e:offline`). Не запускать `npm audit fix --force` и мажорные обновления (Next 16, TS 7, ESLint 10, Motion 13) без отдельной сессии с полным прогоном.
+`npm run typecheck && npm run lint && npm run db:check && npm test && npm run build`, затем e2e против production-сборки (`npx next start -p 3001`, `BASE=http://localhost:3001 PW_CHROMIUM=... npm run e2e`, `npm run e2e:offline`). Не запускать `npm audit fix --force` и мажорные обновления (Next 16, TS 7, ESLint 10, Motion 13) без отдельной сессии с полным прогоном.

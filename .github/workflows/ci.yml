@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: raspison
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/raspison
+      AUTH_SECRET: ci-secret-0123456789abcdef0123456789
+      ANON_PEPPER: ci-pepper-0123456789abcdef0123456789
+      CRON_SECRET: ci-cron-secret
+      OCR_MOCK: "1"
+      APP_TZ: Asia/Yekaterinburg
+      NEXT_PUBLIC_APP_TZ: Asia/Yekaterinburg
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint -- --max-warnings 0
+      - name: Миграции согласованы со схемой
+        run: npm run db:check
+      - name: Unit-тесты
+        run: npm test
+      - name: База для e2e
+        run: npm run db:migrate && npm run db:seed -- --demo
+      - name: Сборка (как на Vercel, без миграций)
+        run: npm run build
+      - name: Chromium для Playwright
+        run: npx playwright install --with-deps chromium
+      - name: Production-сервер
+        run: |
+          (npx next start -p 3001 > server.log 2>&1 &)
+          for i in $(seq 1 40); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/enter || true)
+            [ "$code" = "200" ] && break
+            sleep 1
+          done
+          echo "server: $code"
+          [ "$code" = "200" ]
+      - name: e2e
+        env:
+          BASE: http://localhost:3001
+        run: npm run e2e && npm run e2e:offline
+      - name: Логи и скриншоты при падении
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-artifacts
+          path: |
+            e2e/shots
+            server.log
+          if-no-files-found: ignore

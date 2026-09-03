@@ -11,7 +11,7 @@ export const REACTION_EMOJI = ["🔥", "👍", "💀", "❤️"] as const;
 
 export type ReactionSummary = { emoji: string; count: number; mine: boolean }[];
 
-async function reactionsFor(entityType: "news" | "homework" | "task", ids: string[], userId: string) {
+export async function reactionsFor(entityType: "news" | "homework" | "task", ids: string[], userId: string) {
   if (ids.length === 0) return new Map<string, ReactionSummary>();
   const rows = await db
     .select({

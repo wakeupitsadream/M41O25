@@ -132,7 +132,7 @@ export function WeekEditor({ week, lessons, subjects, semesters, slotTimes }: Pr
                 <Check className="size-4" /> Опубликовать
               </Button>
             )}
-            <ScanRecognizer weekId={week.id} hasLessons={lessons.length > 0} subjects={subjects.map((s) => ({ id: s.id, name: s.name }))} />
+            <ScanRecognizer weekId={week.id} hasLessons={lessons.length > 0} parity={week.parity} subjects={subjects.map((s) => ({ id: s.id, name: s.name }))} />
           </div>
         </div>
 

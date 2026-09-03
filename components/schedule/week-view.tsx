@@ -15,6 +15,7 @@ type Props = {
   now: NowParts | null;
   today: string;
   weekStart: string;
+  defaultWeekStart?: string;
   weather?: { text: string; emoji: string } | null;
   onOpenDay: (date: string) => void;
   onShiftWeek: (delta: number) => void;
@@ -22,13 +23,16 @@ type Props = {
   onToday: () => void;
 };
 
-export function WeekView({ data, now, today, weekStart, weather = null, onOpenDay, onShiftWeek, onSemester, onToday }: Props) {
+export function WeekView({ data, now, today, weekStart, defaultWeekStart, weather = null, onOpenDay, onShiftWeek, onSemester, onToday }: Props) {
   const week = data ? weekFor(data.weeks, weekStart) : null;
-  const isCurrentWeek = mondayOf(today) === weekStart;
+  const containsToday = mondayOf(today) === weekStart;
+  // В воскресенье главной становится следующая неделя: она «эта», кнопка «Сегодня» не нужна.
+  const isCurrentWeek = (defaultWeekStart ?? mondayOf(today)) === weekStart;
+  const isUpcoming = isCurrentWeek && !containsToday;
   const days = [0, 1, 2, 3, 4, 5].map((i) => addDaysIso(weekStart, i));
   const sundayLessons = data ? lessonsOn(data.weeks, addDaysIso(weekStart, 6)) : [];
   if (sundayLessons.length) days.push(addDaysIso(weekStart, 6));
-  const todayLessons = data && isCurrentWeek ? lessonsOn(data.weeks, today) : [];
+  const todayLessons = data && containsToday ? lessonsOn(data.weeks, today) : [];
   const semesterOver = data?.semester ? today > data.semester.endsOn : false;
 
   return (
@@ -36,7 +40,7 @@ export function WeekView({ data, now, today, weekStart, weather = null, onOpenDa
       <header className="flex items-end justify-between gap-3 pt-safe pb-4">
         <div className="min-w-0">
           <div className="mb-1 flex items-center gap-2 text-[13px] font-medium uppercase tracking-wide text-muted">
-            <span>{isCurrentWeek ? "Эта неделя" : "Неделя"}</span>
+            <span>{isUpcoming ? "Следующая неделя" : isCurrentWeek ? "Эта неделя" : "Неделя"}</span>
             {week?.parity && (
               <Badge tone={week.parity === "upper" ? "accent" : "neutral"} className="normal-case tracking-normal">
                 {PARITY_LABEL[week.parity]}
@@ -103,9 +107,10 @@ export function WeekView({ data, now, today, weekStart, weather = null, onOpenDa
         animate={{ opacity: 1, x: 0 }}
         transition={{ type: "spring", stiffness: 380, damping: 36 }}
       >
-        {isCurrentWeek && now && todayLessons.length > 0 && (
+        {containsToday && now && todayLessons.length > 0 && (
           <NowCard lessons={todayLessons} minutes={now.minutes} onOpen={() => onOpenDay(today)} />
         )}
+        {isUpcoming && <div className="px-1 text-[13px] text-muted">Сегодня воскресенье — показываю неделю, которая начнётся завтра.</div>}
         {isCurrentWeek && weather && (
           <div className="flex items-center gap-2 px-1 text-[13px] text-muted">
             <span className="text-base leading-none">{weather.emoji}</span>

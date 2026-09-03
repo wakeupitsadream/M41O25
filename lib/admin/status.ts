@@ -59,9 +59,12 @@ export async function diagnostics() {
   const t0 = Date.now();
   let dbMs: number | null = null;
   let dbError: string | null = null;
+  let dbMb: number | null = null;
   try {
-    await db.execute(sql`select 1`);
+    const r = await db.execute<{ bytes: string }>(sql`select pg_database_size(current_database())::text as bytes`);
     dbMs = Date.now() - t0;
+    const bytes = Number(r.rows?.[0]?.bytes ?? 0);
+    dbMb = bytes ? Math.round((bytes / 1024 / 1024) * 10) / 10 : null;
   } catch (e) {
     dbError = e instanceof Error ? e.message : String(e);
   }
@@ -100,7 +103,7 @@ export async function diagnostics() {
     .map(([k]) => k);
 
   return {
-    db: { ms: dbMs, error: dbError },
+    db: { ms: dbMs, error: dbError, mb: dbMb },
     storage: { ok: storageOk, line: storageLine },
     errors24h: errCount?.n ?? -1,
     lastErrors,

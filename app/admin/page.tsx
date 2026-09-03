@@ -44,10 +44,16 @@ export default async function AdminHome() {
         </Card>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
-        <Tile href="/admin/users" icon={<Users2 className="size-5" />} label="Люди" value={String(people)} />
-        <Tile href="/admin/subjects" icon={<BookMarked className="size-5" />} label="Предметы" value={String(subj)} />
-      </div>
+      {user.role === "admin" ? (
+        <div className="grid grid-cols-2 gap-3">
+          <Tile href="/admin/users" icon={<Users2 className="size-5" />} label="Люди" value={String(people)} />
+          <Tile href="/admin/subjects" icon={<BookMarked className="size-5" />} label="Предметы" value={String(subj)} />
+        </div>
+      ) : (
+        <Card className="text-[14px] text-muted">
+          Староста публикует новости, ведёт задачи и контакты и отвечает на анонимные вопросы — всё это в разделе «Группа». Расписание, люди и предметы — у админа.
+        </Card>
+      )}
 
       {user.role === "admin" && (
         <div className="grid grid-cols-2 gap-3">
@@ -80,7 +86,7 @@ export default async function AdminHome() {
             <Activity className="size-4" /> <span className="text-[12px] font-medium">Диагностика</span>
           </div>
           <ul className="space-y-1.5 text-[13px]">
-            <DiagRow ok={!diag.db.error} text={diag.db.error ? `База: ${diag.db.error}` : `База отвечает за ${diag.db.ms} мс`} />
+            <DiagRow ok={!diag.db.error && (diag.db.mb ?? 0) < 400} text={diag.db.error ? `База: ${diag.db.error}` : `База отвечает за ${diag.db.ms} мс${diag.db.mb !== null ? ` · ${diag.db.mb} МБ из 500 бесплатных` : ""}`} />
             <DiagRow ok={diag.storage.ok} text={diag.storage.line} />
             <DiagRow
               ok={!backupStale}

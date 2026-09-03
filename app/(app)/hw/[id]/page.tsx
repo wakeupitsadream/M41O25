@@ -49,6 +49,7 @@ export default async function HomeworkDetailPage({ params }: { params: Promise<{
           edits: hw.edits.map((e) => ({ id: e.id, text: e.text, createdAt: e.createdAt.toISOString(), author: e.author })),
           comments: hw.comments.map((c) => ({ id: c.id, body: c.body, createdAt: c.createdAt.toISOString(), author: c.author })),
           attachments: hw.attachments,
+          reactions: hw.reactions,
         }}
         me={{ id: user.id, isAdmin, showDone: user.showHwDone }}
         today={todayIso()}

@@ -1,5 +1,6 @@
 import "server-only";
 import { fileHref } from "@/lib/files/token";
+import { reactionsFor } from "@/lib/group/query";
 import { and, asc, desc, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { attachments, comments, homework, hwDone, hwEdits, lessons, subjects, users, weeks } from "@/lib/db/schema";
@@ -105,8 +106,11 @@ export async function getHomework(groupId: string, id: string, userId: string) {
       : Promise.resolve([]),
   ]);
 
+  const reactions = (await reactionsFor("homework", [id], userId)).get(id) ?? [];
+
   return {
     ...row.hw,
+    reactions,
     subject: row.subject?.id ? row.subject : null,
     author: row.author,
     done: row.done,

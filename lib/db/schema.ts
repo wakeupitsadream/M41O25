@@ -172,6 +172,10 @@ export const scheduleImports = pgTable("schedule_imports", {
   rawJson: jsonb("raw_json"),
   status: importStatusEnum("status").notNull().default("uploaded"),
   error: text("error"),
+  /** Телеметрия прогона: токены, длительность, число попыток — чтобы бюджет Polza был виден, а не угадывался. */
+  usage: jsonb("usage").$type<{ prompt: number; completion: number }>(),
+  durationMs: integer("duration_ms"),
+  attempts: integer("attempts"),
   createdAt: createdAt(),
 });
 

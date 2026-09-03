@@ -48,7 +48,9 @@ export function AttachmentUploader({
         let file = original;
         if (file.type.startsWith("image/") && file.type !== "image/gif") {
           const { default: compress } = await import("browser-image-compression");
-          const blob = await compress(file, { maxSizeMB: 1.5, maxWidthOrHeight: 2200, useWebWorker: true, fileType: "image/jpeg", initialQuality: 0.85 });
+          // Скан со всеми группами: столбец нашей группы узкий, при 2200 px буквы становятся нечитаемыми. Держимся под лимитом тела 4 МБ.
+          const preset = entityType === "scan" ? { maxSizeMB: 3.6, maxWidthOrHeight: 3600, initialQuality: 0.92 } : { maxSizeMB: 1.5, maxWidthOrHeight: 2200, initialQuality: 0.85 };
+          const blob = await compress(file, { ...preset, useWebWorker: true, fileType: "image/jpeg" });
           file = new File([blob], file.name.replace(/\.(heic|heif|png|webp)$/i, ".jpg"), { type: "image/jpeg" });
         }
         if (file.size > MAX_BYTES) throw new Error(`«${original.name}» больше 4 МБ — сожми или пришли ссылкой`);

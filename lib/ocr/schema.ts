@@ -6,8 +6,9 @@ export type DayCode = (typeof DAY_CODES)[number];
 export const ocrLessonSchema = z.object({
   day: z.enum(DAY_CODES),
   slot: z.number().int().min(0).max(10),
-  time_start: z.string().regex(/^\d{1,2}:\d{2}$/).nullable(),
-  time_end: z.string().regex(/^\d{1,2}:\d{2}$/).nullable(),
+  // На печатных листах время бывает «8.30» и «8-30» — принимаем и нормализуем в toDraft.
+  time_start: z.string().regex(/^\d{1,2}[:.\-]\d{2}$/).nullable(),
+  time_end: z.string().regex(/^\d{1,2}[:.\-]\d{2}$/).nullable(),
   subject: z.string().min(1),
   lesson_type: z.enum(["лекция", "практика", "лаба", "семинар", "консультация", "зачёт", "экзамен", "другое"]).nullable(),
   teacher: z.string().nullable(),
@@ -19,6 +20,7 @@ export const ocrLessonSchema = z.object({
 
 export const ocrResultSchema = z.object({
   group_found: z.boolean(),
+  group_label_seen: z.string().nullable(),
   week_type: z.enum(["upper", "lower"]).nullable(),
   confidence_notes: z.string(),
   lessons: z.array(ocrLessonSchema),
@@ -31,9 +33,10 @@ export type OcrResult = z.infer<typeof ocrResultSchema>;
 export const ocrJsonSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["group_found", "week_type", "confidence_notes", "lessons"],
+  required: ["group_found", "group_label_seen", "week_type", "confidence_notes", "lessons"],
   properties: {
     group_found: { type: "boolean" },
+    group_label_seen: { type: ["string", "null"] },
     week_type: { type: ["string", "null"], enum: ["upper", "lower", null] },
     confidence_notes: { type: "string" },
     lessons: {

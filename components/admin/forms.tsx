@@ -1,14 +1,20 @@
 "use client";
 
 import { useFormStatus } from "react-dom";
-import { useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 
-/** Кнопка отправки формы с индикатором ожидания server action. */
+/**
+ * Кнопка отправки формы с индикатором ожидания server action.
+ * До гидратации кнопка выключена: иначе форма уходит нативным POST, React потом «переигрывает» его,
+ * и на медленном устройстве это зависает без редиректа. Наши пользователи всегда с JS, теряем только no-JS.
+ */
 export function SubmitButton(props: ButtonProps) {
   const { pending } = useFormStatus();
-  return <Button type="submit" loading={pending} {...props} />;
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
+  return <Button type="submit" loading={pending} {...props} disabled={!ready || props.disabled} />;
 }
 
 /** Кнопка опасного действия с подтверждением через confirm(). */

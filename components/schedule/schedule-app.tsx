@@ -47,6 +47,11 @@ export function ScheduleApp({ initialData, serverToday, weather = null }: { init
 
   const view = useMemo(() => parseView(pathname, today), [pathname, today]);
   const key = viewKey(view);
+  // Неделя «по умолчанию» (в воскресенье — следующая): от неё считаем «эта неделя» и кнопку «Сегодня».
+  const defaultWeekStart = useMemo(() => {
+    const v = parseView("/s", today);
+    return v.level === "week" ? v.weekStart : mondayOf(today);
+  }, [today]);
 
   // Направление анимации: глубже (+1), обратно (−1) или соседний экран того же уровня (0).
   const prevRef = useRef<View>(view);
@@ -124,6 +129,7 @@ export function ScheduleApp({ initialData, serverToday, weather = null }: { init
               now={now}
               today={today}
               weekStart={view.weekStart}
+              defaultWeekStart={defaultWeekStart}
               weather={weather}
               onOpenDay={openDay}
               onShiftWeek={(d) => shiftWeek(view.weekStart, d)}
