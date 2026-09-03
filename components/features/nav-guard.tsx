@@ -38,7 +38,30 @@ function arrivedAgo(pathname: string, rscOnly: boolean): number | null {
   return best;
 }
 
-type Guard = { pathname: string; rscOnly: boolean; settled: () => boolean; recover: () => void; label: string };
+let lastAction: { at: number; redirect: string | null } | null = null;
+let fetchWrapped = false;
+
+/** Запоминаем ответы server actions: когда пришёл и куда велел перейти (заголовок x-action-redirect). */
+function wrapFetch() {
+  if (fetchWrapped) return;
+  fetchWrapped = true;
+  const orig = window.fetch;
+  window.fetch = async function (input: RequestInfo | URL, init?: RequestInit) {
+    const res = await orig.call(this, input, init);
+    try {
+      const h = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+      if (h.has("Next-Action")) {
+        const raw = res.headers.get("x-action-redirect");
+        lastAction = { at: performance.now(), redirect: raw ? raw.split(";")[0] || null : null };
+      }
+    } catch {
+      // нестандартные заголовки — не наш запрос
+    }
+    return res;
+  };
+}
+
+type Guard = { arrivedAgo: () => number | null; settled: () => boolean; recover: () => void; label: string };
 
 function startGuard(g: Guard) {
   active?.();
@@ -50,7 +73,7 @@ function startGuard(g: Guard) {
   };
   const timer = window.setInterval(() => {
     if (g.settled() || performance.now() - started > GIVE_UP_MS) return stop();
-    const ago = arrivedAgo(g.pathname, g.rscOnly);
+    const ago = g.arrivedAgo();
     if (ago !== null && ago > SETTLE_MS && document.visibilityState === "visible") {
       stop();
       console.warn(`[raspison] ${g.label} не завершился за ${Math.round(ago)} мс после ответа, восстанавливаемся`);
@@ -72,8 +95,7 @@ export function watchNavigation(href: string) {
   const from = location.href;
   const seq = commitSeq;
   startGuard({
-    pathname: url.pathname,
-    rscOnly: true,
+    arrivedAgo: () => arrivedAgo(url.pathname, true),
     settled: () => location.href !== from || commitSeq !== seq,
     recover: () => location.assign(url.href),
     label: `переход на ${url.pathname}`,
@@ -84,25 +106,32 @@ export function watchNavigation(href: string) {
 export function watchRefresh() {
   const seq = commitSeq;
   const from = location.href;
+  const pathname = location.pathname;
   startGuard({
-    pathname: location.pathname,
-    rscOnly: true,
+    arrivedAgo: () => arrivedAgo(pathname, true),
     settled: () => commitSeq !== seq || location.href !== from,
     recover: () => location.reload(),
     label: "refresh",
   });
 }
 
-/** Следить за отправкой формы с server action: успех — переход, новое дерево или снова активная кнопка. */
+/**
+ * Следить за отправкой формы с server action: успех — переход, новое дерево или снова активная кнопка.
+ * Если действие велело перейти (redirect), уходим по этому адресу, иначе перезагружаем страницу.
+ */
 function watchForm(form: HTMLFormElement) {
   const seq = commitSeq;
   const from = location.href;
+  const startedAt = performance.now();
   const button = form.querySelector<HTMLButtonElement>('button[type="submit"]');
   startGuard({
-    pathname: location.pathname,
-    rscOnly: false,
+    arrivedAgo: () => (lastAction && lastAction.at >= startedAt ? performance.now() - lastAction.at : null),
     settled: () => location.href !== from || commitSeq !== seq || button === null || !button.disabled || !form.isConnected,
-    recover: () => location.reload(),
+    recover: () => {
+      const to = lastAction?.redirect;
+      if (to) location.assign(new URL(to, location.href).href);
+      else location.reload();
+    },
     label: "отправка формы",
   });
 }
@@ -133,6 +162,7 @@ export function NavWatchdog() {
     } catch {
       // старые браузеры
     }
+    wrapFetch();
     document.addEventListener("click", onClick, true);
     document.addEventListener("submit", onSubmit, true);
     return () => {
