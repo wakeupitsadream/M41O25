@@ -68,7 +68,8 @@ if (await dupBtn.count()) {
   await dupBtn.click();
   await page.waitForTimeout(400);
   await page.locator("li button").first().click();
-  await page.waitForTimeout(1500);
+  // До 10 с: при зависшем переходе сторож навигации восстанавливает страницу через ~3 с.
+  await page.locator("text=/дубл/i").first().waitFor({ timeout: 10000 }).catch(() => {});
   await shot("36-hw-dup");
   assert.ok((await page.locator("text=/дубл/i").count()) >= 1, "после отметки нет признака дубля");
 }

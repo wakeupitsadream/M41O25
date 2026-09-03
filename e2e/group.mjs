@@ -72,11 +72,12 @@ await shot("46-birthdays");
 await page.goto(`${BASE}/group/questions`, { waitUntil: "networkidle" });
 await page.fill("textarea", "Когда будет пересдача по микроэкономике? Никто не знает");
 await page.getByRole("button", { name: /Спросить/ }).click();
-await page.waitForTimeout(1500);
+// До 10 с: при зависшем refresh сторож навигации перезагружает страницу через ~3 с.
+await page.getByRole("button", { name: "Ответить" }).first().waitFor({ timeout: 10000 });
 await page.getByRole("button", { name: "Ответить" }).first().click();
 await page.fill('textarea[placeholder="Ответ увидят все"]', "Пересдача 18 сентября, 10:00, ауд. 305.");
 await page.getByRole("button", { name: "Ответить" }).first().click();
-await page.waitForTimeout(1500);
+await page.locator("text=Пересдача 18 сентября").first().waitFor({ timeout: 10000 }).catch(() => {});
 await shot("47-questions");
 assert.ok((await page.locator("text=Пересдача 18 сентября").count()) >= 1, "ответ на анонимный вопрос не показан");
 

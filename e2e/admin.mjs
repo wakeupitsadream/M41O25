@@ -36,7 +36,8 @@ await shot("24-admin-editor-after-add");
 
 // Публикуем
 await page.getByRole("button", { name: /Опубликовать/ }).click();
-await page.waitForTimeout(1500);
+// До 10 с: обычно бейдж появляется за секунду, но при зависшем refresh сторож перезагружает страницу через ~3 с.
+await page.locator("text=опубликована").first().waitFor({ timeout: 10000 }).catch(() => {});
 const status = await page.locator("text=опубликована").count();
 console.log("published badge count:", status);
 assert.ok(status >= 1, "неделя не опубликована");
