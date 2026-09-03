@@ -1,5 +1,7 @@
-// Сборка для Vercel: миграции применяются только к продовой базе (preview-деплои из веток
-// не должны трогать прод), затем обычная сборка Next.js (webpack — нужен для Serwist).
+// Сборка для Vercel: миграции применяются к базе из DATABASE_URL при любой сборке на Vercel
+// (какую базу дали сборке — ту и мигрируем; у preview без своей DATABASE_URL шаг пропускается),
+// затем при заданном SEED_ADMIN_NAME создаётся группа и админ (идемпотентно), затем обычная
+// сборка Next.js (webpack — нужен для Serwist).
 import { spawnSync } from "node:child_process";
 
 const run = (cmd, args) => {
@@ -7,14 +9,18 @@ const run = (cmd, args) => {
   if (res.status !== 0) process.exit(res.status ?? 1);
 };
 
-const isProd = process.env.VERCEL_ENV === "production";
+const onVercel = Boolean(process.env.VERCEL);
 const hasDb = Boolean(process.env.DATABASE_URL);
 
-if (isProd && hasDb) {
-  console.log("[build] VERCEL_ENV=production → применяю миграции");
+if (onVercel && hasDb) {
+  console.log(`[build] Vercel (${process.env.VERCEL_ENV}) + DATABASE_URL → применяю миграции`);
   run("npx", ["tsx", "scripts/migrate.ts"]);
+  if (process.env.SEED_ADMIN_NAME) {
+    console.log("[build] SEED_ADMIN_NAME задан → создаю группу и админа, если их ещё нет");
+    run("npx", ["tsx", "scripts/seed.ts"]);
+  }
 } else {
-  console.log(`[build] миграции пропущены (VERCEL_ENV=${process.env.VERCEL_ENV ?? "local"}, DATABASE_URL=${hasDb ? "есть" : "нет"})`);
+  console.log(`[build] миграции пропущены (VERCEL=${onVercel ? "да" : "нет"}, DATABASE_URL=${hasDb ? "есть" : "нет"})`);
 }
 
 run("npx", ["next", "build"]);

@@ -24,6 +24,7 @@ export async function POST(req: Request) {
   if (entityType === "scan" && user.role !== "admin") return NextResponse.json({ error: "Только админ" }, { status: 403 });
   if (entityType === "scan" && !file.type.startsWith("image/")) return NextResponse.json({ error: "Скан должен быть фото или картинкой (JPEG/PNG). PDF пересними или сконвертируй" }, { status: 415 });
   if ((entityType === "news" || entityType === "task") && user.role === "student") return NextResponse.json({ error: "Вложения к новостям и задачам добавляет староста" }, { status: 403 });
+  if (storage.kind === "local" && process.env.VERCEL) return NextResponse.json({ error: "Файлы пока отключены: администратор не подключил хранилище (R2)" }, { status: 503 });
 
   // Квота для студентов: не больше 30 файлов в час и 40 МБ в сутки — от залива хранилища «сиротами».
   if (user.role === "student") {

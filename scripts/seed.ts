@@ -4,7 +4,7 @@ import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { eq } from "drizzle-orm";
 import * as schema from "../lib/db/schema";
-import { USER_COLORS, generateInviteSuffix } from "../lib/utils";
+import { USER_COLORS, firstName, generateInviteSuffix } from "../lib/utils";
 import { addDays, format, startOfWeek } from "date-fns";
 
 /**
@@ -80,7 +80,7 @@ async function main() {
     await db.insert(schema.users).values({
       groupId: group.id,
       fullName: ADMIN_NAME,
-      nickname: "Максим",
+      nickname: firstName(ADMIN_NAME),
       avatarEmoji: "🧑‍💻",
       color: USER_COLORS[4],
       role: "admin",

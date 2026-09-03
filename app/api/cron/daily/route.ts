@@ -42,10 +42,7 @@ const TABLES = {
  * 2) удаление сканов расписания старше 30 дней — внутренний документ вуза не должен лежать вечно.
  * Файлы-вложения не бэкапим: риск принят.
  */
-export async function GET(req: Request) {
-  const auth = req.headers.get("authorization");
-  if (!env.cronSecret || auth !== `Bearer ${env.cronSecret}`) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-
+async function dumpToStorage() {
   const dump: Record<string, unknown[]> = {};
   for (const [name, table] of Object.entries(TABLES)) {
     if (name === "users") {
@@ -64,7 +61,30 @@ export async function GET(req: Request) {
   const keys = await storage.list("backups/");
   const stale = keys.sort().slice(0, Math.max(0, keys.length - 30));
   for (const k of stale) await storage.delete(k);
+  return { key, bytes: payload.length, removedBackups: stale.length };
+}
 
+export async function GET(req: Request) {
+  const auth = req.headers.get("authorization");
+  if (!env.cronSecret || auth !== `Bearer ${env.cronSecret}`) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+
+  // 1) Бэкап. На Vercel без R2 постоянного диска нет — бэкап пропускаем, чистку ниже делаем всё равно.
+  let backup: Awaited<ReturnType<typeof dumpToStorage>> | null = null;
+  let backupSkipped: string | null = null;
+  let backupError: string | null = null;
+  if (storage.kind === "local" && process.env.VERCEL) {
+    backupSkipped = "R2 не подключён — на Vercel бэкап складывать некуда";
+    console.warn(`[cron] ${backupSkipped}`);
+  } else {
+    try {
+      backup = await dumpToStorage();
+    } catch (e) {
+      backupError = e instanceof Error ? e.message : String(e);
+      console.error("[cron] бэкап не удался:", backupError);
+    }
+  }
+
+  // 2) Сканы старше 30 дней: внутренний документ вуза не должен лежать вечно.
   const cutoff = new Date(Date.now() - 30 * 86_400_000);
   const oldScans = await db.select().from(attachments).where(and(eq(attachments.entityType, "scan"), lt(attachments.createdAt, cutoff)));
   for (const s of oldScans) {
@@ -72,7 +92,7 @@ export async function GET(req: Request) {
     await db.delete(attachments).where(eq(attachments.id, s.id));
   }
 
-  // Гигиена: квоты анонимных вопросов за прошлые дни (сужает окно деанонимизации), попытки входа, мёртвые сессии, сироты-вложения.
+  // 3) Гигиена: квоты анонимных вопросов за прошлые дни (сужает окно деанонимизации), попытки входа, мёртвые сессии, сироты-вложения.
   const today = todayIso();
   await db.delete(anonQuota).where(lt(anonQuota.day, today));
   await db.delete(authAttempts).where(lt(authAttempts.createdAt, new Date(Date.now() - 24 * 3600_000)));
@@ -86,5 +106,8 @@ export async function GET(req: Request) {
     await db.delete(attachments).where(eq(attachments.id, o.id));
   }
 
-  return NextResponse.json({ ok: true, backup: key, bytes: payload.length, removedBackups: stale.length, removedScans: oldScans.length, removedOrphans: orphans.length });
+  return NextResponse.json(
+    { ok: !backupError, backup, backupSkipped, backupError, removedScans: oldScans.length, removedOrphans: orphans.length },
+    { status: backupError ? 500 : 200 },
+  );
 }

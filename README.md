@@ -24,18 +24,19 @@ npm run dev                       # http://localhost:3000
 
 ## Развёртывание (один раз, ~40 минут)
 
-1. **Neon** (neon.tech, free) → создать проект → скопировать строку подключения **с `-pooler`** → `DATABASE_URL`.
-2. **Cloudflare R2** (free 10 ГБ) → создать бакет `raspison` → API-токен с правами Object Read & Write → `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`. Если R2 недоступен, без этих переменных файлы пойдут в локальную папку — на Vercel это НЕ работает (нет диска), так что для прода R2 обязателен.
+Проект на Vercel уже создан (`raspison`, привязан к этому репозиторию: каждый push собирает деплой, защита превью-ссылок отключена — у приложения свой вход). Осталось дать ему базу, хранилище и секреты.
+
+1. **Neon** (neon.tech, free, регион Frankfurt — рядом с `fra1` из `vercel.json`) → создать проект → скопировать строку подключения **с `-pooler`** → `DATABASE_URL`.
+2. **Cloudflare R2** (free 10 ГБ) → создать бакет `raspison` → API-токен с правами Object Read & Write → `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`. Без этих переменных на Vercel загрузка файлов отвечает понятной ошибкой «хранилище не подключено», а ежедневный бэкап пропускается — всё остальное работает.
 3. **PolzaAI** (polza.ai) → пополнить на 100 ₽ → ключ → `POLZA_API_KEY`. Модели: `OCR_MODEL=google/gemini-3.5-flash`, `OCR_MODEL_STRONG=anthropic/claude-sonnet-5` (проверь актуальные id в каталоге polza.ai/models). Не задавать `OCR_MOCK` в проде.
 4. **Секреты**: `AUTH_SECRET`, `ANON_PEPPER`, `CRON_SECRET` — `openssl rand -base64 32` для каждого.
-5. **Vercel** → Import Git Repository → Framework Next.js → Environment Variables: всё из `.env.example` (+ `APP_TZ` и `NEXT_PUBLIC_APP_TZ` = `Asia/Yekaterinburg`). Build command по умолчанию (`npm run build`): миграции применяются только при `VERCEL_ENV=production`. Cron из `vercel.json` (ежедневный бэкап в R2 + чистка сканов) подхватится сам; Vercel передаёт `CRON_SECRET` в заголовке.
-6. **Первый вход**: локально с продовой строкой подключения выполнить
-   ```bash
-   SEED_INVITE_CODE=M41-XXXX SEED_ADMIN_NAME="Фамилия Имя" DATABASE_URL=... npm run db:seed
-   ```
-   (создаёт группу и одного админа). Открыть `https://<проект>.vercel.app/enter`, ввести код, выбрать себя, задать PIN → Профиль → Админка.
-7. **Наполнение** (Админка): Люди — добавить 21 одногруппника; Предметы — справочник с преподавателями и аудиториями; Семестры — даты семестра и сессии; Настройки — время пар и инвайт-код; Расписание → Новая неделя → «По скану» или вручную → Опубликовать.
-8. Кинуть в беседу группы ссылку и инвайт-код. Домен оставить `*.vercel.app` (кастомные домены Vercel из РФ блокируются РКН по IP).
+5. **Vercel → Settings → Environment Variables** (отметить и Production, и Preview): `DATABASE_URL`, `AUTH_SECRET`, `ANON_PEPPER`, `CRON_SECRET`, `APP_TZ` и `NEXT_PUBLIC_APP_TZ` (= `Asia/Yekaterinburg`), `POLZA_API_KEY`, `OCR_MODEL`, `OCR_MODEL_STRONG`, `R2_*`. Плюс на первый запуск: `SEED_ADMIN_NAME="Фамилия Имя"` и `SEED_INVITE_CODE=M41-XXXX-XXXX` (без него код сгенерируется случайно и будет виден только в логе сборки).
+6. **Deployments → последний деплой → Redeploy.** Сборка на Vercel сама применяет миграции к базе из `DATABASE_URL` и при заданном `SEED_ADMIN_NAME` создаёт группу и админа (повторные сборки ничего не дублируют). После первого входа `SEED_*` можно удалить.
+7. **Первый вход**: открыть `/enter`, ввести код, выбрать себя, задать PIN → Профиль → Админка.
+8. **Наполнение** (Админка): Люди — добавить 21 одногруппника; Предметы — справочник с преподавателями и аудиториями; Семестры — даты семестра и сессии; Настройки — время пар и инвайт-код; Расписание → Новая неделя → «По скану» или вручную → Опубликовать.
+9. Кинуть в беседу группы ссылку и инвайт-код. Домен оставить `*.vercel.app` (кастомные домены Vercel из РФ блокируются РКН по IP).
+
+Production-ветка проекта — `main`. Пока код живёт в `claude/classmate-app-planning-ypgy29`, деплой с неё — preview с длинным адресом вида `raspison-git-<ветка>-<команда>.vercel.app`. Короткий `raspison.vercel.app` появится после мержа в `main` (или смены Production Branch в Settings → Git). Cron из `vercel.json` (23:00 UTC = 04:00 по Оренбургу) подхватывается автоматически; Vercel сам передаёт `CRON_SECRET` в заголовке `Authorization`.
 
 ## Еженедельный ритуал (суббота, 10 минут)
 

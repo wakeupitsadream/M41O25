@@ -1,0 +1,78 @@
+
+> raspison@0.1.0 build
+> node scripts/build.mjs
+
+[build] миграции пропущены (VERCEL=нет, DATABASE_URL=нет)
+   ▲ Next.js 15.5.25
+   - Environments: .env.local
+
+   Creating an optimized production build ...
+ ✓ (serwist) Bundling the service worker script with the URL '/sw.js' and the scope '/'...
+ ✓ Compiled successfully in 20.9s
+   Linting and checking validity of types ...
+   Collecting page data ...
+   Generating static pages (0/27) ...
+   Generating static pages (6/27) 
+   Generating static pages (13/27) 
+   Generating static pages (20/27) 
+ ✓ Generating static pages (27/27)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                                 Size  First Load JS
+┌ ○ /                                      159 B         104 kB
+├ ○ /_not-found                            999 B         105 kB
+├ ○ /~offline                              197 B         108 kB
+├ ƒ /admin                                 197 B         108 kB
+├ ƒ /admin/schedule                        197 B         108 kB
+├ ƒ /admin/schedule/[weekId]             8.49 kB         176 kB
+├ ƒ /admin/schedule/new                  2.51 kB         115 kB
+├ ƒ /admin/semesters                     2.52 kB         115 kB
+├ ƒ /admin/settings                      2.51 kB         115 kB
+├ ƒ /admin/subjects                      2.07 kB         119 kB
+├ ƒ /admin/subjects/[id]                 2.52 kB         115 kB
+├ ƒ /admin/users                           197 B         108 kB
+├ ƒ /admin/users/[id]                      174 B         116 kB
+├ ƒ /admin/users/new                       166 B         116 kB
+├ ƒ /api/admin/recognize                   159 B         104 kB
+├ ƒ /api/cron/daily                        159 B         104 kB
+├ ƒ /api/files/[id]                        159 B         104 kB
+├ ƒ /api/schedule                          159 B         104 kB
+├ ƒ /api/share/day                         159 B         104 kB
+├ ƒ /api/upload                            159 B         104 kB
+├ ƒ /enter                                3.1 kB         116 kB
+├ ƒ /enter/pin                           2.65 kB         119 kB
+├ ƒ /enter/who                             197 B         108 kB
+├ ƒ /group                                 197 B         108 kB
+├ ƒ /group/birthdays                       197 B         108 kB
+├ ƒ /group/contacts                        179 B         108 kB
+├ ƒ /group/contacts/[id]                 2.07 kB         119 kB
+├ ƒ /group/contacts/new                  2.07 kB         119 kB
+├ ƒ /group/feed                            527 B         109 kB
+├ ƒ /group/news                           4.6 kB         170 kB
+├ ƒ /group/news/new                      2.16 kB         131 kB
+├ ƒ /group/polls                         4.55 kB         170 kB
+├ ƒ /group/polls/new                     3.63 kB         120 kB
+├ ƒ /group/questions                     4.73 kB         161 kB
+├ ƒ /group/roulette                      5.16 kB         161 kB
+├ ƒ /group/tasks                           179 B         108 kB
+├ ƒ /group/tasks/[id]                    5.27 kB         170 kB
+├ ƒ /group/tasks/new                     3.06 kB         120 kB
+├ ƒ /hw                                  3.99 kB         169 kB
+├ ƒ /hw/[id]                             8.04 kB         176 kB
+├ ƒ /hw/new                              4.82 kB         174 kB
+├ ○ /manifest.webmanifest                  159 B         104 kB
+├ ƒ /me                                  4.87 kB         161 kB
+└ ƒ /s/[[...seg]]                        12.9 kB         174 kB
++ First Load JS shared by all             104 kB
+  ├ chunks/2804-382b781f33ab6033.js      47.8 kB
+  ├ chunks/4bd1b696-f785427dddbba9fb.js  54.2 kB
+  └ other shared chunks (total)             2 kB
+
+
+ƒ Middleware                             34.4 kB
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
+BUILD_EXIT=0

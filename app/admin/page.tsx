@@ -60,7 +60,7 @@ export default async function AdminHome() {
               <DatabaseBackup className="size-4" /> <span className="text-[12px] font-medium">Бэкап</span>
             </div>
             <div className="mt-2 font-display text-xl font-bold tnum">{backup ?? "нет"}</div>
-            <div className="truncate text-[11px] text-dim">{storage.kind === "r2" ? "ежедневно в R2" : "локальная папка"}</div>
+            <div className="truncate text-[11px] text-dim">{storage.kind === "r2" ? "ежедневно в R2" : process.env.VERCEL ? "R2 не подключён — бэкапов и файлов нет" : "локальная папка"}</div>
           </Card>
         </div>
       )}
