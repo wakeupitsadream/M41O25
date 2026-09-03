@@ -28,6 +28,9 @@ assert.ok(scheduleCached, "/api/schedule не попал в кеш SW");
 await ctx.setOffline(true);
 await page.reload({ waitUntil: "domcontentloaded" }).catch((e) => console.log("reload error:", e.message));
 await page.waitForTimeout(2500);
+// Плашка «Офлайн» появляется после ответа /api/schedule: офлайн-запрос через service worker может ждать
+// таймаут сети (6 с) — на медленной машине CI это дольше 2,5 с, поэтому ждём до 12 с.
+await page.locator("text=Офлайн").first().waitFor({ timeout: 12000 }).catch(() => {});
 const cards = await page.locator("button:has-text('Понедельник')").count();
 const offlinePill = await page.locator("text=Офлайн").count();
 console.log("offline: day cards =", cards, "| offline pill =", offlinePill, "| url =", page.url());
