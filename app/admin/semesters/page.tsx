@@ -1,4 +1,5 @@
 import { asc, eq } from "drizzle-orm";
+import { ActionForm } from "@/components/ui/action-form";
 import { db } from "@/lib/db";
 import { semesters } from "@/lib/db/schema";
 import { requireRole } from "@/lib/auth";
@@ -21,7 +22,7 @@ export default async function AdminSemesters() {
 
       {list.map((s) => (
         <Card key={s.id}>
-          <form action={updateSemester.bind(null, s.id)} className="space-y-3">
+          <ActionForm action={updateSemester.bind(null, s.id)} className="space-y-3">
             <Field label="Название">
               <Input name="title" defaultValue={s.title} required />
             </Field>
@@ -42,12 +43,12 @@ export default async function AdminSemesters() {
                 Удалить
               </ConfirmButton>
             </div>
-          </form>
+          </ActionForm>
         </Card>
       ))}
 
       <Card>
-        <form action={createSemester} className="space-y-3">
+        <ActionForm action={createSemester} className="space-y-3">
           <div className="font-display text-[16px] font-bold">Новый семестр</div>
           <Field label="Название">
             <Input name="title" placeholder={`Весна ${year + 1}`} required />
@@ -64,7 +65,7 @@ export default async function AdminSemesters() {
             </Field>
           </div>
           <SubmitButton className="w-full">Создать</SubmitButton>
-        </form>
+        </ActionForm>
       </Card>
     </div>
   );

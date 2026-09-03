@@ -17,20 +17,21 @@ const serwist = new Serwist({
   navigationPreload: true,
   runtimeCaching: [
     {
-      // Документы (навигации): свежая версия из сети, при плохой связи через 4 с — последняя сохранённая.
+      // Документы (навигации): свежая версия из сети, при плохой связи через 8 с — последняя сохранённая
+      // (холодный старт функции + пробуждение Neon утром укладываются в это окно; офлайн срабатывает сразу по ошибке сети).
       matcher: ({ request, sameOrigin }) => sameOrigin && request.mode === "navigate",
       handler: new NetworkFirst({
         cacheName: "raspison-pages",
-        networkTimeoutSeconds: 4,
+        networkTimeoutSeconds: 8,
         plugins: [new ExpirationPlugin({ maxEntries: 40, maxAgeSeconds: 60 * 60 * 24 * 14 })],
       }),
     },
     {
-      // Расписание: в универе связь плохая — 3 секунды ждём сеть, потом отдаём последнюю сохранённую версию.
+      // Расписание: в универе связь плохая — 6 секунд ждём сеть, потом отдаём последнюю сохранённую версию.
       matcher: ({ url, sameOrigin }) => sameOrigin && url.pathname.startsWith("/api/schedule"),
       handler: new NetworkFirst({
         cacheName: "raspison-schedule",
-        networkTimeoutSeconds: 3,
+        networkTimeoutSeconds: 6,
         plugins: [new ExpirationPlugin({ maxEntries: 4, maxAgeSeconds: 60 * 60 * 24 * 30 })],
       }),
     },

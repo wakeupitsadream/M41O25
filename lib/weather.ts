@@ -20,7 +20,12 @@ const CODES: Array<[number[], string, string]> = [
 const describe = (code: number) => CODES.find(([codes]) => codes.includes(code)) ?? [[], "пасмурно", "☁️"];
 
 /** Погода в конкретный час (ISO-дата + «HH:MM») в поясе группы. null — если сервис недоступен или дата дальше 2 дней. */
+let failedAt = 0;
+const FAIL_MEMO_MS = 10 * 60_000;
+
 export async function weatherAt(dateIso: string, hm: string): Promise<WeatherPoint | null> {
+  // Недавняя неудача — не ходим в сеть 10 минут: главный экран не должен ждать мёртвый сервис.
+  if (Date.now() - failedAt < FAIL_MEMO_MS) return null;
   try {
     const url = new URL("https://api.open-meteo.com/v1/forecast");
     url.searchParams.set("latitude", String(LAT));
@@ -28,8 +33,11 @@ export async function weatherAt(dateIso: string, hm: string): Promise<WeatherPoi
     url.searchParams.set("hourly", "temperature_2m,weather_code,precipitation_probability");
     url.searchParams.set("timezone", process.env.APP_TZ ?? "Asia/Yekaterinburg");
     url.searchParams.set("forecast_days", "3");
-    const res = await fetch(url, { next: { revalidate: 3600 }, signal: AbortSignal.timeout(4000) });
-    if (!res.ok) return null;
+    const res = await fetch(url, { next: { revalidate: 3600 }, signal: AbortSignal.timeout(1500) });
+    if (!res.ok) {
+      failedAt = Date.now();
+      return null;
+    }
     const json = (await res.json()) as { hourly?: { time: string[]; temperature_2m: number[]; weather_code: number[]; precipitation_probability: number[] } };
     const h = json.hourly;
     if (!h) return null;
@@ -40,6 +48,7 @@ export async function weatherAt(dateIso: string, hm: string): Promise<WeatherPoi
     const [, label, emoji] = describe(code);
     return { temp: Math.round(h.temperature_2m[i]), code, precipProb: h.precipitation_probability[i] ?? 0, label, emoji };
   } catch {
+    failedAt = Date.now();
     return null;
   }
 }

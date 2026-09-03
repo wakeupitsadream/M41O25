@@ -11,7 +11,8 @@ export function ClearLocal() {
         .forEach((k) => localStorage.removeItem(k));
     } catch {}
     if ("caches" in window) {
-      void caches.keys().then((keys) => Promise.all(keys.filter((k) => k.startsWith("raspison-")).map((k) => caches.delete(k))));
+      // Не только наши raspison-*: defaultCache Serwist держит RSC-страницы и ответы /api/* (в т.ч. файлы) прошлого пользователя.
+      void caches.keys().then((keys) => Promise.all(keys.filter((k) => !k.includes("precache")).map((k) => caches.delete(k))));
     }
   }, []);
   return null;

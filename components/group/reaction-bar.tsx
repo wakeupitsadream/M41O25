@@ -4,6 +4,7 @@ import { useOptimistic, useTransition } from "react";
 import { toggleReaction } from "@/app/(app)/group/actions";
 import type { ReactionSummary } from "@/lib/group/query";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/components/ui/toast";
 
 const EMOJI = ["🔥", "👍", "💀", "❤️"];
 
@@ -16,6 +17,7 @@ export function ReactionBar({ entityType, entityId, reactions }: { entityType: "
       .filter((r) => r.count > 0);
   });
   const [, start] = useTransition();
+  const toast = useToast();
 
   return (
     <div className="flex flex-wrap gap-1.5">
@@ -28,7 +30,8 @@ export function ReactionBar({ entityType, entityId, reactions }: { entityType: "
             onClick={() =>
               start(async () => {
                 apply(e);
-                await toggleReaction(entityType, entityId, e);
+                const res = await toggleReaction(entityType, entityId, e);
+                if (!res.ok) toast(res.error ?? "Реакция не сохранилась");
               })
             }
             className={cn(

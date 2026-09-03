@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { deviceSessions, users } from "@/lib/db/schema";
 import { actionUser } from "@/lib/auth";
 import { USER_COLORS, fail, ok, type ActionResult } from "@/lib/utils";
+import type { FormState } from "@/lib/form";
 
 const userSchema = z.object({
   fullName: z.string().trim().min(2, "Имя слишком короткое").max(80),
@@ -27,10 +28,10 @@ const read = (fd: FormData) => ({
   birthday: fd.get("birthday") ?? "",
 });
 
-export async function createUser(formData: FormData) {
+export async function createUser(_prev: FormState, formData: FormData): Promise<FormState> {
   const admin = await actionUser("admin");
   const parsed = userSchema.safeParse(read(formData));
-  if (!parsed.success) throw new Error(parsed.error.issues[0].message);
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
   const d = parsed.data;
   await db.insert(users).values({
     groupId: admin.groupId,
@@ -45,10 +46,10 @@ export async function createUser(formData: FormData) {
   redirect("/admin/users");
 }
 
-export async function updateUser(id: string, formData: FormData) {
+export async function updateUser(id: string, _prev: FormState, formData: FormData): Promise<FormState> {
   const admin = await actionUser("admin");
   const parsed = userSchema.safeParse(read(formData));
-  if (!parsed.success) throw new Error(parsed.error.issues[0].message);
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
   const d = parsed.data;
   // Нельзя снять роль с самого себя — иначе легко остаться без админа.
   const role = id === admin.id ? "admin" : d.role;
@@ -87,6 +88,14 @@ export async function setUserStatus(id: string, status: "active" | "removed"): P
     await db.update(deviceSessions).set({ revokedAt: new Date() }).where(and(eq(deviceSessions.userId, id), isNull(deviceSessions.revokedAt)));
   }
   revalidatePath("/admin/users");
+  revalidatePath(`/admin/users/${id}`);
+  return ok();
+}
+
+/** Снять блокировку PIN (после серии неверных попыток, в т.ч. чужих): счётчик в ноль, срок блокировки убран, PIN остаётся. */
+export async function unlockPin(id: string): Promise<ActionResult> {
+  const admin = await actionUser("admin");
+  await db.update(users).set({ pinFailedCount: 0, pinLockedUntil: null }).where(and(eq(users.id, id), eq(users.groupId, admin.groupId)));
   revalidatePath(`/admin/users/${id}`);
   return ok();
 }

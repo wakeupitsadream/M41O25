@@ -1,11 +1,13 @@
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { SubmitButton } from "@/components/admin/forms";
+import { ActionForm } from "@/components/ui/action-form";
+import type { FormState } from "@/lib/form";
 
 type Values = { kind?: "teacher" | "dean" | "other"; name?: string; roleOrSubject?: string | null; phone?: string | null; email?: string | null; messenger?: string | null; note?: string | null };
 
-export function ContactForm({ action, values, submitLabel }: { action: (fd: FormData) => Promise<void>; values?: Values; submitLabel: string }) {
+export function ContactForm({ action, values, submitLabel }: { action: (prev: FormState, fd: FormData) => Promise<FormState>; values?: Values; submitLabel: string }) {
   return (
-    <form action={action} className="space-y-3">
+    <ActionForm action={action} className="space-y-3">
       <Field label="Кто это">
         <Select name="kind" defaultValue={values?.kind ?? "teacher"}>
           <option value="teacher">Преподаватель</option>
@@ -36,6 +38,6 @@ export function ContactForm({ action, values, submitLabel }: { action: (fd: Form
       <SubmitButton className="w-full" size="lg">
         {submitLabel}
       </SubmitButton>
-    </form>
+    </ActionForm>
   );
 }

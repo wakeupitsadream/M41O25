@@ -43,6 +43,9 @@ export default async function WhoPage() {
         ))}
         {list.length === 0 && <li className="px-4 py-6 text-center text-muted">В группе пока никого нет</li>}
       </ul>
+      <p className="text-center text-[12px] leading-relaxed text-dim">
+        Имя, эмодзи и день рождения видны только участникам группы. Сервис размещён на Vercel и Neon (за пределами РФ). Удалиться из группы можно через админа.
+      </p>
       <Link href="/enter" className="block text-center text-[14px] text-muted underline-offset-4 hover:underline">
         Другой код
       </Link>

@@ -15,6 +15,13 @@
       "when": 1788402944089,
       "tag": "0001_auth_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788464792570,
+      "tag": "0002_diagnostics",
+      "breakpoints": true
     }
   ]
 }

@@ -44,31 +44,33 @@ export async function createHomework(input: CreateHomeworkInput): Promise<Action
     await assertRate(user);
     const d = parsed.data;
 
-    const [row] = await db
-      .insert(homework)
-      .values({
+    const row = await db.transaction(async (tx) => {
+      const [h] = await tx
+        .insert(homework)
+        .values({
+          groupId: user.groupId,
+          subjectId: d.subjectId,
+          title: d.title || null,
+          body: d.body,
+          dueDate: d.dueDate,
+          createdBy: user.id,
+        })
+        .returning({ id: homework.id });
+      if (d.attachmentIds.length) {
+        await tx
+          .update(attachments)
+          .set({ entityId: h.id })
+          .where(and(inArray(attachments.id, d.attachmentIds), eq(attachments.uploadedBy, user.id), isNull(attachments.entityId), eq(attachments.entityType, "homework")));
+      }
+      await tx.insert(activity).values({
         groupId: user.groupId,
-        subjectId: d.subjectId,
-        title: d.title || null,
-        body: d.body,
-        dueDate: d.dueDate,
-        createdBy: user.id,
-      })
-      .returning({ id: homework.id });
-
-    if (d.attachmentIds.length) {
-      await db
-        .update(attachments)
-        .set({ entityId: row.id })
-        .where(and(inArray(attachments.id, d.attachmentIds), eq(attachments.uploadedBy, user.id), isNull(attachments.entityId), eq(attachments.entityType, "homework")));
-    }
-    await db.insert(activity).values({
-      groupId: user.groupId,
-      eventType: "hw_added",
-      entityType: "homework",
-      entityId: row.id,
-      actorId: user.id,
-      payload: { title: d.title || d.body.slice(0, 80), dueDate: d.dueDate, subjectId: d.subjectId },
+        eventType: "hw_added",
+        entityType: "homework",
+        entityId: h.id,
+        actorId: user.id,
+        payload: { title: d.title || d.body.slice(0, 80), dueDate: d.dueDate, subjectId: d.subjectId },
+      });
+      return h;
     });
     bump(row.id);
     return ok({ id: row.id });
@@ -154,14 +156,15 @@ export async function toggleDone(homeworkId: string): Promise<ActionResult<{ don
     const user = await actionUser();
     const [hw] = await db.select({ id: homework.id }).from(homework).where(and(eq(homework.id, homeworkId), eq(homework.groupId, user.groupId), isNull(homework.deletedAt)));
     if (!hw) return fail("Запись не найдена");
-    const removed = await db.delete(hwDone).where(and(eq(hwDone.userId, user.id), eq(hwDone.homeworkId, homeworkId))).returning({ h: hwDone.homeworkId });
-    if (removed.length) {
+    // Сначала вставка: два быстрых тапа дают «вставил → конфликт → удалил», то есть возвращают исходное состояние.
+    const inserted = await db.insert(hwDone).values({ userId: user.id, homeworkId }).onConflictDoNothing().returning({ h: hwDone.homeworkId });
+    if (inserted.length) {
       bump(homeworkId);
-      return ok<{ done: boolean }>({ done: false });
+      return ok<{ done: boolean }>({ done: true });
     }
-    await db.insert(hwDone).values({ userId: user.id, homeworkId }).onConflictDoNothing();
+    await db.delete(hwDone).where(and(eq(hwDone.userId, user.id), eq(hwDone.homeworkId, homeworkId)));
     bump(homeworkId);
-    return ok<{ done: boolean }>({ done: true });
+    return ok<{ done: boolean }>({ done: false });
   });
 }
 

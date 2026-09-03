@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ActionForm } from "@/components/ui/action-form";
 import { asc, eq } from "drizzle-orm";
 import { ChevronRight } from "lucide-react";
 import { db } from "@/lib/db";
@@ -35,7 +36,7 @@ export default async function AdminSubjects() {
         {list.length === 0 && <li className="px-4 py-6 text-center text-muted">Пока пусто</li>}
       </ul>
       <Card>
-        <form action={createSubject} className="space-y-3">
+        <ActionForm action={createSubject} className="space-y-3">
           <div className="font-display text-[16px] font-bold">Добавить предмет</div>
           <Field label="Название">
             <Input name="name" placeholder="Математический анализ" required />
@@ -57,7 +58,7 @@ export default async function AdminSubjects() {
             </Field>
           </div>
           <SubmitButton className="w-full">Добавить</SubmitButton>
-        </form>
+        </ActionForm>
       </Card>
     </div>
   );

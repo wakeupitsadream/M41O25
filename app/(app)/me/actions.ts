@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
-import { actionUser, destroySession } from "@/lib/auth";
+import { actionUser, destroySession, hashPin, verifyPin } from "@/lib/auth";
+import type { FormState } from "@/lib/form";
 
 export async function logout() {
   await destroySession();
@@ -33,4 +34,19 @@ export async function updateProfile(formData: FormData) {
     })
     .where(eq(users.id, user.id));
   revalidatePath("/me");
+}
+
+/** Смена PIN: нужен текущий; сессии на других устройствах остаются (PIN нужен только для входа). */
+export async function changePin(_prev: FormState, formData: FormData): Promise<FormState> {
+  const user = await actionUser();
+  const current = String(formData.get("current") ?? "");
+  const pin = String(formData.get("pin") ?? "");
+  const pin2 = String(formData.get("pin2") ?? "");
+  if (!/^\d{4}$/.test(pin)) return { error: "Новый PIN — ровно 4 цифры" };
+  if (pin !== pin2) return { error: "Новый PIN не совпадает" };
+  if (!user.pinHash || !verifyPin(current, user.pinHash)) return { error: "Текущий PIN неверный" };
+  if (current === pin) return { error: "Новый PIN совпадает с текущим" };
+  await db.update(users).set({ pinHash: hashPin(pin), pinFailedCount: 0, pinLockedUntil: null }).where(eq(users.id, user.id));
+  revalidatePath("/me");
+  return { success: "PIN изменён" };
 }

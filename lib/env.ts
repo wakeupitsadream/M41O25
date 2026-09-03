@@ -3,6 +3,8 @@ export const env = {
   authSecret: process.env.AUTH_SECRET ?? "",
   anonPepper: process.env.ANON_PEPPER ?? "",
   cronSecret: process.env.CRON_SECRET ?? "",
+  /** healthchecks.io (или аналог): cron пингует после каждого запуска, /fail — при ошибке. */
+  healthcheckUrl: process.env.HEALTHCHECK_URL ?? "",
   polza: {
     apiKey: process.env.POLZA_API_KEY ?? "",
     baseUrl: process.env.POLZA_BASE_URL ?? "https://polza.ai/api/v1",

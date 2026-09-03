@@ -486,3 +486,27 @@ export type Lesson = typeof lessons.$inferSelect;
 export type Homework = typeof homework.$inferSelect;
 export type LessonKind = (typeof lessonKindEnum.enumValues)[number];
 export type Role = (typeof roleEnum.enumValues)[number];
+
+/** Ошибки серверного рендера и роутов (instrumentation.ts → onRequestError): у Vercel Hobby логи живут около часа. */
+export const appErrors = pgTable(
+  "app_errors",
+  {
+    id: id(),
+    route: text("route"),
+    message: text("message").notNull(),
+    digest: text("digest"),
+    kind: text("kind"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("app_errors_created_idx").on(t.createdAt)],
+);
+
+/** Журнал ежедневного cron: видно в админке, бьёт в healthchecks при провале. */
+export const cronRuns = pgTable("cron_runs", {
+  id: id(),
+  ok: boolean("ok").notNull(),
+  durationMs: integer("duration_ms").notNull(),
+  error: text("error"),
+  details: jsonb("details").$type<Record<string, unknown>>(),
+  ranAt: timestamp("ran_at", { withTimezone: true }).notNull().defaultNow(),
+});

@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import type { FormState } from "@/lib/form";
 import { redirect } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -19,7 +20,7 @@ const bump = (weekId: string) => {
   revalidatePath(`/admin/schedule/${weekId}`);
 };
 
-export async function createWeek(formData: FormData) {
+export async function createWeek(_prev: FormState, formData: FormData): Promise<FormState> {
   const user = await actionUser("admin");
   const parsed = z
     .object({
@@ -34,7 +35,7 @@ export async function createWeek(formData: FormData) {
       semesterId: formData.get("semesterId") ?? "",
       copyFrom: formData.get("copyFrom") ?? "",
     });
-  if (!parsed.success) throw new Error("Проверь дату недели");
+  if (!parsed.success) return { error: "Проверь дату недели: нужна дата в формате ГГГГ-ММ-ДД" };
   const startsOn = mondayIso(parsed.data.startsOn);
 
   const exists = await db.select({ id: weeks.id }).from(weeks).where(and(eq(weeks.groupId, user.groupId), eq(weeks.startsOn, startsOn)));

@@ -5,7 +5,8 @@ import { Avatar, PageHeader } from "@/components/ui/primitives";
 import { Card } from "@/components/ui/card";
 import { Field, Input } from "@/components/ui/input";
 import { SubmitButton } from "@/components/admin/forms";
-import { logout, toggleShowHwDone, updateProfile } from "./actions";
+import { changePin, logout, toggleShowHwDone, updateProfile } from "./actions";
+import { ActionForm } from "@/components/ui/action-form";
 import { cn } from "@/lib/utils";
 import { InstallHint } from "@/components/features/install-hint";
 
@@ -56,6 +57,28 @@ export default async function MePage() {
             </SubmitButton>
           </form>
         </Card>
+
+        <Card>
+          <ActionForm action={changePin} className="space-y-3">
+            <div className="font-display text-[16px] font-bold">Сменить PIN</div>
+            <div className="grid grid-cols-3 gap-2">
+              <Field label="Текущий">
+                <Input name="current" inputMode="numeric" pattern="\d{4}" maxLength={4} autoComplete="current-password" required className="text-center tracking-widest" />
+              </Field>
+              <Field label="Новый">
+                <Input name="pin" inputMode="numeric" pattern="\d{4}" maxLength={4} autoComplete="new-password" required className="text-center tracking-widest" />
+              </Field>
+              <Field label="Ещё раз">
+                <Input name="pin2" inputMode="numeric" pattern="\d{4}" maxLength={4} autoComplete="new-password" required className="text-center tracking-widest" />
+              </Field>
+            </div>
+            <SubmitButton variant="secondary" className="w-full">
+              Сменить PIN
+            </SubmitButton>
+          </ActionForm>
+        </Card>
+
+        <p className="px-1 text-[12px] leading-relaxed text-dim">Удалиться из группы — напиши админу: он убирает профиль из списка, записи остаются без имени.</p>
 
         <form action={logout}>
           <button type="submit" className="flex w-full items-center gap-3 rounded-lg bg-surface p-4 text-danger hairline active:bg-surface-2">

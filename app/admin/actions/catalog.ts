@@ -9,6 +9,7 @@ import { groups, semesters, subjects, type SlotTime } from "@/lib/db/schema";
 import { actionUser } from "@/lib/auth";
 import { generateInviteSuffix, ok, type ActionResult } from "@/lib/utils";
 import { invitePrefix } from "@/lib/invite";
+import type { FormState } from "@/lib/form";
 
 const iso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -30,10 +31,10 @@ const readSubject = (fd: FormData) => ({
   defaultRoom: fd.get("defaultRoom") ?? "",
 });
 
-export async function createSubject(formData: FormData) {
+export async function createSubject(_prev: FormState, formData: FormData): Promise<FormState> {
   const admin = await actionUser("admin");
   const parsed = subjectSchema.safeParse(readSubject(formData));
-  if (!parsed.success) throw new Error(parsed.error.issues[0].message);
+  if (!parsed.success) return { error: "Проверь поля: название от 2 символов, цвет в формате #RRGGBB" };
   const d = parsed.data;
   await db.insert(subjects).values({
     groupId: admin.groupId,
@@ -45,12 +46,13 @@ export async function createSubject(formData: FormData) {
   });
   revalidatePath("/admin/subjects");
   revalidatePath("/s", "layout");
+  return { success: "Предмет добавлен" };
 }
 
-export async function updateSubject(id: string, formData: FormData) {
+export async function updateSubject(id: string, _prev: FormState, formData: FormData): Promise<FormState> {
   const admin = await actionUser("admin");
   const parsed = subjectSchema.safeParse(readSubject(formData));
-  if (!parsed.success) throw new Error(parsed.error.issues[0].message);
+  if (!parsed.success) return { error: "Проверь поля: название от 2 символов, цвет в формате #RRGGBB" };
   const d = parsed.data;
   await db
     .update(subjects)
@@ -85,11 +87,12 @@ const readSemester = (fd: FormData) => ({
   sessionStartsOn: fd.get("sessionStartsOn") ?? "",
 });
 
-export async function createSemester(formData: FormData) {
+export async function createSemester(_prev: FormState, formData: FormData): Promise<FormState> {
   const admin = await actionUser("admin");
   const parsed = semesterSchema.safeParse(readSemester(formData));
-  if (!parsed.success) throw new Error(parsed.error.issues[0].message);
+  if (!parsed.success) return { error: "Проверь поля: название от 2 символов и обе даты" };
   const d = parsed.data;
+  if (d.endsOn <= d.startsOn) return { error: "Конец семестра должен быть позже начала" };
   await db.insert(semesters).values({
     groupId: admin.groupId,
     title: d.title,
@@ -99,19 +102,22 @@ export async function createSemester(formData: FormData) {
   });
   revalidatePath("/admin/semesters");
   revalidatePath("/s", "layout");
+  return { success: "Семестр создан" };
 }
 
-export async function updateSemester(id: string, formData: FormData) {
+export async function updateSemester(id: string, _prev: FormState, formData: FormData): Promise<FormState> {
   const admin = await actionUser("admin");
   const parsed = semesterSchema.safeParse(readSemester(formData));
-  if (!parsed.success) throw new Error(parsed.error.issues[0].message);
+  if (!parsed.success) return { error: "Проверь поля: название от 2 символов и обе даты" };
   const d = parsed.data;
+  if (d.endsOn <= d.startsOn) return { error: "Конец семестра должен быть позже начала" };
   await db
     .update(semesters)
     .set({ title: d.title, startsOn: d.startsOn, endsOn: d.endsOn, sessionStartsOn: d.sessionStartsOn || null })
     .where(and(eq(semesters.id, id), eq(semesters.groupId, admin.groupId)));
   revalidatePath("/admin/semesters");
   revalidatePath("/s", "layout");
+  return { success: "Сохранено" };
 }
 
 export async function deleteSemester(id: string): Promise<ActionResult> {
@@ -133,7 +139,7 @@ export async function rotateInviteCode(): Promise<ActionResult<{ code: string }>
   return ok({ code });
 }
 
-export async function updateSlotTimes(formData: FormData) {
+export async function updateSlotTimes(_prev: FormState, formData: FormData): Promise<FormState> {
   const admin = await actionUser("admin");
   const rows: SlotTime[] = [];
   for (let slot = 1; slot <= 8; slot++) {
@@ -141,17 +147,20 @@ export async function updateSlotTimes(formData: FormData) {
     const end = String(formData.get(`end${slot}`) ?? "").trim();
     if (/^\d{2}:\d{2}$/.test(start) && /^\d{2}:\d{2}$/.test(end)) rows.push({ slot, start, end });
   }
-  if (rows.length === 0) throw new Error("Нужна хотя бы одна пара");
+  if (rows.length === 0) return { error: "Нужна хотя бы одна пара с началом и концом в формате ЧЧ:ММ" };
+  if (rows.some((r) => r.end <= r.start)) return { error: "Конец пары должен быть позже её начала" };
   await db.update(groups).set({ slotTimes: rows }).where(eq(groups.id, admin.groupId));
   revalidatePath("/admin/settings");
   revalidatePath("/s", "layout");
+  return { success: "Время пар сохранено" };
 }
 
-export async function updateGroupName(formData: FormData) {
+export async function updateGroupName(_prev: FormState, formData: FormData): Promise<FormState> {
   const admin = await actionUser("admin");
   const name = String(formData.get("name") ?? "").trim();
   const shortName = String(formData.get("shortName") ?? "").trim();
-  if (shortName.length < 2) throw new Error("Слишком короткий шифр группы");
+  if (shortName.length < 2) return { error: "Слишком короткий шифр группы" };
   await db.update(groups).set({ name: name || `Группа ${shortName}`, shortName }).where(eq(groups.id, admin.groupId));
   revalidatePath("/admin/settings");
+  return { success: "Сохранено" };
 }

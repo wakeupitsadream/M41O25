@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { ActionForm } from "@/components/ui/action-form";
 import { headers } from "next/headers";
 import { db } from "@/lib/db";
 import { groups } from "@/lib/db/schema";
@@ -34,7 +35,7 @@ export default async function AdminSettings() {
       </Card>
 
       <Card>
-        <form action={updateGroupName} className="space-y-3">
+        <ActionForm action={updateGroupName} className="space-y-3">
           <div className="font-display text-[16px] font-bold">Группа</div>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Шифр">
@@ -47,11 +48,11 @@ export default async function AdminSettings() {
           <SubmitButton className="w-full" variant="secondary">
             Сохранить
           </SubmitButton>
-        </form>
+        </ActionForm>
       </Card>
 
       <Card>
-        <form action={updateSlotTimes} className="space-y-3">
+        <ActionForm action={updateSlotTimes} className="space-y-3">
           <div className="font-display text-[16px] font-bold">Время пар</div>
           <p className="text-[13px] text-muted">Подставляется при добавлении пары и распознавании скана. Пустые строки не учитываются.</p>
           <div className="space-y-2">
@@ -66,7 +67,7 @@ export default async function AdminSettings() {
           <SubmitButton className="w-full" variant="secondary">
             Сохранить
           </SubmitButton>
-        </form>
+        </ActionForm>
       </Card>
     </div>
   );

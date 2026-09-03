@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { and, count, eq, desc } from "drizzle-orm";
-import { CalendarPlus, ChevronRight, DatabaseBackup, KeyRound, Users2, BookMarked, Wallet } from "lucide-react";
-import { lastBackup, polzaBalance } from "@/lib/admin/status";
+import { Activity, CalendarPlus, ChevronRight, DatabaseBackup, KeyRound, Users2, BookMarked, Wallet } from "lucide-react";
+import { diagnostics, lastBackup, polzaBalance } from "@/lib/admin/status";
 import { signScoped } from "@/lib/files/token";
 import { storage } from "@/lib/storage";
 import { db } from "@/lib/db";
@@ -11,6 +11,7 @@ import { mondayIso, addDaysIso } from "@/lib/tz";
 import { fmtRangeShort } from "@/lib/schedule/time";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/primitives";
+import { cn } from "@/lib/utils";
 
 export default async function AdminHome() {
   const user = await requireRole("moderator");
@@ -22,7 +23,8 @@ export default async function AdminHome() {
   const nextMonday = addDaysIso(thisMonday, 7);
   const current = recent.find((w) => w.startsOn === thisMonday);
   const next = recent.find((w) => w.startsOn === nextMonday);
-  const [polza, backup] = user.role === "admin" ? await Promise.all([polzaBalance(), lastBackup()]) : [null, null];
+  const [polza, backup, diag] = user.role === "admin" ? await Promise.all([polzaBalance(), lastBackup(), diagnostics()]) : [null, null, null];
+  const backupStale = backup ? Date.now() - Date.parse(backup) > 2 * 86_400_000 : true;
 
   return (
     <div className="space-y-4">
@@ -72,6 +74,43 @@ export default async function AdminHome() {
         </div>
       )}
 
+      {user.role === "admin" && diag && (
+        <Card className="space-y-2">
+          <div className="flex items-center gap-2 text-muted">
+            <Activity className="size-4" /> <span className="text-[12px] font-medium">Диагностика</span>
+          </div>
+          <ul className="space-y-1.5 text-[13px]">
+            <DiagRow ok={!diag.db.error} text={diag.db.error ? `База: ${diag.db.error}` : `База отвечает за ${diag.db.ms} мс`} />
+            <DiagRow ok={diag.storage.ok} text={diag.storage.line} />
+            <DiagRow
+              ok={!backupStale}
+              text={backup ? `Последний бэкап ${backup}${backupStale ? " — старше двух дней" : ""}` : "Бэкапов ещё не было"}
+            />
+            <DiagRow
+              ok={Boolean(diag.lastCron?.ok)}
+              text={
+                diag.lastCron
+                  ? `Cron ${diag.lastCron.ok ? "прошёл" : "упал"} ${diag.lastCron.ranAt.toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Yekaterinburg" })}${diag.lastCron.error ? `: ${diag.lastCron.error}` : ""}`
+                  : "Cron ещё не запускался (работает только на production)"
+              }
+            />
+            <DiagRow ok={diag.errors24h === 0} text={diag.errors24h < 0 ? "Журнал ошибок недоступен" : diag.errors24h === 0 ? "Ошибок за сутки нет" : `Ошибок за сутки: ${diag.errors24h}`} />
+            {diag.lastErrors.map((e, i) => (
+              <li key={i} className="truncate pl-6 text-[12px] text-dim">
+                {e.route ?? "?"}: {e.message}
+              </li>
+            ))}
+            <DiagRow
+              ok={polza?.balance !== null && polza?.balance !== undefined && polza.balance >= 20}
+              text={polza?.balance !== null && polza?.balance !== undefined ? `Polza: ${polza.balance.toFixed(0)} ₽${polza.balance < 20 ? " — пополни" : ""}` : `Polza: ${polza?.error ?? "нет данных"}`}
+            />
+            {diag.models && ("missing" in diag.models ? <DiagRow ok={diag.models.missing.length === 0} text={diag.models.missing.length ? `Моделей нет в каталоге Polza: ${diag.models.missing.join(", ")}` : "Модели OCR есть в каталоге Polza"} /> : <DiagRow ok={false} text={`Каталог Polza: ${diag.models.error}`} />)}
+            <DiagRow ok={diag.missingEnv.length === 0} text={diag.missingEnv.length ? `Не заданы: ${diag.missingEnv.join(", ")}` : "Все переменные окружения на месте"} />
+            <DiagRow ok={diag.healthcheck} text={diag.healthcheck ? "Сторож cron (HEALTHCHECK_URL) подключён" : "HEALTHCHECK_URL не задан — о пропавшем cron никто не узнает"} />
+          </ul>
+        </Card>
+      )}
+
       {user.role === "admin" && (
         <Card className="flex items-center gap-3">
           <KeyRound className="size-5 text-accent" />
@@ -106,5 +145,14 @@ function Tile({ href, icon, label, value }: { href: string; icon: React.ReactNod
       <div className="mt-3 font-display text-2xl font-bold tnum">{value}</div>
       <div className="text-[13px] text-muted">{label}</div>
     </Link>
+  );
+}
+
+function DiagRow({ ok, text }: { ok: boolean; text: string }) {
+  return (
+    <li className="flex items-start gap-2">
+      <span className={cn("mt-1.5 size-2.5 shrink-0 rounded-full", ok ? "bg-ok" : "bg-warn")} />
+      <span className={cn("min-w-0 break-words", ok ? "text-muted" : "text-fg")}>{text}</span>
+    </li>
   );
 }

@@ -4,6 +4,9 @@ import { todayIso } from "@/lib/tz";
 import { firstName } from "@/lib/utils";
 import { TabBar } from "@/components/features/tab-bar";
 import { BirthdayBanner } from "@/components/group/birthday-banner";
+import { RefreshOnResume } from "@/components/features/refresh-on-resume";
+import { NetStatus } from "@/components/features/net-status";
+import { ToastProvider } from "@/components/ui/toast";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
@@ -12,10 +15,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const todays = birthdays.filter((b) => b.daysUntil === 0).map((b) => ({ id: b.id, fullName: b.fullName, firstName: firstName(b.fullName) }));
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-lg flex-col">
-      <BirthdayBanner today={today} people={todays} meId={user.id} />
-      <div className="flex-1 pb-safe">{children}</div>
-      <TabBar unread={unread} />
-    </div>
+    <ToastProvider>
+      <div className="mx-auto flex min-h-dvh w-full max-w-lg flex-col">
+        <RefreshOnResume />
+        <NetStatus />
+        <BirthdayBanner today={today} people={todays} meId={user.id} />
+        <div className="flex-1 pb-safe">{children}</div>
+        <TabBar unread={unread} />
+      </div>
+    </ToastProvider>
   );
 }

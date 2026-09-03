@@ -4,7 +4,7 @@ import { and, count, eq, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { deviceSessions, users } from "@/lib/db/schema";
 import { requireRole } from "@/lib/auth";
-import { resetPin, revokeSessions, setUserStatus, updateUser } from "@/app/admin/actions/users";
+import { resetPin, revokeSessions, setUserStatus, unlockPin, updateUser } from "@/app/admin/actions/users";
 import { UserForm } from "@/components/admin/user-form";
 import { ConfirmButton } from "@/components/admin/forms";
 import { Card } from "@/components/ui/card";
@@ -18,6 +18,7 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
   if (!u) notFound();
   const [{ sessions }] = await db.select({ sessions: count() }).from(deviceSessions).where(and(eq(deviceSessions.userId, id), isNull(deviceSessions.revokedAt)));
   const isSelf = u.id === admin.id;
+  const locked = Boolean(u.pinLockedUntil && u.pinLockedUntil > new Date());
 
   return (
     <div className="space-y-4">
@@ -27,6 +28,7 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
           <h1 className="font-display text-[24px] font-bold leading-none">{u.fullName}</h1>
           <div className="mt-1 text-[13px] text-muted">
             {u.pinHash ? "PIN задан" : "ещё не входил"} · устройств: {sessions}
+            {locked && ` · вход заблокирован до ${u.pinLockedUntil!.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Yekaterinburg" })}`}
           </div>
         </div>
       </div>
@@ -53,6 +55,11 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
             Выйти везде
           </ConfirmButton>
         </div>
+        {(locked || u.pinFailedCount > 0) && (
+          <ConfirmButton variant="outline" className="w-full" confirmText="Снять блокировку входа? PIN останется прежним." action={unlockPin.bind(null, u.id)}>
+            Снять блокировку ({u.pinFailedCount} неудачных попыток)
+          </ConfirmButton>
+        )}
         {!isSelf &&
           (u.status === "active" ? (
             <ConfirmButton variant="danger" className="w-full" confirmText="Удалить из группы? Его записи останутся, вход закроется." action={setUserStatus.bind(null, u.id, "removed")}>

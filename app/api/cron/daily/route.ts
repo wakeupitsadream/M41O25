@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { anonQuota, attachments, authAttempts, deviceSessions } from "@/lib/db/schema";
+import { anonQuota, appErrors, attachments, authAttempts, cronRuns, deviceSessions } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { storage } from "@/lib/storage";
 import { buildBackup } from "@/lib/backup";
@@ -29,6 +29,7 @@ async function dumpToStorage() {
 export async function GET(req: Request) {
   const auth = req.headers.get("authorization");
   if (!env.cronSecret || auth !== `Bearer ${env.cronSecret}`) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  const started = Date.now();
 
   // 1) Бэкап. На Vercel без R2 постоянного диска нет — бэкап пропускаем, чистку ниже делаем всё равно.
   let backup: Awaited<ReturnType<typeof dumpToStorage>> | null = null;
@@ -68,8 +69,19 @@ export async function GET(req: Request) {
     await db.delete(attachments).where(eq(attachments.id, o.id));
   }
 
-  return NextResponse.json(
-    { ok: !backupError, backup, backupSkipped, backupError, removedScans: oldScans.length, removedOrphans: orphans.length },
-    { status: backupError ? 500 : 200 },
-  );
+  // 4) Журнал ошибок приложения: старше 30 дней не нужен.
+  await db.delete(appErrors).where(lt(appErrors.createdAt, new Date(Date.now() - 30 * 86_400_000)));
+
+  const body = { ok: !backupError, backup, backupSkipped, backupError, removedScans: oldScans.length, removedOrphans: orphans.length };
+  const durationMs = Date.now() - started;
+  await db.insert(cronRuns).values({ ok: body.ok, durationMs, error: backupError, details: body }).catch((e) => console.error("[cron] журнал:", e));
+  // Сторож: healthchecks.io ждёт пинг раз в сутки; молчание или /fail — письмо админу.
+  if (env.healthcheckUrl) {
+    await fetch(body.ok ? env.healthcheckUrl : `${env.healthcheckUrl.replace(/\/$/, "")}/fail`, {
+      method: "POST",
+      body: JSON.stringify({ durationMs, ...body }).slice(0, 10_000),
+      signal: AbortSignal.timeout(5000),
+    }).catch(() => {});
+  }
+  return NextResponse.json(body, { status: backupError ? 500 : 200 });
 }

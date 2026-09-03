@@ -5,27 +5,13 @@ import { getSchedulePayload } from "@/lib/schedule/query";
 import { lessonsOn } from "@/lib/schedule/derive";
 import { capitalize, fmtDayMonth, fmtWeekday, isIso } from "@/lib/schedule/time";
 import { KIND_LABEL } from "@/lib/schedule/types";
+import { UNBOUNDED_BOLD_B64 } from "@/lib/fonts/unbounded-bold";
 
 export const runtime = "nodejs";
 
-let fontCache: ArrayBuffer | null | undefined;
-
-/** Unbounded (TTF) с Google Fonts для Satori; при недоступности — системный шрифт. */
-async function loadFont(): Promise<ArrayBuffer | null> {
-  if (fontCache !== undefined) return fontCache;
-  try {
-    // Без браузерного User-Agent Google отдаёт TTF (Satori понимает TTF/OTF/WOFF, но не WOFF2).
-    const css = await fetch("https://fonts.googleapis.com/css2?family=Unbounded:wght@700", {
-      headers: { "User-Agent": "curl/8" },
-      signal: AbortSignal.timeout(5000),
-    }).then((r) => r.text());
-    const url = css.match(/url\(([^)]+\.(?:ttf|otf|woff))\)/)?.[1];
-    fontCache = url ? await fetch(url, { signal: AbortSignal.timeout(5000) }).then((r) => r.arrayBuffer()) : null;
-  } catch {
-    fontCache = null;
-  }
-  return fontCache ?? null;
-}
+// Шрифт лежит в репозитории (base64): никаких походов в Google Fonts на холодном старте.
+const FONT_BYTES = Buffer.from(UNBOUNDED_BOLD_B64, "base64");
+const FONT: ArrayBuffer = FONT_BYTES.buffer.slice(FONT_BYTES.byteOffset, FONT_BYTES.byteOffset + FONT_BYTES.byteLength) as ArrayBuffer;
 
 /** PNG-карточка дня 1080×1350 (под сторис и ВК) в фирменном стиле — для кнопки «Поделиться» на экране дня. */
 export async function GET(req: Request) {
@@ -36,8 +22,7 @@ export async function GET(req: Request) {
 
   const payload = await getSchedulePayload(user.groupId);
   const lessons = lessonsOn(payload.weeks, date).filter((l) => !l.isCancelled);
-  const font = await loadFont();
-  const family = font ? "Unbounded" : "sans-serif";
+  const family = "Unbounded";
 
   return new ImageResponse(
     (
@@ -92,7 +77,7 @@ export async function GET(req: Request) {
     {
       width: 1080,
       height: 1350,
-      fonts: font ? [{ name: "Unbounded", data: font, weight: 700, style: "normal" }] : undefined,
+      fonts: [{ name: "Unbounded", data: FONT, weight: 700, style: "normal" }],
       headers: { "Cache-Control": "private, max-age=600" },
     },
   );

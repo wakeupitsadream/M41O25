@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useDragControls } from "motion/react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -20,6 +20,34 @@ type SheetProps = {
 export function Sheet({ open, onClose, title, children, className }: SheetProps) {
   const controls = useDragControls();
   const savedScroll = useRef(0);
+  // Клавиатура iOS не меняет layout viewport: следим за visualViewport и поднимаем лист над клавиатурой.
+  const [kb, setKb] = useState<{ height: number; offset: number } | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => {
+      const offset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      setKb(offset > 40 ? { height: vv.height, offset } : null);
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    const onFocus = (e: FocusEvent) => {
+      const el = e.target;
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) {
+        setTimeout(() => el.scrollIntoView({ block: "center", behavior: "smooth" }), 250);
+      }
+    };
+    document.addEventListener("focusin", onFocus);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+      document.removeEventListener("focusin", onFocus);
+      setKb(null);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -65,7 +93,12 @@ export function Sheet({ open, onClose, title, children, className }: SheetProps)
               "max-h-[92dvh] overflow-y-auto overscroll-contain scrollbar-none",
               className,
             )}
-            style={{ paddingBottom: "calc(var(--sab) + 1rem)", WebkitOverflowScrolling: "touch" }}
+            style={{
+              paddingBottom: kb ? "1rem" : "calc(var(--sab) + 1rem)",
+              WebkitOverflowScrolling: "touch",
+              bottom: kb ? kb.offset : 0,
+              maxHeight: kb ? Math.round(kb.height * 0.96) : undefined,
+            }}
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}

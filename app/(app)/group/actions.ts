@@ -13,6 +13,7 @@ import { assertRate } from "@/lib/rate-limit";
 import { parseLocalDateTime, todayIso } from "@/lib/tz";
 import { env } from "@/lib/env";
 import { fail, ok, type ActionResult } from "@/lib/utils";
+import type { FormState } from "@/lib/form";
 
 const iso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -45,8 +46,9 @@ export async function toggleReaction(entityType: "news" | "homework" | "task", e
     const [exists] = await db.select({ id: table.id }).from(table).where(and(eq(table.id, entityId), eq(table.groupId, user.groupId), isNull(table.deletedAt)));
     if (!exists) return fail("Запись не найдена");
     const key = and(eq(reactions.entityType, entityType), eq(reactions.entityId, entityId), eq(reactions.userId, user.id), eq(reactions.emoji, emoji));
-    const removed = await db.delete(reactions).where(key).returning({ e: reactions.emoji });
-    if (removed.length === 0) await db.insert(reactions).values({ entityType, entityId, userId: user.id, emoji }).onConflictDoNothing();
+    // Сначала вставка (см. toggleDone): двойной тап возвращает исходное состояние, а не ставит реакцию дважды.
+    const inserted = await db.insert(reactions).values({ entityType, entityId, userId: user.id, emoji }).onConflictDoNothing().returning({ e: reactions.emoji });
+    if (inserted.length === 0) await db.delete(reactions).where(key);
     bump();
     return ok();
   });
@@ -67,17 +69,20 @@ export async function createNews(input: z.infer<typeof newsSchema>): Promise<Act
     const parsed = newsSchema.safeParse(input);
     if (!parsed.success) return fail(parsed.error.issues[0].message);
     const d = parsed.data;
-    const [row] = await db
-      .insert(news)
-      .values({ groupId: user.groupId, authorId: user.id, title: d.title || null, body: d.body, pinnedAt: d.pinned ? new Date() : null })
-      .returning({ id: news.id });
-    if (d.attachmentIds.length) {
-      await db
-        .update(attachments)
-        .set({ entityId: row.id })
-        .where(and(inArray(attachments.id, d.attachmentIds), eq(attachments.uploadedBy, user.id), isNull(attachments.entityId), eq(attachments.entityType, "news")));
-    }
-    await log(user.groupId, "news_added", "news", row.id, user.id, { title: d.title || d.body.slice(0, 80) });
+    const row = await db.transaction(async (tx) => {
+      const [n] = await tx
+        .insert(news)
+        .values({ groupId: user.groupId, authorId: user.id, title: d.title || null, body: d.body, pinnedAt: d.pinned ? new Date() : null })
+        .returning({ id: news.id });
+      if (d.attachmentIds.length) {
+        await tx
+          .update(attachments)
+          .set({ entityId: n.id })
+          .where(and(inArray(attachments.id, d.attachmentIds), eq(attachments.uploadedBy, user.id), isNull(attachments.entityId), eq(attachments.entityType, "news")));
+      }
+      await tx.insert(activity).values({ groupId: user.groupId, eventType: "news_added", entityType: "news", entityId: n.id, actorId: user.id, payload: { title: d.title || d.body.slice(0, 80) } });
+      return n;
+    });
     bump("/group/news");
     return ok({ id: row.id });
   });
@@ -141,8 +146,8 @@ export async function toggleTaskCheck(taskId: string, userId: string): Promise<A
     const [member] = await db.select({ id: users.id }).from(users).where(and(eq(users.id, userId), eq(users.groupId, admin.groupId)));
     if (!member) return fail("Человек не из этой группы");
     const key = and(eq(taskChecks.taskId, taskId), eq(taskChecks.userId, userId));
-    const removed = await db.delete(taskChecks).where(key).returning({ u: taskChecks.userId });
-    if (removed.length === 0) await db.insert(taskChecks).values({ taskId, userId, checkedBy: admin.id }).onConflictDoNothing();
+    const inserted = await db.insert(taskChecks).values({ taskId, userId, checkedBy: admin.id }).onConflictDoNothing().returning({ u: taskChecks.userId });
+    if (inserted.length === 0) await db.delete(taskChecks).where(key);
     bump("/group/tasks", `/group/tasks/${taskId}`);
     return ok();
   });
@@ -185,12 +190,15 @@ export async function createPoll(input: z.infer<typeof pollSchema>): Promise<Act
     const closesAt = d.closesAt ? parseLocalDateTime(d.closesAt) : null;
     if (d.closesAt && !closesAt) return fail("Дата закрытия некорректна");
     if (closesAt && closesAt.getTime() < Date.now()) return fail("Дата закрытия уже прошла");
-    const [row] = await db
-      .insert(polls)
-      .values({ groupId: user.groupId, createdBy: user.id, question: d.question, isMulti: d.isMulti, isAnonymous: d.isAnonymous, closesAt })
-      .returning({ id: polls.id });
-    await db.insert(pollOptions).values(d.options.map((text, position) => ({ pollId: row.id, text, position })));
-    await log(user.groupId, "poll_created", "poll", row.id, user.id, { question: d.question });
+    const row = await db.transaction(async (tx) => {
+      const [p] = await tx
+        .insert(polls)
+        .values({ groupId: user.groupId, createdBy: user.id, question: d.question, isMulti: d.isMulti, isAnonymous: d.isAnonymous, closesAt })
+        .returning({ id: polls.id });
+      await tx.insert(pollOptions).values(d.options.map((text, position) => ({ pollId: p.id, text, position })));
+      await tx.insert(activity).values({ groupId: user.groupId, eventType: "poll_created", entityType: "poll", entityId: p.id, actorId: user.id, payload: { question: d.question } });
+      return p;
+    });
     bump("/group/polls");
     return ok({ id: row.id });
   });
@@ -271,10 +279,10 @@ const readContact = (fd: FormData) => ({
 
 const nullable = (s: string | undefined) => (s ? s : null);
 
-export async function createContact(formData: FormData) {
+export async function createContact(_prev: FormState, formData: FormData): Promise<FormState> {
   const user = await actionUser("moderator");
   const parsed = contactSchema.safeParse(readContact(formData));
-  if (!parsed.success) throw new Error(parsed.error.issues[0].message);
+  if (!parsed.success) return { error: "Проверь поля: имя от 2 символов, остальное короче лимита" };
   const d = parsed.data;
   await db.insert(contacts).values({
     groupId: user.groupId,
@@ -290,10 +298,10 @@ export async function createContact(formData: FormData) {
   redirect("/group/contacts");
 }
 
-export async function updateContact(id: string, formData: FormData) {
+export async function updateContact(id: string, _prev: FormState, formData: FormData): Promise<FormState> {
   const user = await actionUser("moderator");
   const parsed = contactSchema.safeParse(readContact(formData));
-  if (!parsed.success) throw new Error(parsed.error.issues[0].message);
+  if (!parsed.success) return { error: "Проверь поля: имя от 2 символов, остальное короче лимита" };
   const d = parsed.data;
   await db
     .update(contacts)
@@ -325,10 +333,13 @@ export async function askAnon(body: string): Promise<ActionResult> {
     if (!env.anonPepper) return fail("Анонимные вопросы выключены: на сервере не задан ANON_PEPPER");
     const keyHash = createHmac("sha256", env.anonPepper).update(user.id).digest("hex");
     const day = todayIso();
-    const [q] = await db.select().from(anonQuota).where(and(eq(anonQuota.keyHash, keyHash), eq(anonQuota.day, day)));
-    if ((q?.count ?? 0) >= ANON_PER_DAY) return fail("На сегодня лимит анонимных вопросов исчерпан");
-    if (q) await db.update(anonQuota).set({ count: sql`${anonQuota.count} + 1` }).where(and(eq(anonQuota.keyHash, keyHash), eq(anonQuota.day, day)));
-    else await db.insert(anonQuota).values({ keyHash, day, count: 1 });
+    // Одним запросом: параллельные отправки не проскочат мимо лимита.
+    const [q] = await db
+      .insert(anonQuota)
+      .values({ keyHash, day, count: 1 })
+      .onConflictDoUpdate({ target: [anonQuota.keyHash, anonQuota.day], set: { count: sql`${anonQuota.count} + 1` } })
+      .returning({ count: anonQuota.count });
+    if ((q?.count ?? 0) > ANON_PER_DAY) return fail("На сегодня лимит анонимных вопросов исчерпан");
 
     const rounded = new Date();
     rounded.setMinutes(0, 0, 0);

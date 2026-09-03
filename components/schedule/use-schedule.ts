@@ -32,8 +32,9 @@ export function useSchedule(initial: SchedulePayload | null) {
   const [data, setData] = useState<SchedulePayload | null>(initial);
   const [status, setStatus] = useState<ScheduleStatus>(initial ? "fresh" : "loading");
   const inflight = useRef(false);
+  const retried = useRef(false);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (isRetry = false) => {
     if (inflight.current) return;
     inflight.current = true;
     try {
@@ -52,7 +53,16 @@ export function useSchedule(initial: SchedulePayload | null) {
       // Service worker отдаёт кеш как обычный ответ: офлайн распознаём по navigator.onLine и возрасту данных.
       const ageMs = Date.now() - new Date(next.generatedAt).getTime();
       const offline = typeof navigator !== "undefined" && !navigator.onLine;
-      setStatus(offline || ageMs > 20 * 60_000 ? "offline" : "fresh");
+      const stale = ageMs > 20 * 60_000;
+      if (stale && !offline && !isRetry && !retried.current) {
+        // Сеть есть, а данные старые: скорее всего SW отдал кеш, пока функция холодная. Пробуем ещё раз, потом уже «Офлайн».
+        retried.current = true;
+        setStatus("loading");
+        setTimeout(() => void refresh(true), 4000);
+        return;
+      }
+      if (!stale) retried.current = false;
+      setStatus(offline || stale ? "offline" : "fresh");
     } catch {
       setStatus(typeof navigator !== "undefined" && !navigator.onLine ? "offline" : "error");
     } finally {
@@ -71,11 +81,12 @@ export function useSchedule(initial: SchedulePayload | null) {
     void refresh();
     const onVisible = () => document.visibilityState === "visible" && void refresh();
     document.addEventListener("visibilitychange", onVisible);
-    window.addEventListener("online", refresh);
-    const timer = setInterval(refresh, 10 * 60_000);
+    const onOnline = () => void refresh();
+    window.addEventListener("online", onOnline);
+    const timer = setInterval(() => void refresh(), 10 * 60_000);
     return () => {
       document.removeEventListener("visibilitychange", onVisible);
-      window.removeEventListener("online", refresh);
+      window.removeEventListener("online", onOnline);
       clearInterval(timer);
     };
   }, [initial, refresh]);

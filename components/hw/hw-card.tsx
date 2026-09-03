@@ -9,11 +9,13 @@ import { dueLabel } from "@/lib/hw/format";
 import { toggleDone } from "@/app/(app)/hw/actions";
 import { Avatar, Badge } from "@/components/ui/primitives";
 import { cn, displayName } from "@/lib/utils";
+import { useToast } from "@/components/ui/toast";
 
 export function HwCard({ item, today, showDone, index = 0 }: { item: HwListItem; today: string; showDone: boolean; index?: number }) {
   const due = dueLabel(item.dueDate, today);
   const [done, setDone] = useOptimistic(item.done);
   const [, start] = useTransition();
+  const toast = useToast();
   const color = item.subject?.color ?? "#9C9CA8";
 
   return (
@@ -72,7 +74,8 @@ export function HwCard({ item, today, showDone, index = 0 }: { item: HwListItem;
           onClick={() =>
             start(async () => {
               setDone(!done);
-              await toggleDone(item.id);
+              const res = await toggleDone(item.id);
+              if (!res.ok) toast(res.error ?? "Отметка не сохранилась");
             })
           }
           className={cn(

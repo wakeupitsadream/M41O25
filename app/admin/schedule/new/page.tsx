@@ -1,4 +1,5 @@
 import { asc, eq } from "drizzle-orm";
+import { ActionForm } from "@/components/ui/action-form";
 import { db } from "@/lib/db";
 import { semesters } from "@/lib/db/schema";
 import { requireRole } from "@/lib/auth";
@@ -25,7 +26,7 @@ export default async function NewWeekPage({ searchParams }: { searchParams: Prom
         Создай неделю и заполни пары вручную или по скану. Дата — любой день нужной недели, понедельник посчитаю сам.
       </p>
       <Card>
-        <form action={createWeek} className="space-y-4">
+        <ActionForm action={createWeek} className="space-y-4">
           <Field label="Неделя (любая дата внутри)">
             <Input type="date" name="startsOn" defaultValue={sp.startsOn ?? startsOn} required />
           </Field>
@@ -60,7 +61,7 @@ export default async function NewWeekPage({ searchParams }: { searchParams: Prom
           <SubmitButton className="w-full" size="lg">
             Создать
           </SubmitButton>
-        </form>
+        </ActionForm>
       </Card>
     </div>
   );

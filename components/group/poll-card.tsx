@@ -8,10 +8,12 @@ import type { PollItem } from "@/lib/group/query";
 import { deletePoll, setPollClosed, vote } from "@/app/(app)/group/actions";
 import { fmtDateTime } from "@/lib/hw/format";
 import { Avatar, Badge } from "@/components/ui/primitives";
+import { useToast } from "@/components/ui/toast";
 import { cn, displayName, pluralRu } from "@/lib/utils";
 
 export function PollCard({ poll, me }: { poll: PollItem; me: { id: string; isMod: boolean; isAdmin: boolean } }) {
   const router = useRouter();
+  const toast = useToast();
   const [pending, start] = useTransition();
   const [state, applyVote] = useOptimistic(poll, (prev: PollItem, optionId: string) => {
     const has = prev.myVotes.includes(optionId);
@@ -60,7 +62,7 @@ export function PollCard({ poll, me }: { poll: PollItem; me: { id: string; isMod
               <button
                 type="button"
                 disabled={state.closed || pending}
-                onClick={() => start(async () => { applyVote(o.id); await vote(poll.id, o.id); router.refresh(); })}
+                onClick={() => start(async () => { applyVote(o.id); const res = await vote(poll.id, o.id); if (!res.ok) toast(res.error ?? "Голос не принят"); router.refresh(); })}
                 className={cn("relative w-full overflow-hidden rounded-md px-3.5 py-3 text-left hairline transition active:scale-[0.99]", mine ? "ring-1 ring-accent/70" : "")}
               >
                 <motion.span
@@ -97,7 +99,7 @@ export function PollCard({ poll, me }: { poll: PollItem; me: { id: string; isMod
         {poll.closesAt && !state.closed && <span>· до {fmtDateTime(poll.closesAt)}</span>}
         <span className="flex-1" />
         {canManage && (
-          <button type="button" className="flex items-center gap-1 text-dim" disabled={pending} onClick={() => start(async () => { await setPollClosed(poll.id, !state.closed); router.refresh(); })}>
+          <button type="button" className="flex items-center gap-1 text-dim" disabled={pending} onClick={() => start(async () => { const res = await setPollClosed(poll.id, !state.closed); if (!res.ok) toast(res.error ?? "Не получилось"); router.refresh(); })}>
             {state.closed ? <Undo2 className="size-3.5" /> : <Lock className="size-3.5" />}
             {state.closed ? "открыть" : "закрыть"}
           </button>
@@ -109,7 +111,7 @@ export function PollCard({ poll, me }: { poll: PollItem; me: { id: string; isMod
             className="text-dim"
             disabled={pending}
             onClick={() => {
-              if (window.confirm("Удалить опрос?")) start(async () => { await deletePoll(poll.id); router.refresh(); });
+              if (window.confirm("Удалить опрос?")) start(async () => { const res = await deletePoll(poll.id); if (!res.ok) toast(res.error ?? "Не получилось"); router.refresh(); });
             }}
           >
             <Trash2 className="size-3.5" />

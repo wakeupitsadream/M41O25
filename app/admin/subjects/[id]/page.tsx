@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { ActionForm } from "@/components/ui/action-form";
 import { asUuid } from "@/lib/utils";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -19,7 +20,7 @@ export default async function EditSubjectPage({ params }: { params: Promise<{ id
     <div className="space-y-4">
       <h1 className="font-display text-[24px] font-bold leading-tight">{s.name}</h1>
       <Card>
-        <form action={updateSubject.bind(null, s.id)} className="space-y-3">
+        <ActionForm action={updateSubject.bind(null, s.id)} className="space-y-3">
           <Field label="Название">
             <Input name="name" defaultValue={s.name} required />
           </Field>
@@ -40,7 +41,7 @@ export default async function EditSubjectPage({ params }: { params: Promise<{ id
             </Field>
           </div>
           <SubmitButton className="w-full">Сохранить</SubmitButton>
-        </form>
+        </ActionForm>
       </Card>
       <ConfirmButton
         variant={s.archived ? "outline" : "secondary"}

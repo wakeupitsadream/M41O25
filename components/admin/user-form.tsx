@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { Field, Input, Select } from "@/components/ui/input";
 import { SubmitButton } from "./forms";
+import { ActionForm } from "@/components/ui/action-form";
+import type { FormState } from "@/lib/form";
 import { USER_COLORS, cn } from "@/lib/utils";
 
 const EMOJI = ["🙂", "😎", "🦊", "🐼", "🐨", "🦁", "🐯", "🐸", "🐙", "🦄", "🐳", "🦋", "🌚", "🔥", "⚡", "🎧", "🎸", "🧠", "🧑‍💻", "🏀"];
@@ -16,11 +18,11 @@ type Values = {
   birthday?: string | null;
 };
 
-export function UserForm({ action, values, isSelf, submitLabel }: { action: (fd: FormData) => Promise<void>; values?: Values; isSelf?: boolean; submitLabel: string }) {
+export function UserForm({ action, values, isSelf, submitLabel }: { action: (prev: FormState, fd: FormData) => Promise<FormState>; values?: Values; isSelf?: boolean; submitLabel: string }) {
   const [color, setColor] = useState(values?.color ?? USER_COLORS[0]);
   const [emoji, setEmoji] = useState(values?.avatarEmoji ?? "🙂");
   return (
-    <form action={action} className="space-y-4">
+    <ActionForm action={action} className="space-y-4">
       <Field label="Фамилия Имя">
         <Input name="fullName" defaultValue={values?.fullName ?? ""} placeholder="Иванова Анастасия" required autoComplete="off" />
       </Field>
@@ -74,6 +76,6 @@ export function UserForm({ action, values, isSelf, submitLabel }: { action: (fd:
       <SubmitButton className="w-full" size="lg">
         {submitLabel}
       </SubmitButton>
-    </form>
+    </ActionForm>
   );
 }
