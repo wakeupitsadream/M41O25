@@ -1,4 +1,5 @@
 // Прогон раздела «Группа»: хаб → новость → задача с чек-листом → опрос → контакты → ДР → аноним → лента.
+import assert from "node:assert/strict";
 import { BASE, launch, login } from "./lib.mjs";
 
 const { browser, page, shot } = await launch();
@@ -18,6 +19,7 @@ await page.waitForLoadState("networkidle");
 await page.locator("button:has-text('🔥')").first().click();
 await page.waitForTimeout(800);
 await shot("41-news");
+assert.ok((await page.locator("text=Пары в пятницу отменены").count()) >= 1, "новость не появилась в списке");
 
 // Задача
 await page.goto(`${BASE}/group/tasks/new`, { waitUntil: "networkidle" });
@@ -50,6 +52,7 @@ await page.waitForLoadState("networkidle");
 await page.locator("li button:has-text('Кафе')").first().click();
 await page.waitForTimeout(1000);
 await shot("44-polls");
+assert.ok((await page.locator("text=Куда идём после сессии?").count()) >= 1, "опрос не появился");
 
 // Контакт
 await page.goto(`${BASE}/group/contacts/new`, { waitUntil: "networkidle" });
@@ -75,6 +78,7 @@ await page.fill('textarea[placeholder="Ответ увидят все"]', "Пе�
 await page.getByRole("button", { name: "Ответить" }).first().click();
 await page.waitForTimeout(1500);
 await shot("47-questions");
+assert.ok((await page.locator("text=Пересдача 18 сентября").count()) >= 1, "ответ на анонимный вопрос не показан");
 
 await page.goto(`${BASE}/group/feed`, { waitUntil: "networkidle" });
 await shot("48-feed");

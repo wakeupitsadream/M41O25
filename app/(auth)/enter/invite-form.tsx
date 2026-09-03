@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { submitInviteCode } from "./actions";
 
-export function InviteForm() {
+export function InviteForm({ defaultCode }: { defaultCode?: string }) {
   const [state, action, pending] = useActionState(submitInviteCode, undefined);
   return (
     <form action={action} className="space-y-4">
@@ -18,6 +18,7 @@ export function InviteForm() {
           autoCorrect="off"
           spellCheck={false}
           placeholder="M41-XXXX"
+          defaultValue={defaultCode}
           className="h-14 text-center font-display text-xl tracking-[0.15em] uppercase"
           required
           autoFocus

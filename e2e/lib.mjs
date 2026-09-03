@@ -1,16 +1,20 @@
 // Общие помощники для скриптов проверки: запуск Chromium как iPhone и вход под админом.
 import { chromium, devices } from "@playwright/test";
 import fs from "node:fs";
+import path from "node:path";
 
 export const BASE = process.env.BASE ?? "http://localhost:3000";
-export const OUT = process.env.OUT ?? "/tmp/claude-0/-home-user-M41O25/16f31fc5-fb28-52e5-aa2e-7ada5db9c855/scratchpad/shots";
+export const OUT = process.env.OUT ?? path.join(process.cwd(), "e2e/shots");
+/** Сегодня в часовом поясе группы (не UTC — иначе после 19:00 UTC дата уезжает на завтра). */
+export const todayIso = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Yekaterinburg" }).format(new Date());
 export const INVITE = process.env.INVITE ?? "M41-2025";
 export const PIN = process.env.PIN ?? "1234";
 export const WHO = process.env.WHO ?? "Батутин Максим";
 
 export async function launch() {
   fs.mkdirSync(OUT, { recursive: true });
-  const browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM ?? "/opt/pw-browsers/chromium" });
+  // PW_CHROMIUM — путь к системному Chromium (в песочнице разработки); без него Playwright берёт свой браузер (npx playwright install chromium).
+  const browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM || undefined });
   const ctx = await browser.newContext({
     ...devices["iPhone 15"],
     deviceScaleFactor: 2,

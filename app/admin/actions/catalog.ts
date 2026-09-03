@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { groups, semesters, subjects, type SlotTime } from "@/lib/db/schema";
 import { actionUser } from "@/lib/auth";
 import { generateInviteSuffix, ok, type ActionResult } from "@/lib/utils";
+import { invitePrefix } from "@/lib/invite";
 
 const iso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -125,7 +126,7 @@ export async function deleteSemester(id: string): Promise<ActionResult> {
 
 export async function rotateInviteCode(): Promise<ActionResult<{ code: string }>> {
   const admin = await actionUser("admin");
-  const code = `${admin.group.shortName.replace(/[^A-ZА-Я0-9]/gi, "").slice(0, 3).toUpperCase()}-${generateInviteSuffix()}`;
+  const code = `${invitePrefix(admin.group.shortName)}-${generateInviteSuffix()}`;
   await db.update(groups).set({ inviteCode: code }).where(eq(groups.id, admin.groupId));
   revalidatePath("/admin/settings");
   revalidatePath("/admin");

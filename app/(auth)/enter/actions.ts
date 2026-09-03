@@ -2,15 +2,15 @@
 
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
-import { and, count, eq, gt, sql } from "drizzle-orm";
+import { and, count, eq, gt, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { authAttempts, groups, users } from "@/lib/db/schema";
 import { clearInviteCookie, createSession, hashPin, readInviteGroupId, setInviteCookie, verifyPin } from "@/lib/auth";
+import { normalizeInviteCode } from "@/lib/invite";
 
 export type FormState = { error?: string } | undefined;
 
-const normalizeCode = (s: string) => s.trim().toUpperCase().replace(/\s+/g, "");
 const pinSchema = z.string().regex(/^\d{4}$/, "PIN — ровно 4 цифры");
 const GENERIC_LOCK = "Слишком много попыток. Подожди немного и попробуй снова";
 
@@ -36,12 +36,14 @@ async function tooManyAttempts(key: string, max: number, windowMs: number) {
 const recordAttempt = (key: string) => db.insert(authAttempts).values({ key });
 
 export async function submitInviteCode(_prev: FormState, formData: FormData): Promise<FormState> {
-  const code = normalizeCode(String(formData.get("code") ?? ""));
+  const code = normalizeInviteCode(String(formData.get("code") ?? ""));
   if (code.length < 4) return { error: "Введи код из беседы" };
   const ipKey = `invite:${await clientIp()}`;
   if (await tooManyAttempts(ipKey, IP_LIMIT.max, IP_LIMIT.window)) return { error: GENERIC_LOCK };
 
-  const group = (await db.select({ id: groups.id }).from(groups).where(sql`upper(${groups.inviteCode}) = ${code}`))[0];
+  // Групп единицы — сравниваем каноны в JS: «М41-О2025» с русской раскладки равен «M41-O2025».
+  const candidates = await db.select({ id: groups.id, inviteCode: groups.inviteCode }).from(groups);
+  const group = candidates.find((g) => normalizeInviteCode(g.inviteCode) === code);
   if (!group) {
     await recordAttempt(ipKey);
     return { error: "Такого кода нет. Проверь закреп в беседе" };
@@ -67,7 +69,13 @@ export async function claimProfile(_prev: FormState, formData: FormData): Promis
   if (!user) return { error: "Профиль не найден" };
   if (user.pinHash) return { error: "Этот профиль уже занят. Если это ты — введи свой PIN" };
 
-  await db.update(users).set({ pinHash: hashPin(pin), pinFailedCount: 0, pinLockedUntil: null }).where(eq(users.id, user.id));
+  // Условное обновление: двое, выбравшие один профиль в одну секунду, не перезапишут PIN друг друга.
+  const [claimed] = await db
+    .update(users)
+    .set({ pinHash: hashPin(pin), pinFailedCount: 0, pinLockedUntil: null })
+    .where(and(eq(users.id, user.id), isNull(users.pinHash)))
+    .returning({ id: users.id });
+  if (!claimed) return { error: "Этот профиль только что занял кто-то другой. Если это ты — введи свой PIN" };
   await createSession(user.id);
   await clearInviteCookie();
   redirect("/s");

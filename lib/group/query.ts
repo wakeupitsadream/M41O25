@@ -1,4 +1,5 @@
 import "server-only";
+import { fileHref } from "@/lib/files/token";
 import { and, asc, count, desc, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { activity, anonQuestions, attachments, contacts, news, pollOptions, pollVotes, polls, reactions, taskChecks, tasks, users } from "@/lib/db/schema";
@@ -76,7 +77,7 @@ export async function listNews(groupId: string, userId: string) {
     createdAt: r.item.createdAt.toISOString(),
     author: r.author,
     reactions: reactMap.get(r.item.id) ?? [],
-    attachments: files.filter((f) => f.entityId === r.item.id).map((f) => ({ id: f.id, name: f.fileName, mime: f.mime, size: f.sizeBytes })),
+    attachments: files.filter((f) => f.entityId === r.item.id).map((f) => ({ id: f.id, name: f.fileName, mime: f.mime, size: f.sizeBytes, url: fileHref(f.id) })),
   }));
 }
 

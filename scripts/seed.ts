@@ -6,6 +6,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { eq } from "drizzle-orm";
 import * as schema from "../lib/db/schema";
 import { USER_COLORS, firstName, generateInviteSuffix } from "../lib/utils";
+import { invitePrefix } from "../lib/invite";
 import { addDays, format, startOfWeek } from "date-fns";
 
 /**
@@ -17,7 +18,7 @@ const DEMO = process.argv.includes("--demo");
 
 const INVITE =
   process.env.SEED_INVITE_CODE ??
-  (process.argv.includes("--demo") ? "M41-2025" : `${(process.env.SEED_GROUP_NAME ?? "М41О25").replace(/[^A-ZА-Я0-9]/gi, "").slice(0, 3).toUpperCase()}-${generateInviteSuffix()}`);
+  (process.argv.includes("--demo") ? "M41-2025" : `${invitePrefix(process.env.SEED_GROUP_NAME ?? "М41О25")}-${generateInviteSuffix()}`);
 const ADMIN_NAME = process.env.SEED_ADMIN_NAME ?? "Батутин Максим";
 const GROUP_NAME = process.env.SEED_GROUP_NAME ?? "М41О25";
 

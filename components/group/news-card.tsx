@@ -9,6 +9,7 @@ import { deleteNews, togglePinNews } from "@/app/(app)/group/actions";
 import { fmtBytes, fmtDateTime } from "@/lib/hw/format";
 import { Avatar, Badge } from "@/components/ui/primitives";
 import { Linkify } from "@/components/ui/linkify";
+import { ImageGrid } from "@/components/ui/image-grid";
 import { ReactionBar } from "./reaction-bar";
 import { cn, displayName } from "@/lib/utils";
 
@@ -56,21 +57,12 @@ export function NewsCard({ item, canManage, isAdmin, meId }: { item: NewsItem; c
       </div>
       {item.title && <h2 className="mt-2.5 font-display text-[18px] font-bold leading-snug">{item.title}</h2>}
       <Linkify text={item.body} className="mt-2 text-[15px] leading-relaxed" />
-      {images.length > 0 && (
-        <div className={cn("mt-3 grid gap-2", images.length === 1 ? "grid-cols-1" : "grid-cols-2")}>
-          {images.map((a) => (
-            <a key={a.id} href={`/api/files/${a.id}`} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-md hairline">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={`/api/files/${a.id}`} alt={a.name} className={cn("w-full object-cover", images.length === 1 ? "max-h-80" : "aspect-square")} loading="lazy" />
-            </a>
-          ))}
-        </div>
-      )}
+      {images.length > 0 && <ImageGrid images={images} className="mt-3" rounded="rounded-md" singleMax="max-h-80" />}
       {docs.length > 0 && (
         <ul className="mt-3 space-y-1.5">
           {docs.map((a) => (
             <li key={a.id}>
-              <a href={`/api/files/${a.id}`} target="_blank" rel="noreferrer" className="flex items-center gap-2.5 rounded-md bg-surface-2 px-3 py-2 text-[13px] active:bg-surface-3">
+              <a href={a.url} target="_blank" rel="noreferrer" className="flex items-center gap-2.5 rounded-md bg-surface-2 px-3 py-2 text-[13px] active:bg-surface-3">
                 <FileText className="size-4 text-muted" />
                 <span className="min-w-0 flex-1 truncate font-medium">{a.name}</span>
                 <span className="text-dim">{fmtBytes(a.size)}</span>

@@ -1,4 +1,5 @@
 import "server-only";
+import { fileHref } from "@/lib/files/token";
 import { and, asc, desc, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { attachments, comments, homework, hwDone, hwEdits, lessons, subjects, users, weeks } from "@/lib/db/schema";
@@ -111,7 +112,7 @@ export async function getHomework(groupId: string, id: string, userId: string) {
     done: row.done,
     edits: edits.map((e) => ({ ...e.edit, author: e.author })),
     comments: commentRows.map((c) => ({ ...c.comment, author: c.author })),
-    attachments: files,
+    attachments: files.map((f) => ({ id: f.id, name: f.fileName, mime: f.mime, size: f.sizeBytes, url: fileHref(f.id) })),
     duplicates: dups,
     original: original[0] ?? null,
   };

@@ -21,6 +21,8 @@ function connect(): Conn {
   // Fluid Compute усыпляет инстанс между запросами; Vercel сам закроет простаивающие клиенты перед сном.
   // Вне Vercel — no-op.
   attachDatabasePool(pool);
+  // Обрыв простаивающего соединения (Neon, сеть) без слушателя — необработанное исключение и смерть инстанса.
+  pool.on("error", (e) => console.error("[db] pool error:", e.message));
   return { pool, db: drizzle(pool, { schema }) };
 }
 

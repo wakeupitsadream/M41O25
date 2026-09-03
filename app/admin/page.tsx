@@ -2,6 +2,7 @@ import Link from "next/link";
 import { and, count, eq, desc } from "drizzle-orm";
 import { CalendarPlus, ChevronRight, DatabaseBackup, KeyRound, Users2, BookMarked, Wallet } from "lucide-react";
 import { lastBackup, polzaBalance } from "@/lib/admin/status";
+import { signScoped } from "@/lib/files/token";
 import { storage } from "@/lib/storage";
 import { db } from "@/lib/db";
 import { groups, subjects, users, weeks } from "@/lib/db/schema";
@@ -61,6 +62,12 @@ export default async function AdminHome() {
             </div>
             <div className="mt-2 font-display text-xl font-bold tnum">{backup ?? "нет"}</div>
             <div className="truncate text-[11px] text-dim">{storage.kind === "r2" ? "ежедневно в R2" : process.env.VERCEL ? "R2 не подключён — бэкапов и файлов нет" : "локальная папка"}</div>
+            <a
+              href={`/api/admin/backup?u=${user.id}&t=${signScoped(`backup:${user.id}`, 3600_000)}`}
+              className="mt-2 inline-block text-[12px] font-semibold text-accent"
+            >
+              Скачать сейчас
+            </a>
           </Card>
         </div>
       )}

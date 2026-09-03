@@ -1,14 +1,17 @@
 // Прогон OCR-пайплайна в тестовом режиме (OCR_MOCK=1): новая неделя → «По скану» → загрузка → распознать → применить.
 import fs from "node:fs";
 import path from "node:path";
+import assert from "node:assert/strict";
 import { BASE, OUT, launch, login } from "./lib.mjs";
 
 const { browser, page, shot } = await launch();
 await login(page);
 
 await page.goto(`${BASE}/admin/schedule/new`, { waitUntil: "networkidle" });
-// Берём дату далеко в будущем, чтобы неделя точно была новой
-await page.fill('input[name="startsOn"]', "2026-11-16");
+// Берём случайный понедельник 2027 года, чтобы неделя точно была новой при повторных прогонах
+const base = new Date(Date.UTC(2027, 0, 4));
+base.setUTCDate(base.getUTCDate() + 7 * Math.floor(Math.random() * 20));
+await page.fill('input[name="startsOn"]', base.toISOString().slice(0, 10));
 await page.selectOption('select[name="copyFrom"]', "");
 await page.getByRole("button", { name: "Создать" }).click();
 await page.waitForURL(/\/admin\/schedule\/[0-9a-f-]{36}$/, { timeout: 20000 });
@@ -38,11 +41,14 @@ await page.waitForTimeout(500);
 await shot("51-ocr-draft");
 
 const applyBtn = page.getByRole("button", { name: /Применить/ });
-console.log("apply label:", await applyBtn.innerText());
+const applyLabel = await applyBtn.innerText();
+console.log("apply label:", applyLabel);
+assert.match(applyLabel, /\d+/, "кнопка «Применить» без числа пар");
 await applyBtn.click();
 await page.waitForTimeout(2500);
 await shot("52-ocr-applied");
 const count = await page.locator("text=Математический анализ").count();
 console.log("lessons titled Матан in editor:", count);
+assert.ok(count >= 1, "после применения черновика пары не появились в редакторе");
 
 await browser.close();

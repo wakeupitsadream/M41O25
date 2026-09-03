@@ -4,7 +4,8 @@ const SESSION_COOKIE = "raspison_session";
 const SESSION_MAX_AGE = 60 * 60 * 24 * 365;
 
 // Публичные пути: вход, служебные файлы PWA, cron, статика.
-const PUBLIC = [/^\/enter(\/|$)/, /^\/~offline$/, /^\/api\/auth\//, /^\/api\/cron\//, /^\/manifest\.webmanifest$/, /^\/sw\.js$/, /^\/icons\//, /^\/favicon\.ico$/];
+// /api/files и /api/admin/backup сами проверяют cookie или подписанный токен в URL.
+const PUBLIC = [/^\/enter(\/|$)/, /^\/~offline$/, /^\/api\/auth\//, /^\/api\/cron\//, /^\/api\/files\//, /^\/api\/admin\/backup$/, /^\/manifest\.webmanifest$/, /^\/sw\.js$/, /^\/icons\//, /^\/favicon\.ico$/];
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;

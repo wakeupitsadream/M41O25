@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { Avatar, Badge } from "@/components/ui/primitives";
+import { ImageGrid } from "@/components/ui/image-grid";
 import { cn, displayName } from "@/lib/utils";
 
 type Person = { id: string; fullName: string; nickname: string | null; avatarEmoji: string; color: string };
@@ -29,7 +30,7 @@ export type HwDetailData = {
   duplicates: { id: string; title: string | null; body: string }[];
   edits: { id: string; text: string; createdAt: string; author: Person }[];
   comments: { id: string; body: string; createdAt: string; author: Person }[];
-  attachments: { id: string; name: string; mime: string; size: number }[];
+  attachments: { id: string; name: string; mime: string; size: number; url: string }[];
 };
 
 type Props = {
@@ -105,21 +106,12 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
         </div>
       </header>
 
-      {images.length > 0 && (
-        <div className={cn("grid gap-2", images.length === 1 ? "grid-cols-1" : "grid-cols-2")}>
-          {images.map((a) => (
-            <a key={a.id} href={`/api/files/${a.id}`} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg hairline">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={`/api/files/${a.id}`} alt={a.name} className={cn("w-full object-cover", images.length === 1 ? "max-h-96" : "aspect-square")} loading="lazy" />
-            </a>
-          ))}
-        </div>
-      )}
+      {images.length > 0 && <ImageGrid images={images} />}
       {docs.length > 0 && (
         <ul className="space-y-2">
           {docs.map((a) => (
             <li key={a.id}>
-              <a href={`/api/files/${a.id}`} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-md bg-surface px-3.5 py-3 hairline active:bg-surface-2">
+              <a href={a.url} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-md bg-surface px-3.5 py-3 hairline active:bg-surface-2">
                 <FileText className="size-5 text-muted" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[14px] font-medium">{a.name}</span>

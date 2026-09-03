@@ -1,4 +1,5 @@
 // Прогон админки: обзор → недели → редактор (добавить пару, опубликовать) → люди → предметы → настройки.
+import assert from "node:assert/strict";
 import { BASE, launch, login } from "./lib.mjs";
 
 const { browser, page, shot } = await launch();
@@ -38,6 +39,7 @@ await page.getByRole("button", { name: /Опубликовать/ }).click();
 await page.waitForTimeout(1500);
 const status = await page.locator("text=опубликована").count();
 console.log("published badge count:", status);
+assert.ok(status >= 1, "неделя не опубликована");
 
 await page.goto(`${BASE}/admin/users`, { waitUntil: "networkidle" });
 await shot("25-admin-users");

@@ -10,6 +10,15 @@ const run = (cmd, args) => {
 
 const onVercel = Boolean(process.env.VERCEL);
 const hasDb = Boolean(process.env.DATABASE_URL);
+
+// Пустой секрет в production — это подписанные пустым ключом cookie и cron, который навсегда отвечает 401.
+if (process.env.VERCEL_ENV === "production") {
+  const missing = ["AUTH_SECRET", "ANON_PEPPER", "CRON_SECRET"].filter((k) => !process.env[k]);
+  if (missing.length) {
+    console.error(`[build] В production не заданы секреты: ${missing.join(", ")}. Добавь их в Vercel → Settings → Environment Variables (openssl rand -base64 32).`);
+    process.exit(1);
+  }
+}
 // Мигрируем только ту базу, которую сборке дали намеренно: production-сборка, либо preview
 // с явным MIGRATE_ON_BUILD=1 (пока код деплоится из ветки). Иначе preview любой ветки трогал бы прод.
 const allowed = process.env.VERCEL_ENV === "production" || process.env.MIGRATE_ON_BUILD === "1";

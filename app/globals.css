@@ -60,8 +60,15 @@ body {
   min-height: 100dvh;
 }
 
-* {
+/* Долгое нажатие подавляем только на кнопках и drag-списках: телефон из контактов и фото должны копироваться/сохраняться. */
+button,
+[role="button"],
+[data-drag] {
   -webkit-touch-callout: none;
+}
+a,
+img {
+  -webkit-touch-callout: default;
 }
 
 input,
