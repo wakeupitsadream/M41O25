@@ -1,6 +1,8 @@
 import { Pool } from "pg";
+import { attachDatabasePool } from "@vercel/functions";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "./schema";
+import { normalizeDatabaseUrl } from "./url";
 
 type Db = NodePgDatabase<typeof schema>;
 type Conn = { pool: Pool; db: Db };
@@ -11,11 +13,14 @@ function connect(): Conn {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL не задан — база не подключена");
   const pool = new Pool({
-    connectionString: url,
+    connectionString: normalizeDatabaseUrl(url),
     max: 3,
     idleTimeoutMillis: 10_000,
     connectionTimeoutMillis: 8_000,
   });
+  // Fluid Compute усыпляет инстанс между запросами; Vercel сам закроет простаивающие клиенты перед сном.
+  // Вне Vercel — no-op.
+  attachDatabasePool(pool);
   return { pool, db: drizzle(pool, { schema }) };
 }
 

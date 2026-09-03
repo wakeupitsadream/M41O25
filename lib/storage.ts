@@ -61,9 +61,15 @@ class LocalStorage implements Storage {
 
   async put(key: string, body: Buffer, contentType: string) {
     const file = this.resolve(key);
-    await mkdir(path.dirname(file), { recursive: true });
-    await writeFile(file, body);
-    await writeFile(`${file}.meta`, contentType);
+    try {
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(file, body);
+      await writeFile(`${file}.meta`, contentType);
+    } catch (e) {
+      const code = (e as { code?: string }).code;
+      if (code === "EROFS" || code === "EACCES" || code === "EPERM") throw new Error("Локальное хранилище недоступно (диск только для чтения) — нужен R2");
+      throw e;
+    }
   }
 
   async get(key: string) {

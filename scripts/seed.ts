@@ -1,6 +1,7 @@
 import { config } from "dotenv";
 config({ path: [".env.local", ".env"] });
 import { Pool } from "pg";
+import { normalizeDatabaseUrl } from "../lib/db/url";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { eq } from "drizzle-orm";
 import * as schema from "../lib/db/schema";
@@ -61,7 +62,7 @@ const WEEK_TEMPLATE: Tpl[] = [
 async function main() {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error("DATABASE_URL не задан");
-  const pool = new Pool({ connectionString: url, max: 1 });
+  const pool = new Pool({ connectionString: normalizeDatabaseUrl(url), max: 1 });
   const db = drizzle(pool, { schema });
 
   let group = (await db.select().from(schema.groups).where(eq(schema.groups.shortName, GROUP_NAME)))[0];

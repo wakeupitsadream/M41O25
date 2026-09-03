@@ -3,6 +3,7 @@ config({ path: [".env.local", ".env"] });
 import { gunzipSync } from "node:zlib";
 import { readFileSync } from "node:fs";
 import { Pool } from "pg";
+import { normalizeDatabaseUrl } from "../lib/db/url";
 
 /**
  * Восстановление из JSON-дампа cron-бэкапа: npm run db:restore -- path/to/2026-09-02.json.gz
@@ -23,7 +24,7 @@ async function main() {
   if (!url) throw new Error("DATABASE_URL не задан");
   const raw = readFileSync(file);
   const json = JSON.parse((file.endsWith(".gz") ? gunzipSync(raw) : raw).toString()) as { tables: Record<string, Record<string, unknown>[]> };
-  const pool = new Pool({ connectionString: url, max: 1 });
+  const pool = new Pool({ connectionString: normalizeDatabaseUrl(url), max: 1 });
   let total = 0;
   for (const table of ORDER) {
     const rows = json.tables[table] ?? [];

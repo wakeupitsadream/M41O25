@@ -8,6 +8,8 @@ const PUBLIC = [/^\/enter(\/|$)/, /^\/~offline$/, /^\/api\/auth\//, /^\/api\/cro
 
 export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  // Роуты сброса сессии не должны получать продлённую cookie поверх своего удаления.
+  if (pathname.startsWith("/api/auth/")) return NextResponse.next();
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   const isPublic = PUBLIC.some((re) => re.test(pathname));
 

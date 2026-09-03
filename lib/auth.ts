@@ -120,7 +120,7 @@ export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
 
 export async function requireUser(): Promise<SessionUser> {
   const user = await getSessionUser();
-  if (!user) redirect("/enter");
+  if (!user) redirect((await cookies()).get(SESSION_COOKIE) ? "/api/auth/clear" : "/enter");
   return user;
 }
 

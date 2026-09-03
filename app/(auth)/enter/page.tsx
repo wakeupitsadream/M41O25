@@ -1,13 +1,17 @@
 import { redirect } from "next/navigation";
-import { getSessionUser } from "@/lib/auth";
+import { cookies } from "next/headers";
+import { SESSION_COOKIE, getSessionUser } from "@/lib/auth";
 import { InviteForm } from "./invite-form";
 import { ClearLocal } from "@/components/features/clear-local";
 
 export const metadata = { title: "Вход" };
 
-export default async function EnterPage() {
+export default async function EnterPage({ searchParams }: { searchParams: Promise<{ cleared?: string }> }) {
   const user = await getSessionUser();
   if (user) redirect("/s");
+  // Cookie есть, а сессии нет — чистим её один раз (параметр cleared защищает от петли).
+  const { cleared } = await searchParams;
+  if (!cleared && (await cookies()).get(SESSION_COOKIE)) redirect("/api/auth/clear");
   return (
     <div className="space-y-8">
       <ClearLocal />

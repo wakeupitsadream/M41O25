@@ -46,7 +46,12 @@ export async function POST(req: Request) {
   const buf = Buffer.from(await file.arrayBuffer());
   const month = new Date().toISOString().slice(0, 7);
   const key = `${user.groupId}/${entityType}/${month}/${randomUUID()}.${ext}`;
-  await storage.put(key, buf, file.type);
+  try {
+    await storage.put(key, buf, file.type);
+  } catch (e) {
+    console.error("[upload] storage.put failed:", e);
+    return NextResponse.json({ error: "Хранилище файлов недоступно — скажи админу проверить настройки R2" }, { status: 503 });
+  }
 
   const [row] = await db
     .insert(attachments)
