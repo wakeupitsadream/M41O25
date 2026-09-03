@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useGuardedRouter } from "@/components/features/nav-guard";
 import { AlertTriangle, Check, ScanLine, Sparkles, Wand2 } from "lucide-react";
 import type { DraftLesson } from "@/lib/ocr/draft";
 import { applyDraft } from "@/app/admin/actions/import";
@@ -22,7 +22,7 @@ const PARITY_LABEL = { upper: "верхняя", lower: "нижняя" } as const
  * Отказ Polza никогда не блокирует: тот же редактор заполняется руками.
  */
 export function ScanRecognizer({ weekId, hasLessons, subjects, parity = null }: { weekId: string; hasLessons: boolean; subjects: { id: string; name: string }[]; parity?: "upper" | "lower" | null }) {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const [open, setOpen] = useState(false);
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [busy, setBusy] = useState<null | "fast" | "strong">(null);

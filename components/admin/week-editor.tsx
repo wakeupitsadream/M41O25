@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useGuardedRouter } from "@/components/features/nav-guard";
 import { Ban, Check, Plus, Trash2, Undo2 } from "lucide-react";
 import type { SlotTime } from "@/lib/db/schema";
 import { addDaysIso, capitalize, fmtDayMonth, fmtRangeShort, fmtWeekday } from "@/lib/schedule/time";
@@ -46,7 +46,7 @@ type Draft = Omit<LessonInput, "weekId"> & { id?: string; isCancelled?: boolean 
 const KINDS: LessonKind[] = ["lecture", "practice", "lab", "consultation", "credit", "exam", "other"];
 
 export function WeekEditor({ week, lessons, subjects, semesters, slotTimes }: Props) {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const [pending, start] = useTransition();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);

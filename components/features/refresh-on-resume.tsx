@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useGuardedRouter } from "@/components/features/nav-guard";
 
 /**
  * iOS держит установленную PWA замороженной сутками: при возвращении на экран после долгой паузы,
@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation";
  * домашка и лента показывают вчерашнее. Расписание обновляется своим хуком, здесь его не трогаем.
  */
 export function RefreshOnResume({ minHiddenMs = 60_000 }: { minHiddenMs?: number }) {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const hiddenAt = useRef<number | null>(null);
 
   useEffect(() => {

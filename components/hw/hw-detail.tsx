@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useGuardedRouter } from "@/components/features/nav-guard";
 import { useState, useTransition } from "react";
 import { Check, Copy, FileText, MessageCircle, Pencil, PencilLine, Send, Trash2, Undo2 } from "lucide-react";
 import { addComment, addEdit, deleteComment, deleteEdit, deleteHomework, markDuplicate, toggleDone, updateHomework } from "@/app/(app)/hw/actions";
@@ -45,7 +45,7 @@ type Props = {
 };
 
 export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const [pending, start] = useTransition();
   const [sheet, setSheet] = useState<null | "edit-add" | "dup" | "edit-orig">(null);
   const [editText, setEditText] = useState("");

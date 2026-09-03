@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useGuardedRouter } from "@/components/features/nav-guard";
 import { useOptimistic, useState, useTransition } from "react";
 import { Check, Lock, Trash2, Undo2 } from "lucide-react";
 import { motion } from "motion/react";
@@ -15,7 +15,7 @@ import { cn, displayName, pluralRu } from "@/lib/utils";
 type Task = NonNullable<Awaited<ReturnType<typeof getTask>>>;
 
 export function TaskDetail({ task, me, today }: { task: Task; me: { id: string; isAdmin: boolean; isMod: boolean }; today: string }) {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const [pending, start] = useTransition();
   const [people, toggle] = useOptimistic(task.people, (prev: Task["people"], userId: string) =>
     prev.map((p) => (p.id === userId ? { ...p, checkedAt: p.checkedAt ? null : new Date().toISOString() } : p)),

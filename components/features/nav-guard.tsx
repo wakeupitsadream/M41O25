@@ -1,0 +1,167 @@
+"use client";
+
+import { useEffect, useLayoutEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
+
+/**
+ * Сторож переходов — обход ошибки React 19.1 внутри Next 15.5 (docs/ROADMAP.md, «Открытая проблема P0»):
+ * клиентский переход, server action или router.refresh() иногда не коммитятся, хотя ответ сервера уже пришёл
+ * целиком. Признак зависания: ответ на fetch страницы получен, а спустя SETTLE_MS ни URL, ни дерево не
+ * изменились. Тогда уходим обычной навигацией браузера (для refresh и форм — перезагружаем страницу):
+ * это всегда работает, а данные действия к тому моменту уже сохранены на сервере.
+ */
+
+const SETTLE_MS = 2500; // сколько ждём коммита после прихода ответа; в норме он занимает меньше 300 мс
+const GIVE_UP_MS = 30_000; // дольше не следим: сервер ещё отвечает либо пользователь уже ушёл сам
+const TICK_MS = 250;
+
+/** Растёт при каждом применении нового RSC-дерева: NavWatchdog в лэйауте перерисовывается вместе с ним. */
+let commitSeq = 0;
+let active: (() => void) | null = null;
+
+/** Сколько мс назад пришёл последний fetch-ответ на этот путь (после performance.clearResourceTimings), либо null. */
+function arrivedAgo(pathname: string, rscOnly: boolean): number | null {
+  let best: number | null = null;
+  for (const e of performance.getEntriesByType("resource") as PerformanceResourceTiming[]) {
+    if (e.initiatorType !== "fetch" || !e.responseEnd) continue;
+    if (rscOnly && !e.name.includes("_rsc=")) continue;
+    let p: string;
+    try {
+      p = new URL(e.name).pathname;
+    } catch {
+      continue;
+    }
+    if (p !== pathname) continue;
+    const ago = performance.now() - e.responseEnd;
+    if (best === null || ago < best) best = ago;
+  }
+  return best;
+}
+
+type Guard = { pathname: string; rscOnly: boolean; settled: () => boolean; recover: () => void; label: string };
+
+function startGuard(g: Guard) {
+  active?.();
+  performance.clearResourceTimings();
+  const started = performance.now();
+  const stop = () => {
+    window.clearInterval(timer);
+    if (active === stop) active = null;
+  };
+  const timer = window.setInterval(() => {
+    if (g.settled() || performance.now() - started > GIVE_UP_MS) return stop();
+    const ago = arrivedAgo(g.pathname, g.rscOnly);
+    if (ago !== null && ago > SETTLE_MS && document.visibilityState === "visible") {
+      stop();
+      console.warn(`[raspison] ${g.label} не завершился за ${Math.round(ago)} мс после ответа, восстанавливаемся`);
+      g.recover();
+    }
+  }, TICK_MS);
+  active = stop;
+}
+
+/** Следить за переходом на href (клик по ссылке, router.push/replace). */
+export function watchNavigation(href: string) {
+  let url: URL;
+  try {
+    url = new URL(href, location.href);
+  } catch {
+    return;
+  }
+  if (url.origin !== location.origin || url.href === location.href) return;
+  const from = location.href;
+  const seq = commitSeq;
+  startGuard({
+    pathname: url.pathname,
+    rscOnly: true,
+    settled: () => location.href !== from || commitSeq !== seq,
+    recover: () => location.assign(url.href),
+    label: `переход на ${url.pathname}`,
+  });
+}
+
+/** Следить за router.refresh(): успех — новое дерево применилось. */
+export function watchRefresh() {
+  const seq = commitSeq;
+  const from = location.href;
+  startGuard({
+    pathname: location.pathname,
+    rscOnly: true,
+    settled: () => commitSeq !== seq || location.href !== from,
+    recover: () => location.reload(),
+    label: "refresh",
+  });
+}
+
+/** Следить за отправкой формы с server action: успех — переход, новое дерево или снова активная кнопка. */
+function watchForm(form: HTMLFormElement) {
+  const seq = commitSeq;
+  const from = location.href;
+  const button = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+  startGuard({
+    pathname: location.pathname,
+    rscOnly: false,
+    settled: () => location.href !== from || commitSeq !== seq || button === null || !button.disabled || !form.isConnected,
+    recover: () => location.reload(),
+    label: "отправка формы",
+  });
+}
+
+function onClick(e: MouseEvent) {
+  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  const a = e.target instanceof Element ? e.target.closest("a[href]") : null;
+  if (!(a instanceof HTMLAnchorElement) || (a.target && a.target !== "_self") || a.hasAttribute("download")) return;
+  if (!a.href.startsWith(location.origin)) return;
+  const url = new URL(a.href);
+  if (url.pathname.startsWith("/api/")) return;
+  if (url.pathname === location.pathname && url.search === location.search) return; // тот же экран или якорь
+  watchNavigation(url.href);
+}
+
+function onSubmit(e: SubmitEvent) {
+  if (e.target instanceof HTMLFormElement) watchForm(e.target);
+}
+
+/** Ставится в лэйаут один раз: слушает клики и отправки форм в фазе перехвата, считает коммиты. */
+export function NavWatchdog() {
+  useLayoutEffect(() => {
+    commitSeq++;
+  });
+  useEffect(() => {
+    try {
+      performance.setResourceTimingBufferSize(600);
+    } catch {
+      // старые браузеры
+    }
+    document.addEventListener("click", onClick, true);
+    document.addEventListener("submit", onSubmit, true);
+    return () => {
+      document.removeEventListener("click", onClick, true);
+      document.removeEventListener("submit", onSubmit, true);
+    };
+  }, []);
+  return null;
+}
+
+/** useRouter, чьи push/replace/refresh под присмотром сторожа. */
+export function useGuardedRouter(): ReturnType<typeof useRouter> {
+  const router = useRouter();
+  return useMemo(
+    () => ({
+      ...router,
+      push: (href, opts) => {
+        watchNavigation(href);
+        router.push(href, opts);
+      },
+      replace: (href, opts) => {
+        watchNavigation(href);
+        router.replace(href, opts);
+      },
+      refresh: () => {
+        watchRefresh();
+        router.refresh();
+      },
+    }),
+    [router],
+  );
+}

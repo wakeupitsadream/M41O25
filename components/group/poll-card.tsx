@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useGuardedRouter } from "@/components/features/nav-guard";
 import { useOptimistic, useTransition } from "react";
 import { Check, EyeOff, Lock, Trash2, Undo2 } from "lucide-react";
 import { motion } from "motion/react";
@@ -12,7 +12,7 @@ import { useToast } from "@/components/ui/toast";
 import { cn, displayName, pluralRu } from "@/lib/utils";
 
 export function PollCard({ poll, me }: { poll: PollItem; me: { id: string; isMod: boolean; isAdmin: boolean } }) {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const toast = useToast();
   const [pending, start] = useTransition();
   const [state, applyVote] = useOptimistic(poll, (prev: PollItem, optionId: string) => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useGuardedRouter } from "@/components/features/nav-guard";
 import { Pin } from "lucide-react";
 import { createNews } from "@/app/(app)/group/actions";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { AttachmentUploader, type UploadedFile } from "@/components/hw/attachmen
 import { cn } from "@/lib/utils";
 
 export function NewsForm() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const [pending, start] = useTransition();
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");

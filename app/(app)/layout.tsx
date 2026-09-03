@@ -6,6 +6,7 @@ import { TabBar } from "@/components/features/tab-bar";
 import { BirthdayBanner } from "@/components/group/birthday-banner";
 import { RefreshOnResume } from "@/components/features/refresh-on-resume";
 import { NetStatus } from "@/components/features/net-status";
+import { NavWatchdog } from "@/components/features/nav-guard";
 import { ToastProvider } from "@/components/ui/toast";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -17,6 +18,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   return (
     <ToastProvider>
       <div className="mx-auto flex min-h-dvh w-full max-w-lg flex-col">
+        <NavWatchdog />
         <RefreshOnResume />
         <NetStatus />
         <BirthdayBanner today={today} people={todays} meId={user.id} />

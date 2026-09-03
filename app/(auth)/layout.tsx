@@ -1,8 +1,10 @@
 import { Wordmark } from "@/components/ui/primitives";
+import { NavWatchdog } from "@/components/features/nav-guard";
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <main className="relative mx-auto flex min-h-dvh w-full max-w-md flex-col px-6 pb-10 pt-safe">
+      <NavWatchdog />
       <div
         aria-hidden
         className="pointer-events-none absolute inset-x-0 top-0 h-72 bg-[radial-gradient(60%_60%_at_50%_0%,rgba(200,255,46,0.18),transparent_70%)]"

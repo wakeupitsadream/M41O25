@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useGuardedRouter } from "@/components/features/nav-guard";
 import { useState, useTransition } from "react";
 import { CornerDownRight, Send, ShieldCheck, Trash2 } from "lucide-react";
 import { motion } from "motion/react";
@@ -17,7 +17,7 @@ type Item = Awaited<ReturnType<typeof listQuestions>>[number];
 const fmtHour = (iso: string) => new Intl.DateTimeFormat("ru-RU", { timeZone: process.env.NEXT_PUBLIC_APP_TZ ?? "Asia/Yekaterinburg", day: "numeric", month: "short" }).format(new Date(iso)).replace(".", "");
 
 export function QuestionsClient({ items, canAnswer, isAdmin }: { items: Item[]; canAnswer: boolean; isAdmin: boolean }) {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const [pending, start] = useTransition();
   const [text, setText] = useState("");
   const [answerFor, setAnswerFor] = useState<string | null>(null);

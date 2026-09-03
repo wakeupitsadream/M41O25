@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useGuardedRouter } from "@/components/features/nav-guard";
 import { ListChecks } from "lucide-react";
 import { createTask } from "@/app/(app)/group/actions";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Field, Input, Textarea } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 export function TaskForm() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const [pending, start] = useTransition();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useGuardedRouter } from "@/components/features/nav-guard";
 import { CalendarClock, ChevronDown, Send } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { createHomework } from "@/app/(app)/hw/actions";
@@ -25,7 +25,7 @@ type Props = {
  * «Оформить подробнее» раскрывает заголовок, дату и вложения.
  */
 export function QuickAddForm({ subjects, suggestedSubjectId, nextBySubject, today }: Props) {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const [pending, start] = useTransition();
   const [body, setBody] = useState("");
   const [title, setTitle] = useState("");

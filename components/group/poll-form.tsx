@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useGuardedRouter } from "@/components/features/nav-guard";
 import { EyeOff, ListChecks, Plus, X } from "lucide-react";
 import { createPoll } from "@/app/(app)/group/actions";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Field, Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 export function PollForm() {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const [pending, start] = useTransition();
   const [question, setQuestion] = useState("");
   const [options, setOptions] = useState(["", ""]);

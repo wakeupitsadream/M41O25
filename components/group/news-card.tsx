@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useGuardedRouter } from "@/components/features/nav-guard";
 import { useTransition } from "react";
 import { FileText, Pin, PinOff, Trash2 } from "lucide-react";
 import { motion } from "motion/react";
@@ -15,7 +15,7 @@ import { cn, displayName } from "@/lib/utils";
 import { useToast } from "@/components/ui/toast";
 
 export function NewsCard({ item, canManage, isAdmin, meId }: { item: NewsItem; canManage: boolean; isAdmin: boolean; meId: string }) {
-  const router = useRouter();
+  const router = useGuardedRouter();
   const toast = useToast();
   const [pending, start] = useTransition();
   const images = item.attachments.filter((a) => a.mime.startsWith("image/"));
