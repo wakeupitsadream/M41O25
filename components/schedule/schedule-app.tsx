@@ -37,7 +37,9 @@ const depthVariants: Variants = {
 
 const depthTransition = { type: "spring", stiffness: 300, damping: 34, mass: 0.9 } as const;
 
-export function ScheduleApp({ initialData, serverToday }: { initialData: SchedulePayload | null; serverToday: string }) {
+export type WeatherLine = { text: string; emoji: string };
+
+export function ScheduleApp({ initialData, serverToday, weather = null }: { initialData: SchedulePayload | null; serverToday: string; weather?: WeatherLine | null }) {
   const pathname = usePathname();
   const now = useNow();
   const today = now?.dateIso ?? serverToday;
@@ -122,6 +124,7 @@ export function ScheduleApp({ initialData, serverToday }: { initialData: Schedul
               now={now}
               today={today}
               weekStart={view.weekStart}
+              weather={weather}
               onOpenDay={openDay}
               onShiftWeek={(d) => shiftWeek(view.weekStart, d)}
               onSemester={openSemester}

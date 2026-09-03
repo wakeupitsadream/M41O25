@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Bell, Cake, CheckSquare, ChevronRight, Contact, MessageCircleQuestion, Newspaper, Vote } from "lucide-react";
+import { Bell, Cake, CheckSquare, ChevronRight, Contact, Dices, MessageCircleQuestion, Newspaper, Vote } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { hubCounts, listBirthdays } from "@/lib/group/query";
 import { todayIso } from "@/lib/tz";
@@ -23,6 +23,7 @@ export default async function GroupPage() {
     { href: "/group/questions", icon: MessageCircleQuestion, label: "Анонимно", hint: counts.unanswered ? `${counts.unanswered} без ответа` : "спроси, не палясь", badge: null },
     { href: "/group/contacts", icon: Contact, label: "Контакты", hint: "преподаватели и деканат", badge: null },
     { href: "/group/birthdays", icon: Cake, label: "Дни рождения", hint: bdHint, badge: nextBd?.daysUntil === 0 ? "🎉" : null },
+    { href: "/group/roulette", icon: Dices, label: "Кто отвечает", hint: "честный рандом на паре", badge: null },
   ];
 
   return (

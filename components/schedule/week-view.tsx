@@ -15,13 +15,14 @@ type Props = {
   now: NowParts | null;
   today: string;
   weekStart: string;
+  weather?: { text: string; emoji: string } | null;
   onOpenDay: (date: string) => void;
   onShiftWeek: (delta: number) => void;
   onSemester: () => void;
   onToday: () => void;
 };
 
-export function WeekView({ data, now, today, weekStart, onOpenDay, onShiftWeek, onSemester, onToday }: Props) {
+export function WeekView({ data, now, today, weekStart, weather = null, onOpenDay, onShiftWeek, onSemester, onToday }: Props) {
   const week = data ? weekFor(data.weeks, weekStart) : null;
   const isCurrentWeek = mondayOf(today) === weekStart;
   const days = [0, 1, 2, 3, 4, 5].map((i) => addDaysIso(weekStart, i));
@@ -104,6 +105,12 @@ export function WeekView({ data, now, today, weekStart, onOpenDay, onShiftWeek, 
       >
         {isCurrentWeek && now && todayLessons.length > 0 && (
           <NowCard lessons={todayLessons} minutes={now.minutes} onOpen={() => onOpenDay(today)} />
+        )}
+        {isCurrentWeek && weather && (
+          <div className="flex items-center gap-2 px-1 text-[13px] text-muted">
+            <span className="text-base leading-none">{weather.emoji}</span>
+            <span>{weather.text}</span>
+          </div>
         )}
 
         {!data && (

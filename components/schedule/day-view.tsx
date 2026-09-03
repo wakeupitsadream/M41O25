@@ -8,6 +8,7 @@ import { KIND_LABEL, PARITY_LABEL, type ScheduleLesson, type SchedulePayload } f
 import { kindTone, lessonsOn, weekFor } from "@/lib/schedule/derive";
 import { cn, pluralRu } from "@/lib/utils";
 import { Badge } from "@/components/ui/primitives";
+import { ShareDayButton } from "./share-day-button";
 
 type Props = {
   data: SchedulePayload | null;
@@ -36,6 +37,7 @@ export function DayView({ data, now, today, date, onBack, onShiftDay }: Props) {
           <ChevronLeft className="size-5" /> Неделя
         </button>
         <div className="flex-1" />
+        {lessons.length > 0 && <ShareDayButton date={date} />}
         <button type="button" onClick={() => onShiftDay(-1)} aria-label="Предыдущий день" className="grid size-9 place-items-center rounded-full text-muted active:bg-surface-2">
           <ChevronLeft className="size-5" />
         </button>
