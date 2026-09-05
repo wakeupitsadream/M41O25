@@ -7,8 +7,6 @@ import { activity, anonQuestions, attachments, contacts, news, pollOptions, poll
 export type Person = { id: string; fullName: string; nickname: string | null; avatarEmoji: string; color: string };
 const person = { id: users.id, fullName: users.fullName, nickname: users.nickname, avatarEmoji: users.avatarEmoji, color: users.color };
 
-export const REACTION_EMOJI = ["🔥", "👍", "💀", "❤️"] as const;
-
 export type ReactionSummary = { emoji: string; count: number; mine: boolean }[];
 
 export async function reactionsFor(entityType: "news" | "homework" | "task", ids: string[], userId: string) {

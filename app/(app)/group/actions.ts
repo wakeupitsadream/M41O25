@@ -13,17 +13,10 @@ import { assertRate } from "@/lib/rate-limit";
 import { parseLocalDateTime, todayIso } from "@/lib/tz";
 import { env } from "@/lib/env";
 import { fail, ok, type ActionResult } from "@/lib/utils";
+import { wrapAction } from "@/lib/actions";
 import type { FormState } from "@/lib/form";
 
 const iso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
-
-const wrap = async <T>(fn: () => Promise<ActionResult<T>>): Promise<ActionResult<T>> => {
-  try {
-    return await fn();
-  } catch (e) {
-    return fail(e instanceof Error ? e.message : "Что-то пошло не так");
-  }
-};
 
 const bump = (...paths: string[]) => {
   revalidatePath("/group", "layout");
@@ -39,7 +32,7 @@ const forgetActivity = (entityType: string, entityId: string) => db.delete(activ
 // ---------- Реакции ----------
 
 export async function toggleReaction(entityType: "news" | "homework" | "task", entityId: string, emoji: string): Promise<ActionResult> {
-  return wrap(async () => {
+  return wrapAction(async () => {
     const user = await actionUser();
     if (!["🔥", "👍", "💀", "❤️", "😂", "🎉"].includes(emoji)) return fail("Не та реакция");
     const table = entityType === "news" ? news : entityType === "task" ? tasks : homework;
@@ -64,7 +57,7 @@ const newsSchema = z.object({
 });
 
 export async function createNews(input: z.infer<typeof newsSchema>): Promise<ActionResult<{ id: string }>> {
-  return wrap(async () => {
+  return wrapAction(async () => {
     const user = await actionUser("moderator");
     const parsed = newsSchema.safeParse(input);
     if (!parsed.success) return fail(parsed.error.issues[0].message);
@@ -89,7 +82,7 @@ export async function createNews(input: z.infer<typeof newsSchema>): Promise<Act
 }
 
 export async function togglePinNews(id: string): Promise<ActionResult> {
-  return wrap(async () => {
+  return wrapAction(async () => {
     const user = await actionUser("moderator");
     const [n] = await db.select().from(news).where(and(eq(news.id, id), eq(news.groupId, user.groupId)));
     if (!n) return fail("Не найдено");
@@ -100,7 +93,7 @@ export async function togglePinNews(id: string): Promise<ActionResult> {
 }
 
 export async function deleteNews(id: string): Promise<ActionResult> {
-  return wrap(async () => {
+  return wrapAction(async () => {
     const user = await actionUser("moderator");
     const [n] = await db.select().from(news).where(and(eq(news.id, id), eq(news.groupId, user.groupId)));
     if (!n) return fail("Не найдено");
@@ -122,7 +115,7 @@ const taskSchema = z.object({
 });
 
 export async function createTask(input: z.infer<typeof taskSchema>): Promise<ActionResult<{ id: string }>> {
-  return wrap(async () => {
+  return wrapAction(async () => {
     const user = await actionUser("moderator");
     const parsed = taskSchema.safeParse(input);
     if (!parsed.success) return fail(parsed.error.issues[0].message);
@@ -139,7 +132,7 @@ export async function createTask(input: z.infer<typeof taskSchema>): Promise<Act
 
 /** Отметки «сдал» ставит только админ — источник правды по деньгам и справкам один. */
 export async function toggleTaskCheck(taskId: string, userId: string): Promise<ActionResult> {
-  return wrap(async () => {
+  return wrapAction(async () => {
     const admin = await actionUser("admin");
     const [t] = await db.select({ id: tasks.id }).from(tasks).where(and(eq(tasks.id, taskId), eq(tasks.groupId, admin.groupId)));
     if (!t) return fail("Задача не найдена");
@@ -154,7 +147,7 @@ export async function toggleTaskCheck(taskId: string, userId: string): Promise<A
 }
 
 export async function setTaskClosed(taskId: string, closed: boolean): Promise<ActionResult> {
-  return wrap(async () => {
+  return wrapAction(async () => {
     const user = await actionUser("moderator");
     await db.update(tasks).set({ closedAt: closed ? new Date() : null }).where(and(eq(tasks.id, taskId), eq(tasks.groupId, user.groupId)));
     bump("/group/tasks", `/group/tasks/${taskId}`);
@@ -181,7 +174,7 @@ const pollSchema = z.object({
 });
 
 export async function createPoll(input: z.infer<typeof pollSchema>): Promise<ActionResult<{ id: string }>> {
-  return wrap(async () => {
+  return wrapAction(async () => {
     const user = await actionUser();
     const parsed = pollSchema.safeParse(input);
     if (!parsed.success) return fail(parsed.error.issues[0].message);
@@ -205,7 +198,7 @@ export async function createPoll(input: z.infer<typeof pollSchema>): Promise<Act
 }
 
 export async function vote(pollId: string, optionId: string): Promise<ActionResult> {
-  return wrap(async () => {
+  return wrapAction(async () => {
     const user = await actionUser();
     const [p] = await db.select().from(polls).where(and(eq(polls.id, pollId), eq(polls.groupId, user.groupId), isNull(polls.deletedAt)));
     if (!p) return fail("Опрос не найден");
@@ -231,7 +224,7 @@ export async function vote(pollId: string, optionId: string): Promise<ActionResu
 }
 
 export async function setPollClosed(pollId: string, closed: boolean): Promise<ActionResult> {
-  return wrap(async () => {
+  return wrapAction(async () => {
     const user = await actionUser();
     const [p] = await db.select().from(polls).where(and(eq(polls.id, pollId), eq(polls.groupId, user.groupId)));
     if (!p) return fail("Не найдено");
@@ -243,7 +236,7 @@ export async function setPollClosed(pollId: string, closed: boolean): Promise<Ac
 }
 
 export async function deletePoll(pollId: string): Promise<ActionResult> {
-  return wrap(async () => {
+  return wrapAction(async () => {
     const user = await actionUser();
     const [p] = await db.select().from(polls).where(and(eq(polls.id, pollId), eq(polls.groupId, user.groupId)));
     if (!p) return fail("Не найдено");
@@ -323,7 +316,7 @@ export async function deleteContact(id: string) {
 const ANON_PER_DAY = 5;
 
 export async function askAnon(body: string): Promise<ActionResult> {
-  return wrap(async () => {
+  return wrapAction(async () => {
     const user = await actionUser();
     const text = body.trim();
     if (text.length < 5) return fail("Вопрос слишком короткий");
@@ -351,7 +344,7 @@ export async function askAnon(body: string): Promise<ActionResult> {
 }
 
 export async function answerAnon(id: string, body: string): Promise<ActionResult> {
-  return wrap(async () => {
+  return wrapAction(async () => {
     const user = await actionUser("moderator");
     const text = body.trim();
     if (!text) return fail("Пустой ответ");
@@ -366,7 +359,7 @@ export async function answerAnon(id: string, body: string): Promise<ActionResult
 }
 
 export async function deleteAnon(id: string): Promise<ActionResult> {
-  return wrap(async () => {
+  return wrapAction(async () => {
     const user = await actionUser("admin");
     await db.update(anonQuestions).set({ deletedAt: new Date() }).where(and(eq(anonQuestions.id, id), eq(anonQuestions.groupId, user.groupId)));
     bump("/group/questions");

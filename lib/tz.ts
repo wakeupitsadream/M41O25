@@ -15,6 +15,11 @@ export const todayIso = () => format(nowTz(), "yyyy-MM-dd");
 export const mondayIso = (d: Date | string = nowTz()) =>
   format(startOfWeek(typeof d === "string" ? new TZDate(d, APP_TZ) : toTz(d), { weekStartsOn: 1 }), "yyyy-MM-dd");
 
+/**
+ * YYYY-MM-DD через `days` дней, считая в поясе группы (TZDate).
+ * Намеренный двойник клиентского `addDaysIso` из lib/schedule/time.ts (там — локальный Date и NEXT_PUBLIC_APP_TZ,
+ * без date-fns/tz в клиентском бандле). Серверный код импортирует только lib/tz; не смешивать (CLAUDE.md, «Время»).
+ */
 export const addDaysIso = (iso: string, days: number) => format(addDays(new TZDate(iso, APP_TZ), days), "yyyy-MM-dd");
 
 /** "HH:MM" текущего времени в поясе группы */
@@ -25,8 +30,6 @@ export const hmToMinutes = (hm: string) => {
   const [h, m] = hm.split(":").map(Number);
   return h * 60 + m;
 };
-
-export const isoToDate = (iso: string) => new TZDate(iso, APP_TZ);
 
 /** "YYYY-MM-DDTHH:mm" из <input type="datetime-local"> → момент времени в поясе группы (сервер на Vercel живёт в UTC). */
 export function parseLocalDateTime(s: string): Date | null {

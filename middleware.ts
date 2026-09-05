@@ -1,7 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-
-const SESSION_COOKIE = "raspison_session";
-const SESSION_MAX_AGE = 60 * 60 * 24 * 365;
+import { SESSION_COOKIE, SESSION_MAX_AGE, cookieOptions } from "@/lib/session-cookie";
 
 // Публичные пути: вход, служебные файлы PWA, cron, статика.
 // /api/files и /api/admin/backup сами проверяют cookie или подписанный токен в URL.
@@ -26,13 +24,7 @@ export function middleware(req: NextRequest) {
   // Скользящее продление: cookie переустанавливается с новым сроком на каждом заходе,
   // валидность самого токена проверяет сервер (requireUser) по базе.
   const res = NextResponse.next();
-  res.cookies.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: SESSION_MAX_AGE,
-  });
+  res.cookies.set(SESSION_COOKIE, token, cookieOptions(SESSION_MAX_AGE));
   return res;
 }
 

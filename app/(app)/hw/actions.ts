@@ -9,6 +9,7 @@ import { activity, attachments, comments, homework, hwDone, hwEdits } from "@/li
 import { actionUser, hasRole } from "@/lib/auth";
 import { assertRate } from "@/lib/rate-limit";
 import { fail, ok, type ActionResult } from "@/lib/utils";
+import { wrapAction } from "@/lib/actions";
 
 const iso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Дата в формате ГГГГ-ММ-ДД");
 
@@ -28,16 +29,8 @@ const bump = (id?: string) => {
   revalidatePath("/group/feed");
 };
 
-const wrap = async <T>(fn: () => Promise<ActionResult<T>>): Promise<ActionResult<T>> => {
-  try {
-    return await fn();
-  } catch (e) {
-    return fail(e instanceof Error ? e.message : "Что-то пошло не так");
-  }
-};
-
 export async function createHomework(input: CreateHomeworkInput): Promise<ActionResult<{ id: string }>> {
-  return wrap(async () => {
+  return wrapAction(async () => {
     const user = await actionUser();
     const parsed = createSchema.safeParse(input);
     if (!parsed.success) return fail(parsed.error.issues[0].message);
@@ -80,7 +73,7 @@ export async function createHomework(input: CreateHomeworkInput): Promise<Action
 const updateSchema = createSchema.omit({ attachmentIds: true });
 
 export async function updateHomework(id: string, input: z.infer<typeof updateSchema>): Promise<ActionResult> {
-  return wrap(async () => {
+  return wrapAction(async () => {
     const user = await actionUser();
     const parsed = updateSchema.safeParse(input);
     if (!parsed.success) return fail(parsed.error.issues[0].message);
@@ -98,7 +91,7 @@ export async function updateHomework(id: string, input: z.infer<typeof updateSch
 }
 
 export async function deleteHomework(id: string): Promise<ActionResult> {
-  const res = await wrap(async () => {
+  const res = await wrapAction(async () => {
     const user = await actionUser();
     const [hw] = await db.select().from(homework).where(and(eq(homework.id, id), eq(homework.groupId, user.groupId), isNull(homework.deletedAt)));
     if (!hw) return fail("Запись не найдена");
@@ -118,7 +111,7 @@ export async function deleteHomework(id: string): Promise<ActionResult> {
 }
 
 export async function addEdit(homeworkId: string, text: string): Promise<ActionResult> {
-  return wrap(async () => {
+  return wrapAction(async () => {
     const user = await actionUser();
     const t = text.trim();
     if (t.length < 1) return fail("Пустое дополнение");
@@ -134,7 +127,7 @@ export async function addEdit(homeworkId: string, text: string): Promise<ActionR
 }
 
 export async function deleteEdit(editId: string): Promise<ActionResult> {
-  return wrap(async () => {
+  return wrapAction(async () => {
     const user = await actionUser();
     const [row] = await db
       .select({ e: hwEdits })
@@ -152,7 +145,7 @@ export async function deleteEdit(editId: string): Promise<ActionResult> {
 }
 
 export async function toggleDone(homeworkId: string): Promise<ActionResult<{ done: boolean }>> {
-  return wrap(async () => {
+  return wrapAction(async () => {
     const user = await actionUser();
     const [hw] = await db.select({ id: homework.id }).from(homework).where(and(eq(homework.id, homeworkId), eq(homework.groupId, user.groupId), isNull(homework.deletedAt)));
     if (!hw) return fail("Запись не найдена");
@@ -169,7 +162,7 @@ export async function toggleDone(homeworkId: string): Promise<ActionResult<{ don
 }
 
 export async function markDuplicate(homeworkId: string, originalId: string | null): Promise<ActionResult> {
-  return wrap(async () => {
+  return wrapAction(async () => {
     const user = await actionUser();
     const [hw] = await db.select().from(homework).where(and(eq(homework.id, homeworkId), eq(homework.groupId, user.groupId), isNull(homework.deletedAt)));
     if (!hw) return fail("Запись не найдена");
@@ -196,7 +189,7 @@ export async function markDuplicate(homeworkId: string, originalId: string | nul
 }
 
 export async function addComment(homeworkId: string, body: string): Promise<ActionResult> {
-  return wrap(async () => {
+  return wrapAction(async () => {
     const user = await actionUser();
     const t = body.trim();
     if (!t) return fail("Пустой комментарий");
@@ -212,7 +205,7 @@ export async function addComment(homeworkId: string, body: string): Promise<Acti
 }
 
 export async function deleteComment(commentId: string): Promise<ActionResult> {
-  return wrap(async () => {
+  return wrapAction(async () => {
     const user = await actionUser();
     const [c] = await db.select().from(comments).where(and(eq(comments.id, commentId), eq(comments.groupId, user.groupId)));
     if (!c) return fail("Не найдено");

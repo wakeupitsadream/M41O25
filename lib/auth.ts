@@ -7,10 +7,9 @@ import { cache } from "react";
 import { and, eq, gt, isNull } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { deviceSessions, groups, users, type Group, type Role, type User } from "@/lib/db/schema";
+import { SESSION_COOKIE, SESSION_MAX_AGE, cookieOptions } from "@/lib/session-cookie";
 
-export const SESSION_COOKIE = "raspison_session";
 export const INVITE_COOKIE = "raspison_invite";
-export const SESSION_MAX_AGE = 60 * 60 * 24 * 365;
 
 export const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
@@ -27,14 +26,6 @@ export const verifyPin = (pin: string, stored: string) => {
   const expected = Buffer.from(hash, "hex");
   return candidate.length === expected.length && timingSafeEqual(candidate, expected);
 };
-
-export const cookieOptions = (maxAge: number) => ({
-  httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: "lax" as const,
-  path: "/",
-  maxAge,
-});
 
 const INVITE_MAX_AGE = 60 * 15;
 

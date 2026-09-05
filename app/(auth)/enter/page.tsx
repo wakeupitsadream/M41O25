@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
-import { SESSION_COOKIE, getSessionUser } from "@/lib/auth";
+import { getSessionUser } from "@/lib/auth";
+import { SESSION_COOKIE } from "@/lib/session-cookie";
 import { InviteForm } from "./invite-form";
 import { ClearLocal } from "@/components/features/clear-local";
 import { EnterInstallHint } from "@/components/features/enter-install-hint";

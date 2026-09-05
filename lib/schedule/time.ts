@@ -36,6 +36,11 @@ export const parseIso = (iso: string) => {
 
 export const toIso = (d: Date) => format(d, "yyyy-MM-dd");
 
+/**
+ * YYYY-MM-DD через `days` дней: календарная арифметика на локальном Date, без сдвигов по поясу.
+ * Намеренный двойник серверного `addDaysIso` из lib/tz.ts (там — TZDate в APP_TZ). Серверный код → lib/tz,
+ * клиентские компоненты → этот модуль; не смешивать импорты (CLAUDE.md, «Время»).
+ */
 export const addDaysIso = (iso: string, days: number) => {
   const d = parseIso(iso);
   d.setDate(d.getDate() + days);
@@ -62,14 +67,6 @@ export const fmtWeekday = (iso: string, long = true) => format(parseIso(iso), lo
 export const fmtDayMonth = (iso: string) => format(parseIso(iso), "d MMMM", { locale: ru });
 export const fmtDayShort = (iso: string) => format(parseIso(iso), "d MMM", { locale: ru }).replace(".", "");
 export const fmtDayNum = (iso: string) => format(parseIso(iso), "d");
-
-/** «7 — 12 сентября» или «28 сентября — 3 октября» */
-export const fmtWeekRange = (mondayIso: string, days = 5) => {
-  const a = parseIso(mondayIso);
-  const b = parseIso(addDaysIso(mondayIso, days));
-  if (a.getMonth() === b.getMonth()) return `${format(a, "d")} — ${format(b, "d MMMM", { locale: ru })}`;
-  return `${format(a, "d MMMM", { locale: ru })} — ${format(b, "d MMMM", { locale: ru })}`;
-};
 
 /** «31 авг — 5 сент» / «7–12 сент» — коротко, для заголовков и плиток */
 export const fmtRangeShort = (fromIso: string, toIso: string) => {
