@@ -2,7 +2,7 @@
 import path from "node:path";
 import fs from "node:fs";
 import assert from "node:assert/strict";
-import { BASE, OUT, launch, login } from "./lib.mjs";
+import { BASE, OUT, launch, login, waitOrReload } from "./lib.mjs";
 
 const { browser, page, shot } = await launch();
 await login(page);
@@ -69,7 +69,7 @@ if (await dupBtn.count()) {
   await page.waitForTimeout(400);
   await page.locator("li button").first().click();
   // До 10 с: при зависшем переходе сторож навигации восстанавливает страницу через ~3 с.
-  await page.locator("text=/дубл/i").first().waitFor({ timeout: 10000 }).catch(() => {});
+  await waitOrReload(page, page.locator("text=/дубл/i"));
   await shot("36-hw-dup");
   assert.ok((await page.locator("text=/дубл/i").count()) >= 1, "после отметки нет признака дубля");
 }

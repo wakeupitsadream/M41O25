@@ -1,6 +1,6 @@
 // Прогон раздела «Группа»: хаб → новость → задача с чек-листом → опрос → контакты → ДР → аноним → лента.
 import assert from "node:assert/strict";
-import { BASE, launch, login } from "./lib.mjs";
+import { BASE, launch, login, waitOrReload } from "./lib.mjs";
 
 const { browser, page, shot } = await launch();
 await login(page);
@@ -77,7 +77,7 @@ await page.getByRole("button", { name: "Ответить" }).first().waitFor({ t
 await page.getByRole("button", { name: "Ответить" }).first().click();
 await page.fill('textarea[placeholder="Ответ увидят все"]', "Пересдача 18 сентября, 10:00, ауд. 305.");
 await page.getByRole("button", { name: "Ответить" }).first().click();
-await page.locator("text=Пересдача 18 сентября").first().waitFor({ timeout: 10000 }).catch(() => {});
+await waitOrReload(page, page.locator("text=Пересдача 18 сентября"));
 await shot("47-questions");
 assert.ok((await page.locator("text=Пересдача 18 сентября").count()) >= 1, "ответ на анонимный вопрос не показан");
 

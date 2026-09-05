@@ -1,6 +1,6 @@
 // Прогон админки: обзор → недели → редактор (добавить пару, опубликовать) → люди → предметы → настройки.
 import assert from "node:assert/strict";
-import { BASE, launch, login } from "./lib.mjs";
+import { BASE, launch, login, waitOrReload } from "./lib.mjs";
 
 const { browser, page, shot } = await launch();
 await login(page);
@@ -37,7 +37,7 @@ await shot("24-admin-editor-after-add");
 // Публикуем
 await page.getByRole("button", { name: /Опубликовать/ }).click();
 // До 10 с: обычно бейдж появляется за секунду, но при зависшем refresh сторож перезагружает страницу через ~3 с.
-await page.locator("text=опубликована").first().waitFor({ timeout: 10000 }).catch(() => {});
+await waitOrReload(page, page.locator("text=опубликована"));
 const status = await page.locator("text=опубликована").count();
 console.log("published badge count:", status);
 assert.ok(status >= 1, "неделя не опубликована");

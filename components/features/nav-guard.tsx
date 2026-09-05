@@ -15,13 +15,13 @@ const SETTLE_MS = 2500; // сколько ждём коммита после п�
 const GIVE_UP_MS = 30_000; // дольше не следим: сервер ещё отвечает либо пользователь уже ушёл сам
 const TICK_MS = 250;
 
-/** Растёт при каждом применении нового RSC-дерева: NavWatchdog в лэйауте перерисовывается вместе с ним. */
-let commitSeq = 0;
+/** Момент последнего применения нового RSC-дерева: NavWatchdog в лэйауте перерисовывается вместе с ним. */
+let lastCommitAt = 0;
 let active: (() => void) | null = null;
 
-/** Сколько мс назад пришёл последний fetch-ответ на этот путь (после performance.clearResourceTimings), либо null. */
-function arrivedAgo(pathname: string, rscOnly: boolean): number | null {
-  let best: number | null = null;
+/** Когда (performance.now) пришёл последний fetch-ответ на этот путь после performance.clearResourceTimings, либо null. */
+function arrivedAt(pathname: string, rscOnly: boolean): number | null {
+  let latest: number | null = null;
   for (const e of performance.getEntriesByType("resource") as PerformanceResourceTiming[]) {
     if (e.initiatorType !== "fetch" || !e.responseEnd) continue;
     if (rscOnly && !e.name.includes("_rsc=")) continue;
@@ -32,10 +32,9 @@ function arrivedAgo(pathname: string, rscOnly: boolean): number | null {
       continue;
     }
     if (p !== pathname) continue;
-    const ago = performance.now() - e.responseEnd;
-    if (best === null || ago < best) best = ago;
+    if (latest === null || e.responseEnd > latest) latest = e.responseEnd;
   }
-  return best;
+  return latest;
 }
 
 let lastAction: { at: number; redirect: string | null } | null = null;
@@ -61,7 +60,14 @@ function wrapFetch() {
   };
 }
 
-type Guard = { arrivedAgo: () => number | null; settled: () => boolean; recover: () => void; label: string };
+/**
+ * arrivedAt — когда пришёл ответ, которого ждёт переход; settled — признак успеха. Коммит дерева считается
+ * успехом только если он случился ПОСЛЕ прихода ответа: коммит от самого server action не должен
+ * засчитываться за коммит следующего за ним refresh.
+ */
+type Guard = { arrivedAt: () => number | null; settled: (arrived: number | null) => boolean; recover: () => void; label: string };
+
+const committedAfter = (arrived: number | null) => arrived !== null && lastCommitAt > arrived;
 
 function startGuard(g: Guard) {
   active?.();
@@ -72,9 +78,10 @@ function startGuard(g: Guard) {
     if (active === stop) active = null;
   };
   const timer = window.setInterval(() => {
-    if (g.settled() || performance.now() - started > GIVE_UP_MS) return stop();
-    const ago = g.arrivedAgo();
-    if (ago !== null && ago > SETTLE_MS && document.visibilityState === "visible") {
+    const arrived = g.arrivedAt();
+    if (g.settled(arrived) || performance.now() - started > GIVE_UP_MS) return stop();
+    const ago = arrived === null ? 0 : performance.now() - arrived;
+    if (arrived !== null && ago > SETTLE_MS && document.visibilityState === "visible") {
       stop();
       console.warn(`[raspison] ${g.label} не завершился за ${Math.round(ago)} мс после ответа, восстанавливаемся`);
       g.recover();
@@ -93,10 +100,9 @@ export function watchNavigation(href: string) {
   }
   if (url.origin !== location.origin || url.href === location.href) return;
   const from = location.href;
-  const seq = commitSeq;
   startGuard({
-    arrivedAgo: () => arrivedAgo(url.pathname, true),
-    settled: () => location.href !== from || commitSeq !== seq,
+    arrivedAt: () => arrivedAt(url.pathname, true),
+    settled: (arrived) => location.href !== from || committedAfter(arrived),
     recover: () => location.assign(url.href),
     label: `переход на ${url.pathname}`,
   });
@@ -104,12 +110,11 @@ export function watchNavigation(href: string) {
 
 /** Следить за router.refresh(): успех — новое дерево применилось. */
 export function watchRefresh() {
-  const seq = commitSeq;
   const from = location.href;
   const pathname = location.pathname;
   startGuard({
-    arrivedAgo: () => arrivedAgo(pathname, true),
-    settled: () => commitSeq !== seq || location.href !== from,
+    arrivedAt: () => arrivedAt(pathname, true),
+    settled: (arrived) => location.href !== from || committedAfter(arrived),
     recover: () => location.reload(),
     label: "refresh",
   });
@@ -120,13 +125,12 @@ export function watchRefresh() {
  * Если действие велело перейти (redirect), уходим по этому адресу, иначе перезагружаем страницу.
  */
 function watchForm(form: HTMLFormElement) {
-  const seq = commitSeq;
   const from = location.href;
   const startedAt = performance.now();
   const button = form.querySelector<HTMLButtonElement>('button[type="submit"]');
   startGuard({
-    arrivedAgo: () => (lastAction && lastAction.at >= startedAt ? performance.now() - lastAction.at : null),
-    settled: () => location.href !== from || commitSeq !== seq || button === null || !button.disabled || !form.isConnected,
+    arrivedAt: () => (lastAction && lastAction.at >= startedAt ? lastAction.at : null),
+    settled: (arrived) => location.href !== from || committedAfter(arrived) || button === null || !button.disabled || !form.isConnected,
     recover: () => {
       const to = lastAction?.redirect;
       if (to) location.assign(new URL(to, location.href).href);
@@ -154,7 +158,7 @@ function onSubmit(e: SubmitEvent) {
 /** Ставится в лэйаут один раз: слушает клики и отправки форм в фазе перехвата, считает коммиты. */
 export function NavWatchdog() {
   useLayoutEffect(() => {
-    commitSeq++;
+    lastCommitAt = performance.now();
   });
   useEffect(() => {
     try {

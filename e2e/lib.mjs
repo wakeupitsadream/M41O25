@@ -52,3 +52,15 @@ export async function login(page, { who = WHO, pin = PIN } = {}) {
   await page.waitForURL("**/s**", { timeout: 30000 });
   await page.waitForLoadState("networkidle");
 }
+
+/**
+ * Ждём появления locator; если за timeout не появился — перезагружаем страницу и ждём ещё раз.
+ * Обход P0 (docs/ROADMAP.md): после server action обновление экрана может зависнуть, данные при этом уже сохранены.
+ */
+export async function waitOrReload(page, locator, timeout = 8000) {
+  const first = await locator.first().waitFor({ timeout }).then(() => true).catch(() => false);
+  if (first) return true;
+  console.log("waitOrReload: экран не обновился, перезагружаем страницу");
+  await page.reload({ waitUntil: "networkidle" });
+  return locator.first().waitFor({ timeout }).then(() => true).catch(() => false);
+}
