@@ -369,8 +369,21 @@ export async function deleteAnon(id: string): Promise<ActionResult> {
 
 // ---------- Лента ----------
 
-export async function markFeedSeen() {
-  const user = await actionUser();
-  await db.update(users).set({ feedSeenAt: new Date() }).where(eq(users.id, user.id));
-  // Без revalidatePath: страница ленты уже отрендерена с прежним порогом, бейджи пересчитаются при следующей навигации.
+/**
+ * Лента показана — всё до `at` (момент её рендера на сервере) считаем прочитанным. Событие, пришедшее
+ * между рендером и этим вызовом, остаётся непрочитанным. Порог только растёт: старая вкладка не откатит новую.
+ */
+export async function markFeedSeen(at?: string): Promise<ActionResult> {
+  return wrapAction(async () => {
+    const user = await actionUser();
+    const now = Date.now();
+    const parsed = at ? Date.parse(at) : NaN;
+    const seen = new Date(Number.isNaN(parsed) ? now : Math.min(parsed, now));
+    await db
+      .update(users)
+      .set({ feedSeenAt: sql`greatest(coalesce(${users.feedSeenAt}, to_timestamp(0)), ${seen.toISOString()}::timestamptz)` })
+      .where(eq(users.id, user.id));
+    // Без revalidatePath: страница ленты уже отрендерена с прежним порогом, точки пересчитаются при следующей навигации.
+    return ok();
+  });
 }

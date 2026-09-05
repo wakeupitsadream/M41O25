@@ -1,8 +1,10 @@
 import "server-only";
 import { fileHref } from "@/lib/files/token";
-import { and, asc, count, desc, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gt, inArray, isNull, lte, max, ne, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { activity, anonQuestions, attachments, contacts, news, pollOptions, pollVotes, polls, reactions, taskChecks, tasks, users } from "@/lib/db/schema";
+import { latestBySection, type SectionLatest } from "@/lib/group/unread";
+import { FEED_FRESH_CAP } from "@/lib/group/feed-page";
 
 export type Person = { id: string; fullName: string; nickname: string | null; avatarEmoji: string; color: string };
 const person = { id: users.id, fullName: users.fullName, nickname: users.nickname, avatarEmoji: users.avatarEmoji, color: users.color };
@@ -44,12 +46,17 @@ export async function hubCounts(groupId: string, userId: string, feedSeenAt: Dat
   return { unread, openTasks, openPolls, unanswered };
 }
 
-export async function unreadCount(groupId: string, userId: string, feedSeenAt: Date | null) {
-  const [{ n }] = await db
-    .select({ n: count() })
+/**
+ * Время последнего чужого события по вкладкам (ДЗ, Расписание, Группа) — для точек в таб-баре.
+ * Всё, что не новее `feed_seen_at`, точку дать не может (пользователь видел ленту), поэтому и не читаем.
+ */
+export async function sectionLatest(groupId: string, userId: string, feedSeenAt: Date | null): Promise<SectionLatest> {
+  const rows = await db
+    .select({ eventType: activity.eventType, entityType: activity.entityType, latest: max(activity.createdAt) })
     .from(activity)
-    .where(and(eq(activity.groupId, groupId), gt(activity.createdAt, feedSeenAt ?? new Date(0)), sql`${activity.actorId} is distinct from ${userId}`));
-  return n;
+    .where(and(eq(activity.groupId, groupId), gt(activity.createdAt, feedSeenAt ?? new Date(0)), sql`${activity.actorId} is distinct from ${userId}`))
+    .groupBy(activity.eventType, activity.entityType);
+  return latestBySection(rows.flatMap((r) => (r.latest ? [{ eventType: r.eventType, entityType: r.entityType, latest: r.latest }] : [])));
 }
 
 // ---------- Новости ----------
@@ -232,15 +239,26 @@ export async function listQuestions(groupId: string) {
 
 // ---------- Лента ----------
 
-export async function listFeed(groupId: string, userId: string, limit = 60) {
-  const rows = await db
-    .select({ a: activity, actor: person })
-    .from(activity)
-    .leftJoin(users, eq(users.id, activity.actorId))
-    .where(and(eq(activity.groupId, groupId), sql`${activity.actorId} is distinct from ${userId}`))
-    .orderBy(desc(activity.createdAt))
-    .limit(limit);
-  return rows.map((r) => ({
+/**
+ * Лента: всё непрочитанное (новее `since`) целиком, ниже — `olderLimit` старых событий и флаг «есть ещё».
+ * `since = null` (ленту ещё не открывали) — всё считается новым, старого нет.
+ */
+export async function listFeed(groupId: string, userId: string, since: Date | null, olderLimit: number) {
+  const own = and(eq(activity.groupId, groupId), sql`${activity.actorId} is distinct from ${userId}`);
+  const select = () => db.select({ a: activity, actor: person }).from(activity).leftJoin(users, eq(users.id, activity.actorId));
+  const [freshRows, olderRows] = await Promise.all([
+    select()
+      .where(since ? and(own, gt(activity.createdAt, since)) : own)
+      .orderBy(desc(activity.createdAt))
+      .limit(FEED_FRESH_CAP),
+    since
+      ? select()
+          .where(and(own, lte(activity.createdAt, since)))
+          .orderBy(desc(activity.createdAt))
+          .limit(olderLimit + 1)
+      : Promise.resolve([]),
+  ]);
+  const toItem = (r: (typeof freshRows)[number]) => ({
     id: r.a.id,
     eventType: r.a.eventType,
     entityType: r.a.entityType,
@@ -248,9 +266,14 @@ export async function listFeed(groupId: string, userId: string, limit = 60) {
     payload: (r.a.payload ?? {}) as Record<string, unknown>,
     createdAt: r.a.createdAt.toISOString(),
     actor: r.actor?.id ? r.actor : null,
-  }));
+  });
+  return {
+    fresh: freshRows.map(toItem),
+    older: olderRows.slice(0, olderLimit).map(toItem),
+    hasMore: olderRows.length > olderLimit,
+  };
 }
 
-export type FeedItem = Awaited<ReturnType<typeof listFeed>>[number];
+export type FeedItem = Awaited<ReturnType<typeof listFeed>>["fresh"][number];
 
 export { ne };

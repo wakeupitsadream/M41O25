@@ -1,5 +1,5 @@
 import { requireUser } from "@/lib/auth";
-import { listBirthdays, unreadCount } from "@/lib/group/query";
+import { listBirthdays, sectionLatest } from "@/lib/group/query";
 import { todayIso } from "@/lib/tz";
 import { firstName } from "@/lib/utils";
 import { TabBar } from "@/components/features/tab-bar";
@@ -12,7 +12,7 @@ import { ToastProvider } from "@/components/ui/toast";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
   const today = todayIso();
-  const [unread, birthdays] = await Promise.all([unreadCount(user.groupId, user.id, user.feedSeenAt), listBirthdays(user.groupId, today)]);
+  const [latest, birthdays] = await Promise.all([sectionLatest(user.groupId, user.id, user.feedSeenAt), listBirthdays(user.groupId, today)]);
   const todays = birthdays.filter((b) => b.daysUntil === 0).map((b) => ({ id: b.id, fullName: b.fullName, firstName: firstName(b.fullName) }));
 
   return (
@@ -23,7 +23,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <NetStatus />
         <BirthdayBanner today={today} people={todays} meId={user.id} />
         <div className="flex-1 pb-safe">{children}</div>
-        <TabBar unread={unread} />
+        <TabBar latest={latest} feedSeenAt={user.feedSeenAt?.toISOString() ?? null} />
       </div>
     </ToastProvider>
   );
