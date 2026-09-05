@@ -7,6 +7,8 @@ import { getSessionUser } from "@/lib/auth";
 import { storage } from "@/lib/storage";
 import { recognizeSchedule } from "@/lib/ocr/recognize";
 import { toDraft } from "@/lib/ocr/draft";
+import { shiftLessons } from "@/lib/ocr/diff";
+import { getPreviousPublishedWeek } from "@/lib/schedule/query";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -60,11 +62,14 @@ export async function POST(req: Request) {
 
   try {
     const { result, model, attempts, usage, durationMs, schemaFallback } = await recognizeSchedule({ images, groupShort: group.shortName, slotTimes: group.slotTimes, strong });
-    const subjectList = await db
-      .select({ id: subjects.id, name: subjects.name, shortName: subjects.shortName })
-      .from(subjects)
-      .where(and(eq(subjects.groupId, user.groupId), eq(subjects.archived, false)))
-      .orderBy(asc(subjects.name));
+    const [subjectList, previous] = await Promise.all([
+      db
+        .select({ id: subjects.id, name: subjects.name, shortName: subjects.shortName, aliases: subjects.aliases, defaultTeacher: subjects.defaultTeacher, defaultRoom: subjects.defaultRoom })
+        .from(subjects)
+        .where(and(eq(subjects.groupId, user.groupId), eq(subjects.archived, false)))
+        .orderBy(asc(subjects.name)),
+      getPreviousPublishedWeek(user.groupId, week.startsOn, week.parity),
+    ]);
     const draft = toDraft(result, week.startsOn, week.parity, group.slotTimes, subjectList);
     await db.update(scheduleImports).set({ status: "recognized", model, rawJson: result, usage, durationMs, attempts }).where(eq(scheduleImports.id, imp.id));
     await db.update(attachments).set({ entityId: imp.id }).where(inArray(attachments.id, files.map((f) => f.id)));
@@ -79,6 +84,8 @@ export async function POST(req: Request) {
       schemaFallback,
       notes: result.confidence_notes,
       draft,
+      // Прошлая опубликованная неделя той же чётности, даты уже сдвинуты на текущую — клиент считает диф сам, черновик там правится.
+      previous: previous ? { weekId: previous.id, startsOn: previous.startsOn, parity: previous.parity, lessons: shiftLessons(previous.lessons, previous.startsOn, week.startsOn) } : null,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Распознавание не удалось";

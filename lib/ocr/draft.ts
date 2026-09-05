@@ -1,6 +1,13 @@
 import type { SlotTime } from "@/lib/db/schema";
 import type { LessonKind } from "@/lib/schedule/types";
 import { DAY_CODES, KIND_FROM_OCR, type OcrLesson, type OcrResult } from "./schema";
+import { matchSubjectDetailed, type MatchKind, type SubjectRef as MatchSubjectRef } from "./match";
+
+export { matchSubject, matchSubjectDetailed, normalizeTitle } from "./match";
+export type { MatchKind } from "./match";
+
+/** Откуда взято поле черновика: из скана или подставлено из справочника предметов. */
+export type FieldSource = "scan" | "catalog";
 
 export type DraftLesson = {
   key: string;
@@ -9,9 +16,15 @@ export type DraftLesson = {
   startsAt: string;
   endsAt: string;
   title: string;
+  /** Название ровно как в скане — для автообучения алиасов, даже если админ заменил title названием предмета. */
+  scanTitle: string;
   subjectId: string | null;
+  /** Как нашли предмет: точно, по алиасу, нечётко (стоит проверить) или не нашли. */
+  matchKind: MatchKind | null;
   room: string | null;
+  roomSource: FieldSource | null;
   teacherName: string | null;
+  teacherSource: FieldSource | null;
   kind: LessonKind;
   weekType: "upper" | "lower" | "both";
   uncertain: boolean;
@@ -19,31 +32,7 @@ export type DraftLesson = {
   include: boolean;
 };
 
-type SubjectRef = { id: string; name: string; shortName: string | null };
-
-const norm = (s: string) =>
-  s
-    .toLowerCase()
-    .replace(/ё/g, "е")
-    .replace(/[^a-zа-я0-9]+/g, " ")
-    .trim();
-
-/** Сопоставление названия из скана со справочником: точное → по короткому имени → по вхождению → по первым буквам. */
-export function matchSubject(title: string, subjects: SubjectRef[]): string | null {
-  const t = norm(title);
-  if (!t) return null;
-  const exact = subjects.find((s) => norm(s.name) === t || (s.shortName && norm(s.shortName) === t));
-  if (exact) return exact.id;
-  // Короткое имя — только как целое слово и от 3 символов: «ИЯ» не должно цеплять «История».
-  const tokens = new Set(t.split(" "));
-  const byShort = subjects.filter((s) => s.shortName && norm(s.shortName).length >= 3 && tokens.has(norm(s.shortName)));
-  if (byShort.length === 1) return byShort[0].id;
-  const contains = subjects.filter((s) => t.length >= 5 && (norm(s.name).includes(t) || t.includes(norm(s.name))));
-  if (contains.length === 1) return contains[0].id;
-  const head = t.slice(0, 6);
-  const prefix = subjects.filter((s) => head.length >= 5 && norm(s.name).startsWith(head));
-  return prefix.length === 1 ? prefix[0].id : null;
-}
+export type SubjectRef = MatchSubjectRef & { defaultTeacher?: string | null; defaultRoom?: string | null };
 
 /** «8.30», «8-30», «8:30» → «08:30». */
 export const normalizeTime = (t: string) => {
@@ -68,15 +57,21 @@ export const slotByTime = (timeStart: string, slotTimes: SlotTime[]): number | n
   return best?.slot ?? null;
 };
 
-const addDays = (iso: string, n: number) => {
+/** Сдвиг даты-строки на n дней без часовых поясов (арифметика по UTC над YYYY-MM-DD). */
+export const addDays = (iso: string, n: number) => {
   const [y, mo, d] = iso.split("-").map(Number);
   const dt = new Date(Date.UTC(y, mo - 1, d + n));
   return dt.toISOString().slice(0, 10);
 };
 
+/** Разница в днях между двумя датами-строками (b − a). */
+export const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000);
+
 /**
  * Ответ модели → черновик пар на конкретные даты недели. Пары «чужой» чётности отбрасываются:
  * скан всегда приходит на конкретную неделю с известной чётностью.
+ * Если в скане нет преподавателя или аудитории, а у найденного предмета есть значения по умолчанию — подставляем их
+ * с пометкой источника «catalog».
  */
 export function toDraft(result: OcrResult, weekStartsOn: string, weekParity: "upper" | "lower" | null, slotTimes: SlotTime[], subjects: SubjectRef[]): DraftLesson[] {
   const out: DraftLesson[] = [];
@@ -91,16 +86,27 @@ export function toDraft(result: OcrResult, weekStartsOn: string, weekParity: "up
     const startsAt = l.time_start ? pad(l.time_start) : slotTime?.start ?? "08:30";
     const endsAt = l.time_end ? pad(l.time_end) : slotTime?.end ?? "10:00";
     const foreignParity = weekParity !== null && l.week_type !== "both" && l.week_type !== weekParity;
+    const match = matchSubjectDetailed(l.subject, subjects);
+    const subject = match ? subjects.find((s) => s.id === match.id) ?? null : null;
+    const scanRoom = l.room?.trim().slice(0, 40) || null;
+    const scanTeacher = l.teacher?.trim().slice(0, 80) || null;
+    const room = scanRoom ?? (subject?.defaultRoom?.trim().slice(0, 40) || null);
+    const teacherName = scanTeacher ?? (subject?.defaultTeacher?.trim().slice(0, 80) || null);
+    const title = l.subject.trim().slice(0, 120);
     out.push({
       key: `${l.day}-${slot}-${i}`,
       date: addDays(weekStartsOn, dayIdx),
       slot,
       startsAt,
       endsAt,
-      title: l.subject.trim().slice(0, 120),
-      subjectId: matchSubject(l.subject, subjects),
-      room: l.room?.trim().slice(0, 40) || null,
-      teacherName: l.teacher?.trim().slice(0, 80) || null,
+      title,
+      scanTitle: title,
+      subjectId: match?.id ?? null,
+      matchKind: match?.kind ?? null,
+      room,
+      roomSource: room ? (scanRoom ? "scan" : "catalog") : null,
+      teacherName,
+      teacherSource: teacherName ? (scanTeacher ? "scan" : "catalog") : null,
       kind: l.lesson_type ? KIND_FROM_OCR[l.lesson_type] : "other",
       weekType: l.week_type,
       uncertain: l.uncertain,

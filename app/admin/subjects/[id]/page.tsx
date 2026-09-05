@@ -7,7 +7,7 @@ import { subjects } from "@/lib/db/schema";
 import { requireRole } from "@/lib/auth";
 import { toggleSubjectArchived, updateSubject } from "@/app/admin/actions/catalog";
 import { Card } from "@/components/ui/card";
-import { Field, Input } from "@/components/ui/input";
+import { Field, Input, Textarea } from "@/components/ui/input";
 import { ConfirmButton, SubmitButton } from "@/components/admin/forms";
 
 export default async function EditSubjectPage({ params }: { params: Promise<{ id: string }> }) {
@@ -40,6 +40,9 @@ export default async function EditSubjectPage({ params }: { params: Promise<{ id
               <Input name="defaultRoom" defaultValue={s.defaultRoom ?? ""} />
             </Field>
           </div>
+          <Field label="Как пишут в расписании" hint="По одному в строке. Пополняется само, когда в черновике скана строку привязывают к этому предмету.">
+            <Textarea name="aliases" defaultValue={s.aliases.join("\n")} placeholder={"Матан\nМатем. анализ"} className="min-h-20" />
+          </Field>
           <SubmitButton className="w-full">Сохранить</SubmitButton>
         </ActionForm>
       </Card>

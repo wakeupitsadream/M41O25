@@ -10,6 +10,7 @@ import { actionUser } from "@/lib/auth";
 import { generateInviteSuffix, ok, type ActionResult } from "@/lib/utils";
 import { invitePrefix } from "@/lib/invite";
 import type { FormState } from "@/lib/form";
+import { MAX_ALIASES, MAX_ALIAS_LENGTH } from "@/lib/ocr/match";
 
 const iso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -21,6 +22,7 @@ const subjectSchema = z.object({
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().or(z.literal("")),
   defaultTeacher: z.string().trim().max(80).optional().or(z.literal("")),
   defaultRoom: z.string().trim().max(40).optional().or(z.literal("")),
+  aliases: z.string().max(4000).optional().or(z.literal("")),
 });
 
 const readSubject = (fd: FormData) => ({
@@ -29,7 +31,12 @@ const readSubject = (fd: FormData) => ({
   color: fd.get("color") ?? "",
   defaultTeacher: fd.get("defaultTeacher") ?? "",
   defaultRoom: fd.get("defaultRoom") ?? "",
+  aliases: fd.get("aliases") ?? "",
 });
+
+/** Варианты написания из формы: по одному в строке или через запятую, без дублей, не длиннее MAX_ALIASES. */
+const parseAliases = (raw: string | undefined) =>
+  [...new Set((raw ?? "").split(/[\n,;]+/).map((a) => a.trim().slice(0, MAX_ALIAS_LENGTH)).filter(Boolean))].slice(0, MAX_ALIASES);
 
 export async function createSubject(_prev: FormState, formData: FormData): Promise<FormState> {
   const admin = await actionUser("admin");
@@ -56,7 +63,7 @@ export async function updateSubject(id: string, _prev: FormState, formData: Form
   const d = parsed.data;
   await db
     .update(subjects)
-    .set({ name: d.name, shortName: d.shortName || null, color: d.color || null, defaultTeacher: d.defaultTeacher || null, defaultRoom: d.defaultRoom || null })
+    .set({ name: d.name, shortName: d.shortName || null, color: d.color || null, defaultTeacher: d.defaultTeacher || null, defaultRoom: d.defaultRoom || null, aliases: parseAliases(d.aliases) })
     .where(and(eq(subjects.id, id), eq(subjects.groupId, admin.groupId)));
   revalidatePath("/admin/subjects");
   revalidatePath("/s", "layout");

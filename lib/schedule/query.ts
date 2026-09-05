@@ -1,10 +1,11 @@
 import "server-only";
-import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lt, lte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { groups, lessons, semesters, subjects, weeks } from "@/lib/db/schema";
 import { todayIso, addDaysIso } from "@/lib/tz";
 import { listHomeworkForSchedule } from "@/lib/hw/query";
 import type { SchedulePayload, ScheduleSemester, ScheduleWeek } from "./types";
+import type { PrevLesson } from "@/lib/ocr/diff";
 
 type SemesterRow = typeof semesters.$inferSelect;
 
@@ -106,5 +107,40 @@ export async function getSchedulePayload(groupId: string, userId: string | null 
     weeks: [...byWeek.values()],
     homework: homeworkList,
     generatedAt: new Date().toISOString(),
+  };
+}
+
+export type PreviousWeek = { id: string; startsOn: string; parity: "upper" | "lower" | null; lessons: PrevLesson[] };
+
+/**
+ * Последняя опубликованная неделя до указанной даты — той же чётности, если чётность задана.
+ * Нужна черновику скана: показать, что новое, что изменилось и какие пары пропали.
+ */
+export async function getPreviousPublishedWeek(groupId: string, beforeStartsOn: string, parity: "upper" | "lower" | null): Promise<PreviousWeek | null> {
+  const [week] = await db
+    .select({ id: weeks.id, startsOn: weeks.startsOn, parity: weeks.parity })
+    .from(weeks)
+    .where(and(eq(weeks.groupId, groupId), eq(weeks.status, "published"), lt(weeks.startsOn, beforeStartsOn), ...(parity ? [eq(weeks.parity, parity)] : [])))
+    .orderBy(desc(weeks.startsOn))
+    .limit(1);
+  if (!week) return null;
+  const rows = await db
+    .select()
+    .from(lessons)
+    .where(and(eq(lessons.weekId, week.id), eq(lessons.isCancelled, false)))
+    .orderBy(asc(lessons.date), asc(lessons.slot));
+  return {
+    ...week,
+    lessons: rows.map((l) => ({
+      date: l.date,
+      slot: l.slot,
+      title: l.title,
+      subjectId: l.subjectId,
+      room: l.room,
+      teacherName: l.teacherName,
+      kind: l.kind,
+      startsAt: l.startsAt.slice(0, 5),
+      endsAt: l.endsAt.slice(0, 5),
+    })),
   };
 }

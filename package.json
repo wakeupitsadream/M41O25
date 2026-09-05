@@ -18,6 +18,7 @@
     "db:seed": "tsx scripts/seed.ts",
     "db:studio": "drizzle-kit studio",
     "db:restore": "tsx scripts/restore.ts",
+    "ocr:eval": "node --import tsx --conditions=react-server scripts/ocr-eval.ts",
     "icons": "node scripts/icons.mjs",
     "e2e": "node e2e/shoot.mjs && node e2e/schedule.mjs && node e2e/admin.mjs && node e2e/hw.mjs && node e2e/group.mjs && node e2e/nav-guard.mjs && node e2e/ocr.mjs && node e2e/wow.mjs",
     "e2e:offline": "BASE=http://localhost:3001 node e2e/offline.mjs"

@@ -70,7 +70,7 @@ const transient = (e: unknown) =>
 export async function recognizeSchedule(input: RecognizeInput): Promise<RecognizeOutput> {
   const model = input.strong ? env.polza.strongModel : env.polza.model;
   const started = Date.now();
-  if (env.polza.mock) return { result: mockResult(input.groupShort), model: "mock", attempts: 1, usage: null, durationMs: Date.now() - started, schemaFallback: false };
+  if (env.polza.mock) return { result: mockOcrResult(input.groupShort), model: "mock", attempts: 1, usage: null, durationMs: Date.now() - started, schemaFallback: false };
   if (!env.polza.apiKey) throw new Error("POLZA_API_KEY не задан — распознавание недоступно, заполни неделю вручную");
 
   const deadline = started + 95_000;
@@ -143,8 +143,8 @@ function extractJson(text: string): unknown {
   }
 }
 
-/** Тестовый ответ для локальной разработки без ключа Polza (OCR_MOCK=1). */
-function mockResult(groupShort: string): OcrResult {
+/** Тестовый ответ для локальной разработки без ключа Polza (OCR_MOCK=1) и для `npm run ocr:eval -- --mock`. */
+export function mockOcrResult(groupShort: string): OcrResult {
   const mk = (day: OcrResult["lessons"][number]["day"], slot: number, subject: string, type: OcrResult["lessons"][number]["lesson_type"], teacher: string, room: string, extra: Partial<OcrResult["lessons"][number]> = {}) => ({
     day,
     slot,

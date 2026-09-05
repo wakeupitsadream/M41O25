@@ -9,8 +9,8 @@ const slots = [
   { slot: 3, start: "12:10", end: "13:40" },
 ];
 const subjects = [
-  { id: "m", name: "Математический анализ", shortName: "Матан" },
-  { id: "e", name: "Английский язык", shortName: "Англ" },
+  { id: "m", name: "Математический анализ", shortName: "Матан", aliases: [], defaultTeacher: "Иванова И.И.", defaultRoom: "214" },
+  { id: "e", name: "Английский язык", shortName: "Англ", aliases: ["Ин. яз."] },
   { id: "h", name: "История России", shortName: "История" },
 ];
 const base = (lessons: OcrResult["lessons"]): OcrResult => ({ group_found: true, group_label_seen: "М41О25", week_type: "upper", confidence_notes: "", lessons });
@@ -53,4 +53,27 @@ test("matchSubject: точное, короткое, по вхождению; д�
   assert.equal(matchSubject("математический анализ", subjects), "m");
   assert.equal(matchSubject("Английский язык (практика)", subjects), "e");
   assert.equal(matchSubject("ИЯ", subjects), null);
+});
+
+test("toDraft: преподаватель и аудитория из справочника подставляются с пометкой источника, из скана — не перекрываются", () => {
+  const d = toDraft(base([l({ subject: "Матан", teacher: null, room: null }), l({ slot: 2, subject: "Матан", teacher: "Петров П.П.", room: null })]), "2026-09-07", "upper", slots, subjects);
+  assert.equal(d[0].teacherName, "Иванова И.И.");
+  assert.equal(d[0].teacherSource, "catalog");
+  assert.equal(d[0].room, "214");
+  assert.equal(d[0].roomSource, "catalog");
+  assert.equal(d[0].matchKind, "exact");
+  assert.equal(d[0].scanTitle, "Матан");
+  assert.equal(d[1].teacherName, "Петров П.П.");
+  assert.equal(d[1].teacherSource, "scan");
+  assert.equal(d[1].roomSource, "catalog");
+});
+
+test("toDraft: предмет без справочника — источники пустые, matchKind null; алиас даёт kind alias", () => {
+  const d = toDraft(base([l({ subject: "Физкультура", teacher: null, room: null }), l({ slot: 2, subject: "Ин. яз." })]), "2026-09-07", "upper", slots, subjects);
+  assert.equal(d[0].subjectId, null);
+  assert.equal(d[0].matchKind, null);
+  assert.equal(d[0].teacherSource, null);
+  assert.equal(d[0].roomSource, null);
+  assert.equal(d[1].subjectId, "e");
+  assert.equal(d[1].matchKind, "alias");
 });

@@ -115,6 +115,8 @@ export const subjects = pgTable(
     color: text("color"),
     defaultTeacher: text("default_teacher"),
     defaultRoom: text("default_room"),
+    /** Варианты написания из сканов («Матан», «Матем. анализ»): пополняются сами, когда админ привязывает строку черновика к предмету. */
+    aliases: text("aliases").array().notNull().default(sql`'{}'::text[]`),
     archived: boolean("archived").notNull().default(false),
     createdAt: createdAt(),
   },

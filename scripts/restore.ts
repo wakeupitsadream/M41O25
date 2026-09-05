@@ -24,6 +24,9 @@ const ORDER = [
 
 const camelToSnake = (s: string) => s.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`);
 
+/** Колонки-массивы Postgres (text[]): их pg сериализует сам, а JSON.stringify дал бы `["a"]` вместо `{a}`. Остальные объекты — jsonb. */
+const ARRAY_COLUMNS = new Set(["subjects.aliases"]);
+
 async function main() {
   const args = process.argv.slice(2);
   const file = args.find((a) => !a.startsWith("--"));
@@ -54,6 +57,7 @@ async function main() {
         const cols = Object.keys(row);
         const values = cols.map((c) => {
           const v = row[c];
+          if (Array.isArray(v) && ARRAY_COLUMNS.has(`${table}.${c}`)) return v;
           return v !== null && typeof v === "object" && !(v instanceof Date) ? JSON.stringify(v) : v;
         });
         const sql = `insert into "${table}" (${cols.map((c) => `"${camelToSnake(c)}"`).join(", ")}) values (${cols.map((_, i) => `$${i + 1}`).join(", ")}) on conflict do nothing`;
