@@ -52,3 +52,6 @@ next-env.d.ts
 
 # логи локальных запусков
 *.log
+
+# worktree агентов Claude Code (создаются оркестратором, в репозиторий не входят)
+/.claude/worktrees/

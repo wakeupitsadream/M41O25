@@ -4,7 +4,7 @@ import { useEffect, useLayoutEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 
 /**
- * Сторож переходов — обход ошибки React 19.1 внутри Next 15.5 (docs/ROADMAP.md, «Открытая проблема P0»):
+ * Сторож переходов — обход ошибки React (canary 19.2, август 2025) внутри Next 15.5 (docs/ROADMAP.md, «Открытая проблема P0»):
  * клиентский переход, server action или router.refresh() иногда не коммитятся, хотя ответ сервера уже пришёл
  * целиком. Признак зависания: ответ на fetch страницы получен, а спустя SETTLE_MS ни URL, ни дерево не
  * изменились. Тогда уходим обычной навигацией браузера (для refresh и форм — перезагружаем страницу):
