@@ -4,13 +4,14 @@ import { db } from "@/lib/db";
 import { groups, lessons, semesters, subjects, weeks } from "@/lib/db/schema";
 import { todayIso, addDaysIso } from "@/lib/tz";
 import { listHomeworkForSchedule } from "@/lib/hw/query";
-import type { SchedulePayload, ScheduleWeek } from "./types";
+import type { SchedulePayload, ScheduleSemester, ScheduleWeek } from "./types";
 
-/** Текущий семестр: тот, в который попадает сегодня; иначе ближайший будущий; иначе последний прошедший. */
-export async function getCurrentSemester(groupId: string) {
-  const today = todayIso();
-  const all = await db.select().from(semesters).where(eq(semesters.groupId, groupId)).orderBy(asc(semesters.startsOn));
-  // Приоритет: идёт семестр → идёт его хвост (сессия, до 60 дней после endsOn и до начала следующего) → ближайший будущий → последний.
+type SemesterRow = typeof semesters.$inferSelect;
+
+const listSemesters = (groupId: string) => db.select().from(semesters).where(eq(semesters.groupId, groupId)).orderBy(asc(semesters.startsOn));
+
+/** Из списка по возрастанию startsOn: идёт семестр → идёт его хвост (до 60 дней после endsOn и до начала следующего) → ближайший будущий → последний. */
+function pickCurrentSemester(all: SemesterRow[], today: string): SemesterRow | null {
   const nextStart = (s: { startsOn: string }) => all.find((n) => n.startsOn > s.startsOn)?.startsOn ?? null;
   return (
     all.find((s) => s.startsOn <= today && s.endsOn >= today) ??
@@ -21,14 +22,29 @@ export async function getCurrentSemester(groupId: string) {
   );
 }
 
+/** Текущий семестр: тот, в который попадает сегодня; иначе ближайший будущий; иначе последний прошедший. */
+export async function getCurrentSemester(groupId: string) {
+  return pickCurrentSemester(await listSemesters(groupId), todayIso());
+}
+
+const toSemester = (s: SemesterRow): ScheduleSemester => ({
+  id: s.id,
+  title: s.title,
+  startsOn: s.startsOn,
+  endsOn: s.endsOn,
+  sessionStartsOn: s.sessionStartsOn,
+});
+
 /**
  * Опубликованные недели с парами и ДЗ к дням — то, что видят студенты (и что кешируется офлайн).
  * userId нужен только для личных галочек «сделал» у ДЗ; без него все done = false.
+ * С `semesterId` — окно архивного семестра группы (для сетки прошлых семестров); чужой или неизвестный id → текущий.
  */
-export async function getSchedulePayload(groupId: string, userId: string | null = null): Promise<SchedulePayload> {
+export async function getSchedulePayload(groupId: string, userId: string | null = null, semesterId?: string | null): Promise<SchedulePayload> {
   const [group] = await db.select({ shortName: groups.shortName, slotTimes: groups.slotTimes }).from(groups).where(eq(groups.id, groupId));
-  const semester = await getCurrentSemester(groupId);
   const today = todayIso();
+  const all = await listSemesters(groupId);
+  const semester = (semesterId ? all.find((s) => s.id === semesterId) : null) ?? pickCurrentSemester(all, today);
 
   // Окно: семестр с запасом в неделю до и два месяца после (сессия), либо ±60 дней от сегодня.
   const from = semester ? addDaysIso(semester.startsOn, -7) : addDaysIso(today, -60);
@@ -85,9 +101,8 @@ export async function getSchedulePayload(groupId: string, userId: string | null 
 
   return {
     group: { shortName: group?.shortName ?? "", slotTimes: group?.slotTimes ?? [] },
-    semester: semester
-      ? { id: semester.id, title: semester.title, startsOn: semester.startsOn, endsOn: semester.endsOn, sessionStartsOn: semester.sessionStartsOn }
-      : null,
+    semester: semester ? toSemester(semester) : null,
+    semesters: all.map(toSemester),
     weeks: [...byWeek.values()],
     homework: homeworkList,
     generatedAt: new Date().toISOString(),

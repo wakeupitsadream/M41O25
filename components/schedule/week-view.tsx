@@ -3,9 +3,9 @@
 import { motion } from "motion/react";
 import { CalendarRange, ChevronLeft, ChevronRight, Layers } from "lucide-react";
 import type { NowParts } from "@/lib/schedule/time";
-import { addDaysIso, capitalize, fmtDayNum, fmtRangeShort, fmtWeekday, mondayOf } from "@/lib/schedule/time";
+import { addDaysIso, capitalize, fmtDayNum, fmtDdMm, fmtRangeShort, fmtWeekday, mondayOf } from "@/lib/schedule/time";
 import { PARITY_LABEL, type ScheduleLesson, type SchedulePayload } from "@/lib/schedule/types";
-import { dayHasFreshChanges, lessonsOn, nowState, weekFor } from "@/lib/schedule/derive";
+import { dayHasFreshChanges, lessonsOn, nowState, semesterPhase, semestersOf, weekFor, type SemesterPhase } from "@/lib/schedule/derive";
 import { cn, pluralRu } from "@/lib/utils";
 import { NowCard } from "./now-card";
 import { Badge } from "@/components/ui/primitives";
@@ -33,7 +33,10 @@ export function WeekView({ data, now, today, weekStart, defaultWeekStart, weathe
   const sundayLessons = data ? lessonsOn(data.weeks, addDaysIso(weekStart, 6)) : [];
   if (sundayLessons.length) days.push(addDaysIso(weekStart, 6));
   const todayLessons = data && containsToday ? lessonsOn(data.weeks, today) : [];
-  const semesterOver = data?.semester ? today > data.semester.endsOn : false;
+  // Фаза семестра для показанной недели: у «этой» — от сегодня (с числом дней), у остальных — от её понедельника.
+  const phase = semesterPhase(data ? semestersOf(data) : [], isCurrentWeek ? today : weekStart);
+  const semesterTitle = phase.kind === "study" || phase.kind === "session" ? phase.semester.title : (data?.semester?.title ?? "");
+  const subtitle = phase.kind === "session" ? `Сессия · до ${fmtDdMm(phase.until)}` : semesterTitle;
 
   return (
     <div className="px-5">
@@ -79,9 +82,7 @@ export function WeekView({ data, now, today, weekStart, defaultWeekStart, weathe
         >
           <ChevronLeft className="size-5" />
         </button>
-        <div className="text-[13px] text-dim">
-          {data?.semester ? data.semester.title : ""}
-        </div>
+        <div className={cn("text-[13px]", phase.kind === "session" ? "font-medium text-warn" : "text-dim")}>{subtitle}</div>
         <button
           type="button"
           onClick={() => onShiftWeek(1)}
@@ -126,15 +127,7 @@ export function WeekView({ data, now, today, weekStart, defaultWeekStart, weathe
           </>
         )}
 
-        {data && !week && (
-          <div className="rounded-lg bg-surface p-5 text-center hairline">
-            <div className="text-4xl">{semesterOver ? "❄️" : "🕐"}</div>
-            <div className="mt-2 font-display text-lg font-bold">{semesterOver ? "Каникулы" : "Расписания на неделю пока нет"}</div>
-            <p className="mt-1 text-[14px] text-muted">
-              {semesterOver ? "Семестр закончился. Увидимся в новом." : "Обычно появляется в субботу вечером — как только учебный отдел пришлёт скан."}
-            </p>
-          </div>
-        )}
+        {data && !week && <EmptyWeek phase={phase} withDays={isCurrentWeek} />}
 
         {data &&
           week &&
@@ -159,6 +152,33 @@ export function WeekView({ data, now, today, weekStart, defaultWeekStart, weathe
           {week.lessons.filter((l) => !l.isCancelled).length} {pluralRu(week.lessons.length, "пара", "пары", "пар")} на неделе
         </div>
       )}
+    </div>
+  );
+}
+
+/** Неделя без опубликованного расписания: что сейчас — каникулы, сессия или просто ещё не пришёл скан. */
+function EmptyWeek({ phase, withDays }: { phase: SemesterPhase; withDays: boolean }) {
+  let emoji = "🕐";
+  let title = "Расписания на неделю пока нет";
+  let text = "Обычно появляется в субботу вечером — как только учебный отдел пришлёт скан.";
+  if (phase.kind === "break") {
+    emoji = "❄️";
+    title = `Каникулы до ${fmtDdMm(phase.until)}`;
+    text = withDays ? `Ещё ${phase.days} ${pluralRu(phase.days, "день", "дня", "дней")}. Дальше — ${phase.next.title}.` : `Дальше — ${phase.next.title}.`;
+  } else if (phase.kind === "over") {
+    emoji = "❄️";
+    title = "Каникулы";
+    text = "Семестр закончился. Увидимся в новом.";
+  } else if (phase.kind === "session") {
+    emoji = "📚";
+    title = `Сессия · до ${fmtDdMm(phase.until)}`;
+    text = "Расписания экзаменов на эту неделю пока нет.";
+  }
+  return (
+    <div className="rounded-lg bg-surface p-5 text-center hairline">
+      <div className="text-4xl">{emoji}</div>
+      <div className="mt-2 font-display text-lg font-bold">{title}</div>
+      <p className="mt-1 text-[14px] text-muted">{text}</p>
     </div>
   );
 }

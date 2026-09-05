@@ -1,24 +1,27 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion, type Variants } from "motion/react";
 import { WifiOff } from "lucide-react";
 import type { SchedulePayload } from "@/lib/schedule/types";
 import { addDaysIso, isIso, mondayOf } from "@/lib/schedule/time";
+import { mergeWeeks, semesterAt, semestersOf } from "@/lib/schedule/derive";
 import { useSchedule } from "./use-schedule";
 import { useNow } from "./use-now";
 import { WeekView } from "./week-view";
 import { DayView } from "./day-view";
-import { SemesterView } from "./semester-view";
+import { SemesterView, type ArchiveStatus } from "./semester-view";
 
-type View = { level: "week"; weekStart: string } | { level: "day"; date: string } | { level: "semester" };
+type View = { level: "week"; weekStart: string } | { level: "day"; date: string } | { level: "semester"; semesterId: string | null };
 
 const DEPTH: Record<View["level"], number> = { semester: 0, week: 1, day: 2 };
 
+const isId = (s: string | undefined): s is string => !!s && /^[0-9a-f-]{8,36}$/i.test(s);
+
 function parseView(pathname: string, today: string): View {
   const seg = pathname.replace(/^\/s\/?/, "").split("/").filter(Boolean);
-  if (seg[0] === "semester") return { level: "semester" };
+  if (seg[0] === "semester") return { level: "semester", semesterId: isId(seg[1]) ? seg[1] : null };
   if (seg[0] === "w" && isIso(seg[1])) return { level: "week", weekStart: mondayOf(seg[1]) };
   if (seg[0] === "d" && isIso(seg[1])) return { level: "day", date: seg[1] };
   // В воскресенье учебная неделя уже прошла — по умолчанию показываем следующую.
@@ -91,6 +94,54 @@ export function ScheduleApp({ initialData, serverToday, weather = null }: { init
   const openDay = useCallback((date: string) => go(`/s/d/${date}`), [go]);
   const openWeek = useCallback((monday: string) => go(`/s/w/${monday}`), [go]);
   const openSemester = useCallback(() => go("/s/semester"), [go]);
+  // Переключение семестра в сетке — тот же уровень, поэтому replace: «назад» ведёт к неделе, а не по списку семестров.
+  const selectSemester = useCallback((id: string | null) => replace(id ? `/s/semester/${id}` : "/s/semester"), [replace]);
+
+  // Архив: недели прошлых (или будущих) семестров подгружаем по требованию и подмешиваем к текущим.
+  // В localStorage и офлайн-кеш они не попадают — старый кеш без поля `semesters` работает как раньше.
+  const [archive, setArchive] = useState<Record<string, SchedulePayload | "loading" | "error">>({});
+  const requested = useRef(new Set<string>());
+  const loadArchive = useCallback(async (id: string) => {
+    requested.current.add(id);
+    setArchive((a) => ({ ...a, [id]: "loading" }));
+    try {
+      const res = await fetch(`/api/schedule?semester=${encodeURIComponent(id)}`, { cache: "no-store", credentials: "same-origin" });
+      if (!res.ok) throw new Error(String(res.status));
+      const payload = (await res.json()) as SchedulePayload;
+      setArchive((a) => ({ ...a, [id]: payload }));
+    } catch {
+      setArchive((a) => ({ ...a, [id]: "error" }));
+    }
+  }, []);
+  // Какой семестр нужен экрану, но ещё не загружен: выбранный в сетке или тот, куда попала открытая неделя/день.
+  const wantedSemesterId = useMemo(() => {
+    if (!data) return null;
+    const semesters = semestersOf(data);
+    let id: string | null = null;
+    if (view.level === "semester") id = view.semesterId;
+    else {
+      const from = view.level === "week" ? view.weekStart : view.date;
+      id = (semesterAt(semesters, from) ?? (view.level === "week" ? semesterAt(semesters, addDaysIso(from, 6)) : null))?.id ?? null;
+    }
+    return id && id !== data.semester?.id && semesters.some((s) => s.id === id) ? id : null;
+  }, [view, data]);
+  useEffect(() => {
+    if (wantedSemesterId && !requested.current.has(wantedSemesterId)) void loadArchive(wantedSemesterId);
+  }, [wantedSemesterId, loadArchive]);
+  const archiveStatus: ArchiveStatus = !wantedSemesterId
+    ? "ready"
+    : archive[wantedSemesterId] === "error"
+      ? "error"
+      : typeof archive[wantedSemesterId] === "object"
+        ? "ready"
+        : "loading";
+  const merged = useMemo(() => {
+    if (!data) return null;
+    const extra = Object.values(archive)
+      .filter((p): p is SchedulePayload => typeof p === "object")
+      .flatMap((p) => p.weeks);
+    return extra.length ? { ...data, weeks: mergeWeeks(data.weeks, extra) } : data;
+  }, [data, archive]);
   const shiftWeek = useCallback(
     (from: string, delta: number) => replace(`/s/w/${addDaysIso(from, delta * 7)}`),
     [replace],
@@ -125,7 +176,7 @@ export function ScheduleApp({ initialData, serverToday, weather = null }: { init
         >
           {view.level === "week" && (
             <WeekView
-              data={data}
+              data={merged}
               now={now}
               today={today}
               weekStart={view.weekStart}
@@ -139,7 +190,7 @@ export function ScheduleApp({ initialData, serverToday, weather = null }: { init
           )}
           {view.level === "day" && (
             <DayView
-              data={data}
+              data={merged}
               now={now}
               today={today}
               date={view.date}
@@ -148,7 +199,16 @@ export function ScheduleApp({ initialData, serverToday, weather = null }: { init
             />
           )}
           {view.level === "semester" && (
-            <SemesterView data={data} today={today} onOpenWeek={openWeek} onClose={() => up("/s")} />
+            <SemesterView
+              data={merged}
+              today={today}
+              semesterId={view.semesterId}
+              archiveStatus={archiveStatus}
+              onSelectSemester={selectSemester}
+              onRetryArchive={() => wantedSemesterId && void loadArchive(wantedSemesterId)}
+              onOpenWeek={openWeek}
+              onClose={() => up("/s")}
+            />
           )}
         </motion.div>
       </AnimatePresence>

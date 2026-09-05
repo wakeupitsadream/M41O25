@@ -67,6 +67,8 @@ export const fmtWeekday = (iso: string, long = true) => format(parseIso(iso), lo
 export const fmtDayMonth = (iso: string) => format(parseIso(iso), "d MMMM", { locale: ru });
 export const fmtDayShort = (iso: string) => format(parseIso(iso), "d MMM", { locale: ru }).replace(".", "");
 export const fmtDayNum = (iso: string) => format(parseIso(iso), "d");
+/** «09.02» — коротко для сроков сессии и каникул */
+export const fmtDdMm = (iso: string) => format(parseIso(iso), "dd.MM");
 
 /** «31 авг — 5 сент» / «7–12 сент» — коротко, для заголовков и плиток */
 export const fmtRangeShort = (fromIso: string, toIso: string) => {

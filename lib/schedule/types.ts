@@ -65,6 +65,8 @@ export type ScheduleHomework = {
 export type SchedulePayload = {
   group: { shortName: string; slotTimes: SlotTime[] };
   semester: ScheduleSemester | null;
+  /** Все семестры группы по возрастанию — для каникул и архива. В старом офлайн-кеше поля нет, поэтому опционально. */
+  semesters?: ScheduleSemester[];
   weeks: ScheduleWeek[];
   /** Необязательное: кеш в localStorage и в service worker от прежних версий этого поля не имеет — читать через `?? []`. */
   homework?: ScheduleHomework[];
