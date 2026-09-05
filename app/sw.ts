@@ -1,4 +1,4 @@
-import type { PrecacheEntry, SerwistGlobalConfig } from "serwist";
+import type { PrecacheEntry, SerwistGlobalConfig, SerwistPlugin } from "serwist";
 import { CacheFirst, ExpirationPlugin, NetworkFirst, Serwist } from "serwist";
 
 declare global {
@@ -14,6 +14,19 @@ declare const self: ServiceWorkerGlobalScope;
  * RSC-ответы (клиентская навигация, server actions) и остальные API через SW НЕ проходят — им нечего делать
  * в кеше, а лишний перехват потоковых ответов только затрудняет диагностику (см. CLAUDE.md, «зависание навигации»).
  */
+/**
+ * Ответ из кеша помечаем заголовком: страница узнаёт, что данные не с сервера, даже когда navigator.onLine врёт
+ * (iOS на wifi без интернета, headless-браузеры). Сам кеш не меняется — заголовок только у копии для страницы.
+ */
+const markFromCache: SerwistPlugin = {
+  cachedResponseWillBeUsed: async ({ cachedResponse }) => {
+    if (!cachedResponse) return cachedResponse;
+    const headers = new Headers(cachedResponse.headers);
+    headers.set("x-raspison-cache", "1");
+    return new Response(cachedResponse.body, { status: cachedResponse.status, statusText: cachedResponse.statusText, headers });
+  },
+};
+
 const serwist = new Serwist({
   precacheEntries: self.__SW_MANIFEST,
   skipWaiting: true,
@@ -36,7 +49,7 @@ const serwist = new Serwist({
       handler: new NetworkFirst({
         cacheName: "raspison-schedule",
         networkTimeoutSeconds: 6,
-        plugins: [new ExpirationPlugin({ maxEntries: 4, maxAgeSeconds: 60 * 60 * 24 * 30 })],
+        plugins: [new ExpirationPlugin({ maxEntries: 4, maxAgeSeconds: 60 * 60 * 24 * 30 }), markFromCache],
       }),
     },
     {

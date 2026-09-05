@@ -50,19 +50,21 @@ export function useSchedule(initial: SchedulePayload | null) {
       const best = local && new Date(local.generatedAt) > new Date(next.generatedAt) ? local : next;
       setData(best);
       writeLocal(best);
-      // Service worker отдаёт кеш как обычный ответ: офлайн распознаём по navigator.onLine и возрасту данных.
+      // Service worker отдаёт кеш как обычный ответ, но помечает его заголовком (app/sw.ts). navigator.onLine
+      // врёт на wifi без интернета и в headless-браузерах, поэтому смотрим на заголовок, сеть и возраст данных.
       const ageMs = Date.now() - new Date(next.generatedAt).getTime();
-      const offline = typeof navigator !== "undefined" && !navigator.onLine;
+      const fromCache = res.headers.get("x-raspison-cache") === "1";
+      const netDown = typeof navigator !== "undefined" && !navigator.onLine;
       const stale = ageMs > 20 * 60_000;
-      if (stale && !offline && !isRetry && !retried.current) {
-        // Сеть есть, а данные старые: скорее всего SW отдал кеш, пока функция холодная. Пробуем ещё раз, потом уже «Офлайн».
+      if ((fromCache || stale) && !netDown && !isRetry && !retried.current) {
+        // Сеть вроде есть, а ответ из кеша: скорее всего функция холодная или связь моргнула. Пробуем ещё раз, потом уже «Офлайн».
         retried.current = true;
         setStatus("loading");
         setTimeout(() => void refresh(true), 4000);
         return;
       }
-      if (!stale) retried.current = false;
-      setStatus(offline || stale ? "offline" : "fresh");
+      if (!fromCache && !stale) retried.current = false;
+      setStatus(fromCache || netDown || stale ? "offline" : "fresh");
     } catch {
       setStatus(typeof navigator !== "undefined" && !navigator.onLine ? "offline" : "error");
     } finally {
