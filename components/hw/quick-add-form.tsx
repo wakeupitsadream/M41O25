@@ -13,18 +13,22 @@ import { cn } from "@/lib/utils";
 
 type SubjectOpt = { id: string; name: string; shortName: string | null; color: string | null };
 
+/** Ближайшие пары предмета (то же, что UpcomingLesson в lib/hw/query.ts; тип продублирован, чтобы клиент не тянул server-only модуль). */
+export type UpcomingLessonOpt = { id: string; date: string; startsAt: string };
+
 type Props = {
   subjects: SubjectOpt[];
   suggestedSubjectId: string | null;
-  nextBySubject: Record<string, string>;
+  upcomingBySubject: Record<string, UpcomingLessonOpt[]>;
   today: string;
 };
 
 /**
- * «ДЗ за 20 секунд»: одно поле, предмет уже выбран по текущей паре, дедлайн — следующая пара предмета.
+ * «ДЗ за 20 секунд»: одно поле, предмет уже выбран по текущей паре, дедлайн — следующая пара предмета,
+ * запись сразу привязывается к этой паре (счётчик ДЗ на карточке пары в расписании).
  * «Оформить подробнее» раскрывает заголовок, дату и вложения.
  */
-export function QuickAddForm({ subjects, suggestedSubjectId, nextBySubject, today }: Props) {
+export function QuickAddForm({ subjects, suggestedSubjectId, upcomingBySubject, today }: Props) {
   const router = useGuardedRouter();
   const [pending, start] = useTransition();
   const [body, setBody] = useState("");
@@ -35,9 +39,12 @@ export function QuickAddForm({ subjects, suggestedSubjectId, nextBySubject, toda
   const [more, setMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const autoDue = useMemo(() => (subjectId && nextBySubject[subjectId]) || addDaysIso(today, 7), [subjectId, nextBySubject, today]);
+  const subjectLessons = useMemo(() => (subjectId ? upcomingBySubject[subjectId] ?? [] : []), [subjectId, upcomingBySubject]);
+  const autoDue = subjectLessons[0]?.date ?? addDaysIso(today, 7);
   const dueDate = dueOverride ?? autoDue;
-  const dueIsAuto = dueOverride === null && Boolean(subjectId && nextBySubject[subjectId]);
+  const dueIsAuto = dueOverride === null && subjectLessons.length > 0;
+  // Пара предмета в день дедлайна — к ней привяжем запись; если на выбранную дату пары нет, привязки не будет.
+  const lesson = subjectLessons.find((l) => l.date === dueDate) ?? null;
 
   const ordered = useMemo(() => {
     const s = [...subjects];
@@ -48,11 +55,19 @@ export function QuickAddForm({ subjects, suggestedSubjectId, nextBySubject, toda
   const submit = () => {
     setError(null);
     start(async () => {
-      const res = await createHomework({ body, title, subjectId, dueDate, attachmentIds: files.map((f) => f.id) });
+      const res = await createHomework({ body, title, subjectId, dueDate, lessonId: lesson?.id ?? null, attachmentIds: files.map((f) => f.id) });
       if (!res.ok) return setError(res.error);
       router.replace(`/hw/${res.data!.id}`);
     });
   };
+
+  const dueHint = dueIsAuto
+    ? `следующая пара${lesson ? `, ${lesson.startsAt}` : ""}`
+    : dueOverride
+      ? lesson
+        ? `своя дата, пара в ${lesson.startsAt}`
+        : "своя дата"
+      : "через неделю";
 
   return (
     <div className="space-y-4">
@@ -95,7 +110,7 @@ export function QuickAddForm({ subjects, suggestedSubjectId, nextBySubject, toda
         <CalendarClock className="size-4 text-muted" />
         <span className="flex-1">
           Сдать <b>{capitalize(fmtWeekday(dueDate, false))}, {fmtDayShort(dueDate)}</b>
-          <span className="text-muted"> · {dueIsAuto ? "следующая пара" : dueOverride ? "своя дата" : "через неделю"}</span>
+          <span className="text-muted"> · {dueHint}</span>
         </span>
         <ChevronDown className={cn("size-4 text-muted transition", more && "rotate-180")} />
       </button>

@@ -28,7 +28,7 @@ export default async function NewHomeworkPage() {
       </header>
       <h1 className="mb-1 font-display text-[28px] font-bold leading-none">Что задали?</h1>
       <p className="mb-5 text-[14px] text-muted">Запись увидит вся группа. Предмет и дедлайн уже подставлены по расписанию — поправь, если не так.</p>
-      <QuickAddForm subjects={subjectList} suggestedSubjectId={ctx.currentSubjectId} nextBySubject={ctx.nextBySubject} today={today} />
+      <QuickAddForm subjects={subjectList} suggestedSubjectId={ctx.currentSubjectId} upcomingBySubject={ctx.upcomingBySubject} today={today} />
     </div>
   );
 }

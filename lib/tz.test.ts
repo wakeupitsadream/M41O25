@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { addDaysIso, hmToMinutes, mondayIso, parseLocalDateTime } from "./tz";
+import { addDaysIso, hmToMinutes, mondayIso, parseLocalDateTime, startOfDayTz } from "./tz";
 
 test("mondayIso: воскресенье относится к прошедшей неделе", () => {
   assert.equal(mondayIso("2026-09-06"), "2026-08-31");
@@ -24,4 +24,12 @@ test("parseLocalDateTime: 08:30 в Оренбурге = 03:30 UTC", () => {
 test("hmToMinutes", () => {
   assert.equal(hmToMinutes("08:30"), 510);
   assert.equal(hmToMinutes("00:00"), 0);
+});
+
+test("startOfDayTz: полночь Оренбурга = 19:00 UTC предыдущего дня, в том числе через Новый год", () => {
+  assert.equal(startOfDayTz("2026-09-03").toISOString(), "2026-09-02T19:00:00.000Z");
+  assert.equal(startOfDayTz("2027-01-01").toISOString(), "2026-12-31T19:00:00.000Z");
+  // Событие в 23:30 по Оренбургу 2 сентября — это ещё «вчера» относительно 3 сентября.
+  assert.ok(new Date("2026-09-02T18:30:00.000Z") < startOfDayTz("2026-09-03"));
+  assert.ok(new Date("2026-09-02T19:00:00.000Z") >= startOfDayTz("2026-09-03"));
 });

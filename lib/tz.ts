@@ -31,6 +31,12 @@ export const hmToMinutes = (hm: string) => {
   return h * 60 + m;
 };
 
+/** Начало суток YYYY-MM-DD в поясе группы как момент времени — для сравнения с timestamptz из базы («это уже было сегодня?»). */
+export function startOfDayTz(iso: string): Date {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(new TZDate(y, m - 1, d, 0, 0, 0, APP_TZ).getTime());
+}
+
 /** "YYYY-MM-DDTHH:mm" из <input type="datetime-local"> → момент времени в поясе группы (сервер на Vercel живёт в UTC). */
 export function parseLocalDateTime(s: string): Date | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::\d{2})?$/.exec(s);

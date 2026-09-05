@@ -46,12 +46,13 @@ export default async function HomeworkDetailPage({ params }: { params: Promise<{
           duplicateMarkedBy: hw.duplicateMarkedBy,
           original: hw.original,
           duplicates: hw.duplicates,
-          edits: hw.edits.map((e) => ({ id: e.id, text: e.text, createdAt: e.createdAt.toISOString(), author: e.author })),
+          edits: hw.edits.map((e) => ({ id: e.id, text: e.text, createdAt: e.createdAt.toISOString(), author: e.author, attachments: e.attachments })),
           comments: hw.comments.map((c) => ({ id: c.id, body: c.body, createdAt: c.createdAt.toISOString(), author: c.author })),
           attachments: hw.attachments,
           reactions: hw.reactions,
+          lesson: hw.lesson,
         }}
-        me={{ id: user.id, isAdmin, showDone: user.showHwDone }}
+        me={{ id: user.id, isAdmin, isModerator: hasRole(user, "moderator"), showDone: user.showHwDone }}
         today={todayIso()}
         candidates={candidates}
         subjects={subjectList}

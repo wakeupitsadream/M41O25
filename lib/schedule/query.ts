@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gte, lte } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { groups, lessons, semesters, subjects, weeks } from "@/lib/db/schema";
 import { todayIso, addDaysIso } from "@/lib/tz";
+import { listHomeworkForSchedule } from "@/lib/hw/query";
 import type { SchedulePayload, ScheduleWeek } from "./types";
 
 /** Текущий семестр: тот, в который попадает сегодня; иначе ближайший будущий; иначе последний прошедший. */
@@ -20,8 +21,11 @@ export async function getCurrentSemester(groupId: string) {
   );
 }
 
-/** Опубликованные недели с парами — то, что видят студенты (и что кешируется офлайн). */
-export async function getSchedulePayload(groupId: string): Promise<SchedulePayload> {
+/**
+ * Опубликованные недели с парами и ДЗ к дням — то, что видят студенты (и что кешируется офлайн).
+ * userId нужен только для личных галочек «сделал» у ДЗ; без него все done = false.
+ */
+export async function getSchedulePayload(groupId: string, userId: string | null = null): Promise<SchedulePayload> {
   const [group] = await db.select({ shortName: groups.shortName, slotTimes: groups.slotTimes }).from(groups).where(eq(groups.id, groupId));
   const semester = await getCurrentSemester(groupId);
   const today = todayIso();
@@ -75,12 +79,17 @@ export async function getSchedulePayload(groupId: string): Promise<SchedulePaylo
     });
   }
 
+  // ДЗ едет в том же ответе: экран дня работает офлайн, а лишний запрос на каждый заход в расписание не нужен.
+  // Окно шире назад на месяц: архивные записи ещё видны на прошедших днях.
+  const homeworkList = await listHomeworkForSchedule(groupId, userId, addDaysIso(today, -30), addDaysIso(to, 7));
+
   return {
     group: { shortName: group?.shortName ?? "", slotTimes: group?.slotTimes ?? [] },
     semester: semester
       ? { id: semester.id, title: semester.title, startsOn: semester.startsOn, endsOn: semester.endsOn, sessionStartsOn: semester.sessionStartsOn }
       : null,
     weeks: [...byWeek.values()],
+    homework: homeworkList,
     generatedAt: new Date().toISOString(),
   };
 }

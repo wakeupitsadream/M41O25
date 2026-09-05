@@ -20,6 +20,9 @@ function describe(e: FeedItem): { icon: React.ElementType; text: string; href: s
       return { icon: BookOpen, text: `добавил ДЗ: «${p.title ?? ""}»`, href: e.entityId ? `/hw/${e.entityId}` : "/hw" };
     case "hw_edit_added":
       return { icon: PencilLine, text: `дополнил ДЗ: «${p.text ?? ""}»`, href: e.entityId ? `/hw/${e.entityId}` : "/hw" };
+    case "hw_updated":
+      // Только существенные правки и не чаще раза в день на запись (app/(app)/hw/actions.ts, updateHomework).
+      return { icon: PencilLine, text: `изменил ДЗ «${p.title ?? ""}»${p.what ? `: ${p.what}` : ""}`, href: e.entityId ? `/hw/${e.entityId}` : "/hw" };
     case "comment_added":
       return { icon: MessageCircle, text: `уточнил по ДЗ: «${p.text ?? ""}»`, href: e.entityId ? `/hw/${e.entityId}` : "/hw" };
     case "schedule_published":

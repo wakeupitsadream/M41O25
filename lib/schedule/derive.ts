@@ -1,4 +1,4 @@
-import type { ScheduleLesson, ScheduleWeek } from "./types";
+import type { ScheduleHomework, ScheduleLesson, ScheduleWeek } from "./types";
 import { toMinutes } from "./time";
 
 export const lessonsOn = (weeks: ScheduleWeek[], dateIso: string): ScheduleLesson[] =>
@@ -36,6 +36,24 @@ export function nowState(dayLessons: ScheduleLesson[], minutes: number): NowStat
   }
   return { kind: "done", total };
 }
+
+/**
+ * Бейдж «изменение» живёт до конца дня пары: флаг в базе стоит до следующей публикации недели, но показывать его
+ * после того, как пара прошла, незачем. Сравниваем даты как строки YYYY-MM-DD в поясе группы — так бейдж гаснет
+ * и на офлайн-кеше, открытом утром следующего дня.
+ */
+export const changeBadgeAlive = (l: Pick<ScheduleLesson, "modifiedAfterPublish" | "date">, today: string) => l.modifiedAfterPublish && l.date >= today;
+
+/** Есть ли в дне свежие правки (изменение или отмена), о которых ещё стоит предупреждать на карточке недели. */
+export const dayHasFreshChanges = (lessons: ScheduleLesson[], today: string) =>
+  lessons.some((l) => l.date >= today && (l.modifiedAfterPublish || l.isCancelled));
+
+/** ДЗ с дедлайном в этот день — блок «К этому дню». */
+export const homeworkOn = (hw: ScheduleHomework[] | undefined, dateIso: string) => (hw ?? []).filter((h) => h.dueDate === dateIso);
+
+/** ДЗ к конкретной паре: привязанные явно (lessonId) плюс непривязанные того же предмета на этот день. */
+export const homeworkForLesson = (hw: ScheduleHomework[] | undefined, lesson: Pick<ScheduleLesson, "id" | "date" | "subjectId">) =>
+  (hw ?? []).filter((h) => (h.lessonId ? h.lessonId === lesson.id : h.dueDate === lesson.date && lesson.subjectId !== null && h.subjectId === lesson.subjectId));
 
 export const kindTone = (kind: ScheduleLesson["kind"]): "neutral" | "accent" | "ok" | "warn" | "danger" => {
   switch (kind) {

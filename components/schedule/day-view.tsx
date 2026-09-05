@@ -1,11 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { motion } from "motion/react";
-import { ChevronLeft, ChevronRight, MapPin, UserRound } from "lucide-react";
+import { BookOpen, ChevronLeft, ChevronRight, MapPin, UserRound } from "lucide-react";
 import type { NowParts } from "@/lib/schedule/time";
 import { capitalize, fmtDayMonth, fmtWeekday, mondayOf, parseIso, toMinutes } from "@/lib/schedule/time";
-import { KIND_LABEL, PARITY_LABEL, type ScheduleLesson, type SchedulePayload } from "@/lib/schedule/types";
-import { kindTone, lessonsOn, weekFor } from "@/lib/schedule/derive";
+import { KIND_LABEL, PARITY_LABEL, type ScheduleHomework, type ScheduleLesson, type SchedulePayload } from "@/lib/schedule/types";
+import { changeBadgeAlive, homeworkForLesson, homeworkOn, kindTone, lessonsOn, weekFor } from "@/lib/schedule/derive";
 import { cn, pluralRu } from "@/lib/utils";
 import { Badge } from "@/components/ui/primitives";
 import { ShareDayButton } from "./share-day-button";
@@ -25,6 +26,15 @@ export function DayView({ data, now, today, date, onBack, onShiftDay }: Props) {
   const active = lessons.filter((l) => !l.isCancelled);
   const isToday = date === today;
   const minutes = isToday && now ? now.minutes : null;
+  // `data.homework` появилось позже недель: старый офлайн-кеш без поля даёт пустой список, а не ошибку.
+  const dayHw = data ? homeworkOn(data.homework, date) : [];
+
+  const summary = [
+    active.length === 0 ? "Пар нет" : `${active.length} ${pluralRu(active.length, "пара", "пары", "пар")} · ${active[0].startsAt}–${active[active.length - 1].endsAt}`,
+    dayHw.length > 0 ? `${dayHw.length} ДЗ` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <div className="px-5">
@@ -53,11 +63,7 @@ export function DayView({ data, now, today, date, onBack, onShiftDay }: Props) {
           {week?.parity && <Badge className="normal-case tracking-normal">{PARITY_LABEL[week.parity]}</Badge>}
         </div>
         <h1 className="mt-1 font-display text-[34px] font-bold leading-none">{capitalize(fmtWeekday(date))}</h1>
-        <div className="mt-2 text-[14px] text-muted tnum">
-          {active.length === 0
-            ? "Пар нет"
-            : `${active.length} ${pluralRu(active.length, "пара", "пары", "пар")} · ${active[0].startsAt}–${active[active.length - 1].endsAt}`}
-        </div>
+        <div className="mt-2 text-[14px] text-muted tnum">{summary}</div>
       </motion.div>
 
       <motion.div
@@ -88,10 +94,19 @@ export function DayView({ data, now, today, date, onBack, onShiftDay }: Props) {
             const e = toMinutes(l.endsAt);
             const state = minutes === null ? "none" : minutes >= e ? "past" : minutes >= s ? "now" : "future";
             return (
-              <LessonRow key={l.id} lesson={l} index={i} state={state} progress={state === "now" && minutes !== null ? (minutes - s) / (e - s) : 0} />
+              <LessonRow
+                key={l.id}
+                lesson={l}
+                index={i}
+                state={state}
+                today={today}
+                hwCount={homeworkForLesson(data?.homework, l).length}
+                progress={state === "now" && minutes !== null ? (minutes - s) / (e - s) : 0}
+              />
             );
           })}
         </ol>
+        {dayHw.length > 0 && <DayHomework items={dayHw} />}
       </motion.div>
     </div>
   );
@@ -102,11 +117,15 @@ function LessonRow({
   index,
   state,
   progress,
+  today,
+  hwCount,
 }: {
   lesson: ScheduleLesson;
   index: number;
   state: "none" | "past" | "now" | "future";
   progress: number;
+  today: string;
+  hwCount: number;
 }) {
   const color = l.subjectColor ?? "#9C9CA8";
   return (
@@ -137,8 +156,14 @@ function LessonRow({
         <div className="flex flex-wrap items-center gap-1.5">
           {KIND_LABEL[l.kind] && <Badge tone={kindTone(l.kind)}>{KIND_LABEL[l.kind]}</Badge>}
           {l.isCancelled && <Badge tone="danger">отменена</Badge>}
-          {!l.isCancelled && l.modifiedAfterPublish && <Badge tone="warn">изменение</Badge>}
+          {/* Бейдж «изменение» гаснет со следующего дня после пары (lib/schedule/derive.ts). */}
+          {!l.isCancelled && changeBadgeAlive(l, today) && <Badge tone="warn">изменение</Badge>}
           {state === "now" && <Badge tone="accent">сейчас</Badge>}
+          {hwCount > 0 && (
+            <Badge className="tnum">
+              <BookOpen className="size-3" /> {hwCount} ДЗ
+            </Badge>
+          )}
         </div>
         <div className={cn("mt-1.5 font-display text-[17px] font-bold leading-snug", l.isCancelled && "line-through decoration-danger/70")}>{l.title}</div>
         <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-muted">
@@ -161,5 +186,40 @@ function LessonRow({
         )}
       </div>
     </motion.li>
+  );
+}
+
+/** «К этому дню»: ДЗ с дедлайном в этот день, короткой строкой, тап ведёт в карточку записи. */
+function DayHomework({ items }: { items: ScheduleHomework[] }) {
+  return (
+    <section className="mt-2 pb-6">
+      <h2 className="mb-2.5 flex items-center gap-2 px-1 text-[13px] font-semibold uppercase tracking-wide text-muted">
+        <BookOpen className="size-4" /> К этому дню <span className="text-dim tnum">{items.length}</span>
+      </h2>
+      <ul className="space-y-2">
+        {items.map((h, i) => {
+          const color = h.subjectColor ?? "#9C9CA8";
+          return (
+            <motion.li key={h.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.03 * i, type: "spring", stiffness: 420, damping: 34 }}>
+              <Link href={`/hw/${h.id}`} className={cn("relative block overflow-hidden rounded-lg bg-surface p-3.5 pl-5 hairline active:bg-surface-2", h.done && "opacity-60")}>
+                <span className="absolute inset-y-3 left-0 w-[3px] rounded-r-full" style={{ background: color }} />
+                <div className="flex items-center gap-2">
+                  {h.subjectShort ? (
+                    <span className="truncate rounded-full px-2 py-0.5 text-[12px] font-semibold" style={{ background: `${color}22`, color }}>
+                      {h.subjectShort}
+                    </span>
+                  ) : (
+                    <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[12px] font-semibold text-muted">Без предмета</span>
+                  )}
+                  {h.done && <Badge tone="ok">сделано</Badge>}
+                </div>
+                {h.title && <div className="mt-1.5 font-display text-[15px] font-bold leading-snug">{h.title}</div>}
+                <p className={cn("mt-1 line-clamp-2 text-[14px] leading-relaxed", h.done && "line-through decoration-muted")}>{h.text}</p>
+              </Link>
+            </motion.li>
+          );
+        })}
+      </ul>
+    </section>
   );
 }

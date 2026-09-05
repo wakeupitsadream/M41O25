@@ -48,9 +48,25 @@ export type ScheduleSemester = {
   sessionStartsOn: string | null;
 };
 
+/** Короткая запись ДЗ для экрана дня («К этому дню», счётчик на паре). Едет в офлайн-кеш вместе с расписанием. */
+export type ScheduleHomework = {
+  id: string;
+  dueDate: string;
+  lessonId: string | null;
+  subjectId: string | null;
+  subjectShort: string | null;
+  subjectColor: string | null;
+  title: string | null;
+  /** Первые ~140 символов задания одной строкой. */
+  text: string;
+  done: boolean;
+};
+
 export type SchedulePayload = {
   group: { shortName: string; slotTimes: SlotTime[] };
   semester: ScheduleSemester | null;
   weeks: ScheduleWeek[];
+  /** Необязательное: кеш в localStorage и в service worker от прежних версий этого поля не имеет — читать через `?? []`. */
+  homework?: ScheduleHomework[];
   generatedAt: string;
 };

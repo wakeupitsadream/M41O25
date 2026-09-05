@@ -27,7 +27,7 @@ async function weatherLine(payload: Awaited<ReturnType<typeof getSchedulePayload
 
 export default async function SchedulePage() {
   const user = await requireUser();
-  const payload = await getSchedulePayload(user.groupId);
+  const payload = await getSchedulePayload(user.groupId, user.id);
   const weather = await weatherLine(payload);
   return <ScheduleApp initialData={payload} serverToday={todayIso()} weather={weather} />;
 }

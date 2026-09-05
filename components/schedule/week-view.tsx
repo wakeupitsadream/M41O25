@@ -5,7 +5,7 @@ import { CalendarRange, ChevronLeft, ChevronRight, Layers } from "lucide-react";
 import type { NowParts } from "@/lib/schedule/time";
 import { addDaysIso, capitalize, fmtDayNum, fmtRangeShort, fmtWeekday, mondayOf } from "@/lib/schedule/time";
 import { PARITY_LABEL, type ScheduleLesson, type SchedulePayload } from "@/lib/schedule/types";
-import { lessonsOn, nowState, weekFor } from "@/lib/schedule/derive";
+import { dayHasFreshChanges, lessonsOn, nowState, weekFor } from "@/lib/schedule/derive";
 import { cn, pluralRu } from "@/lib/utils";
 import { NowCard } from "./now-card";
 import { Badge } from "@/components/ui/primitives";
@@ -146,6 +146,7 @@ export function WeekView({ data, now, today, weekStart, defaultWeekStart, weathe
               lessons={week.lessons.filter((l) => l.date === date)}
               isToday={date === today}
               isPast={date < today}
+              today={today}
               minutes={now?.minutes ?? null}
               onOpen={() => onOpenDay(date)}
             />
@@ -168,6 +169,7 @@ function DayCard({
   lessons,
   isToday,
   isPast,
+  today,
   minutes,
   onOpen,
 }: {
@@ -176,6 +178,7 @@ function DayCard({
   lessons: ScheduleLesson[];
   isToday: boolean;
   isPast: boolean;
+  today: string;
   minutes: number | null;
   onOpen: () => void;
 }) {
@@ -184,7 +187,8 @@ function DayCard({
   const st = isToday && minutes !== null ? nowState(lessons, minutes) : null;
   const first = active[0];
   const last = active[active.length - 1];
-  const changed = lessons.some((l) => l.modifiedAfterPublish || l.isCancelled);
+  // Бейдж «изменения» живёт до конца дня пары — о прошедших правках предупреждать незачем.
+  const changed = dayHasFreshChanges(lessons, today);
 
   return (
     <motion.button

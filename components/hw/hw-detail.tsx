@@ -3,19 +3,33 @@
 import Link from "next/link";
 import { useGuardedRouter } from "@/components/features/nav-guard";
 import { useState, useTransition } from "react";
-import { Check, Copy, FileText, MessageCircle, Pencil, PencilLine, Send, Trash2, Undo2 } from "lucide-react";
-import { addComment, addEdit, deleteComment, deleteEdit, deleteHomework, markDuplicate, toggleDone, updateHomework } from "@/app/(app)/hw/actions";
+import { CalendarDays, Check, Copy, FileText, MessageCircle, Paperclip, Pencil, PencilLine, Send, Trash2, Undo2, X } from "lucide-react";
+import {
+  addComment,
+  addEdit,
+  attachToHomework,
+  deleteComment,
+  deleteEdit,
+  deleteHomework,
+  markDuplicate,
+  removeAttachment,
+  toggleDone,
+  updateHomework,
+} from "@/app/(app)/hw/actions";
 import { dueLabel, fmtBytes, fmtDateTime } from "@/lib/hw/format";
+import { fmtDayShort, fmtWeekday } from "@/lib/schedule/time";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { Field, Input, Select, Textarea } from "@/components/ui/input";
 import { Avatar, Badge } from "@/components/ui/primitives";
 import { ImageGrid } from "@/components/ui/image-grid";
 import { ReactionBar } from "@/components/group/reaction-bar";
+import { AttachmentUploader, type UploadedFile } from "./attachment-uploader";
 import type { ReactionSummary } from "@/lib/group/query";
 import { cn, displayName } from "@/lib/utils";
 
 type Person = { id: string; fullName: string; nickname: string | null; avatarEmoji: string; color: string };
+type Attachment = { id: string; name: string; mime: string; size: number; url: string; uploadedBy: string };
 
 export type HwDetailData = {
   id: string;
@@ -30,34 +44,43 @@ export type HwDetailData = {
   duplicateMarkedBy: string | null;
   original: { id: string; title: string | null; body: string } | null;
   duplicates: { id: string; title: string | null; body: string }[];
-  edits: { id: string; text: string; createdAt: string; author: Person }[];
+  edits: { id: string; text: string; createdAt: string; author: Person; attachments: Attachment[] }[];
   comments: { id: string; body: string; createdAt: string; author: Person }[];
-  attachments: { id: string; name: string; mime: string; size: number; url: string }[];
+  attachments: Attachment[];
   reactions: ReactionSummary;
+  /** Пара, к которой привязана запись (если она ещё есть в расписании). */
+  lesson: { id: string; date: string; startsAt: string; endsAt: string; room: string | null; isCancelled: boolean } | null;
 };
 
 type Props = {
   hw: HwDetailData;
-  me: { id: string; isAdmin: boolean; showDone: boolean };
+  me: { id: string; isAdmin: boolean; isModerator: boolean; showDone: boolean };
   today: string;
   candidates: { id: string; title: string | null; body: string; dueDate: string }[];
   subjects: { id: string; name: string; shortName: string | null; color: string | null }[];
 };
 
+/** Потолки как в actions.ts: 10 файлов у записи, 4 у блока «Дополнить». */
+const MAX_HW_FILES = 10;
+const MAX_EDIT_FILES = 4;
+
 export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
   const router = useGuardedRouter();
   const [pending, start] = useTransition();
-  const [sheet, setSheet] = useState<null | "edit-add" | "dup" | "edit-orig">(null);
+  const [sheet, setSheet] = useState<null | "edit-add" | "dup" | "edit-orig" | "files">(null);
   const [editText, setEditText] = useState("");
+  const [editFiles, setEditFiles] = useState<UploadedFile[]>([]);
+  const [newFiles, setNewFiles] = useState<UploadedFile[]>([]);
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [orig, setOrig] = useState({ title: hw.title ?? "", body: hw.body, dueDate: hw.dueDate, subjectId: hw.subject?.id ?? null });
 
   const canEditOrig = me.isAdmin || hw.author.id === me.id;
+  // Файлы к чужой записи добавляют автор, староста и админ; своё фото любой может приложить блоком «Дополнить».
+  const canManageFiles = me.isAdmin || me.isModerator || hw.author.id === me.id;
+  const canRemoveFile = (a: Attachment) => canManageFiles || a.uploadedBy === me.id;
   const due = dueLabel(hw.dueDate, today);
   const color = hw.subject?.color ?? "#9C9CA8";
-  const images = hw.attachments.filter((a) => a.mime.startsWith("image/"));
-  const docs = hw.attachments.filter((a) => !a.mime.startsWith("image/"));
 
   const run = (fn: () => Promise<{ ok: boolean; error?: string } | void>, after?: () => void) => {
     setError(null);
@@ -107,25 +130,21 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
           <span>·</span>
           <span>{fmtDateTime(hw.createdAt)}</span>
         </div>
+        {hw.lesson && (
+          <Link
+            href={`/s/d/${hw.lesson.date}`}
+            className="mt-3 inline-flex h-10 items-center gap-1.5 rounded-full bg-surface-2 px-3.5 text-[13px] font-medium text-muted hairline active:bg-surface-3"
+          >
+            <CalendarDays className="size-3.5" />
+            к паре {fmtWeekday(hw.lesson.date, false)}, {fmtDayShort(hw.lesson.date)} · {hw.lesson.startsAt}
+            {hw.lesson.room ? ` · ${hw.lesson.room}` : ""}
+            {hw.lesson.isCancelled ? " · отменена" : ""}
+          </Link>
+        )}
       </header>
 
       <ReactionBar entityType="homework" entityId={hw.id} reactions={hw.reactions} />
-      {images.length > 0 && <ImageGrid images={images} />}
-      {docs.length > 0 && (
-        <ul className="space-y-2">
-          {docs.map((a) => (
-            <li key={a.id}>
-              <a href={a.url} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-md bg-surface px-3.5 py-3 hairline active:bg-surface-2">
-                <FileText className="size-5 text-muted" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[14px] font-medium">{a.name}</span>
-                  <span className="text-[12px] text-dim">{fmtBytes(a.size)}</span>
-                </span>
-              </a>
-            </li>
-          ))}
-        </ul>
-      )}
+      <Files items={hw.attachments} />
 
       {hw.edits.length > 0 && (
         <section className="space-y-2">
@@ -136,12 +155,17 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
                 <span className="font-semibold">{displayName(e.author)}</span>
                 <span className="text-dim">дополнил · {fmtDateTime(e.createdAt)}</span>
                 {(me.isAdmin || e.author.id === me.id) && (
-                  <button type="button" aria-label="Удалить дополнение" className="ml-auto text-dim" onClick={() => run(() => deleteEdit(e.id))}>
+                  <button type="button" aria-label="Удалить дополнение" className="ml-auto grid size-10 -mr-2 place-items-center text-dim" onClick={() => run(() => deleteEdit(e.id))}>
                     <Trash2 className="size-3.5" />
                   </button>
                 )}
               </div>
-              <p className="mt-1 whitespace-pre-wrap text-[15px] leading-relaxed text-fg">{e.text}</p>
+              {e.text && <p className="mt-1 whitespace-pre-wrap text-[15px] leading-relaxed text-fg">{e.text}</p>}
+              {e.attachments.length > 0 && (
+                <div className="mt-2">
+                  <Files items={e.attachments} compact />
+                </div>
+              )}
             </div>
           ))}
         </section>
@@ -164,6 +188,11 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
         {canEditOrig && (
           <Button variant="secondary" onClick={() => setSheet("edit-orig")}>
             <Pencil className="size-4" /> Изменить
+          </Button>
+        )}
+        {canManageFiles && (
+          <Button variant="secondary" onClick={() => setSheet("files")}>
+            <Paperclip className="size-4" /> Файлы{hw.attachments.length > 0 ? ` · ${hw.attachments.length}` : ""}
           </Button>
         )}
       </div>
@@ -230,10 +259,83 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
       )}
 
       <Sheet open={sheet === "edit-add"} onClose={() => setSheet(null)} title="Дополнить запись">
-        <p className="mb-3 text-[13px] text-muted">Твой блок появится под оригиналом с твоим цветом. Оригинал автора не меняется.</p>
+        <p className="mb-3 text-[13px] text-muted">Твой блок появится под оригиналом с твоим цветом. Оригинал автора не меняется. Можно приложить фото доски.</p>
         <Textarea autoFocus value={editText} onChange={(e) => setEditText(e.target.value)} placeholder="Ещё нужно принести распечатку…" className="min-h-28" />
-        <Button className="mt-3 w-full" loading={pending} disabled={!editText.trim()} onClick={() => run(() => addEdit(hw.id, editText), () => { setEditText(""); setSheet(null); })}>
+        <div className="mt-3">
+          <AttachmentUploader value={editFiles} onChange={setEditFiles} max={MAX_EDIT_FILES} />
+        </div>
+        <Button
+          className="mt-3 w-full"
+          loading={pending}
+          disabled={!editText.trim() && editFiles.length === 0}
+          onClick={() =>
+            run(
+              () => addEdit(hw.id, editText, editFiles.map((f) => f.id)),
+              () => {
+                setEditText("");
+                setEditFiles([]);
+                setSheet(null);
+              },
+            )
+          }
+        >
           Добавить
+        </Button>
+      </Sheet>
+
+      <Sheet open={sheet === "files"} onClose={() => setSheet(null)} title="Фото и файлы">
+        <p className="mb-3 text-[13px] text-muted">Файлы записи видят все. Убрать своё может каждый; любое — автор записи, староста и админ.</p>
+        {hw.attachments.length > 0 && (
+          <div className="mb-4 flex flex-wrap gap-3">
+            {hw.attachments.map((a) => (
+              <div key={a.id} className="relative">
+                {a.mime.startsWith("image/") ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={a.url} alt={a.name} className="size-24 rounded-md object-cover hairline" />
+                ) : (
+                  <div className="flex h-24 w-36 flex-col justify-between rounded-md bg-surface-2 p-2 hairline">
+                    <FileText className="size-5 text-muted" />
+                    <div className="truncate text-[11px] font-medium">{a.name}</div>
+                    <div className="text-[10px] text-dim">{fmtBytes(a.size)}</div>
+                  </div>
+                )}
+                {canRemoveFile(a) && (
+                  <button
+                    type="button"
+                    aria-label={`Убрать ${a.name}`}
+                    disabled={pending}
+                    onClick={() => {
+                      if (window.confirm(`Убрать «${a.name}»? Файл удалится.`)) run(() => removeAttachment(a.id));
+                    }}
+                    className="absolute -right-2 -top-2 grid size-10 place-items-center rounded-full bg-fg text-bg shadow-float active:scale-95"
+                  >
+                    <X className="size-4" strokeWidth={3} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        {hw.attachments.length < MAX_HW_FILES ? (
+          <AttachmentUploader value={newFiles} onChange={setNewFiles} max={MAX_HW_FILES - hw.attachments.length} />
+        ) : (
+          <p className="text-[13px] text-dim">Уже {MAX_HW_FILES} файлов — потолок. Убери лишнее, чтобы добавить новое.</p>
+        )}
+        <Button
+          className="mt-3 w-full"
+          loading={pending}
+          disabled={newFiles.length === 0}
+          onClick={() =>
+            run(
+              () => attachToHomework(hw.id, newFiles.map((f) => f.id)),
+              () => {
+                setNewFiles([]);
+                setSheet(null);
+              },
+            )
+          }
+        >
+          Прикрепить{newFiles.length > 0 ? ` (${newFiles.length})` : ""}
         </Button>
       </Sheet>
 
@@ -273,12 +375,13 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
           <Field label="Текст">
             <Textarea value={orig.body} onChange={(e) => setOrig({ ...orig, body: e.target.value })} className="min-h-32" />
           </Field>
-          <Field label="Дедлайн">
+          <Field label="Дедлайн" hint="Привязка к паре пересчитается по предмету и дате">
             <Input type="date" value={orig.dueDate} onChange={(e) => setOrig({ ...orig, dueDate: e.target.value })} />
           </Field>
           <Button className="w-full" loading={pending} onClick={() => run(() => updateHomework(hw.id, orig), () => setSheet(null))}>
             Сохранить
           </Button>
+          <p className="text-[12px] text-dim">В ленту «Что нового» попадёт только существенная правка: другой предмет, дедлайн или текст. Опечатки — нет.</p>
           {hw.done && (
             <p className="flex items-center gap-1 text-[12px] text-dim">
               <Undo2 className="size-3" /> Отметка «сделано» останется твоей личной
@@ -286,6 +389,33 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
           )}
         </div>
       </Sheet>
+    </div>
+  );
+}
+
+/** Фото — сеткой с просмотром внутри приложения (без внешнего браузера), документы — списком. */
+function Files({ items, compact = false }: { items: Attachment[]; compact?: boolean }) {
+  if (items.length === 0) return null;
+  const images = items.filter((a) => a.mime.startsWith("image/"));
+  const docs = items.filter((a) => !a.mime.startsWith("image/"));
+  return (
+    <div className="space-y-2">
+      {images.length > 0 && <ImageGrid images={images} rounded={compact ? "rounded-md" : "rounded-lg"} singleMax={compact ? "max-h-64" : "max-h-96"} />}
+      {docs.length > 0 && (
+        <ul className="space-y-2">
+          {docs.map((a) => (
+            <li key={a.id}>
+              <a href={a.url} target="_blank" rel="noreferrer" className={cn("flex items-center gap-3 rounded-md bg-surface px-3.5 hairline active:bg-surface-2", compact ? "py-2.5" : "py-3")}>
+                <FileText className="size-5 text-muted" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[14px] font-medium">{a.name}</span>
+                  <span className="text-[12px] text-dim">{fmtBytes(a.size)}</span>
+                </span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
