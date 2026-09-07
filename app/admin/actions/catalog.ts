@@ -61,9 +61,16 @@ export async function updateSubject(id: string, _prev: FormState, formData: Form
   const parsed = subjectSchema.safeParse(readSubject(formData));
   if (!parsed.success) return { error: "Проверь поля: название от 2 символов, цвет в формате #RRGGBB" };
   const d = parsed.data;
+  const [current] = await db.select({ aliases: subjects.aliases }).from(subjects).where(and(eq(subjects.id, id), eq(subjects.groupId, admin.groupId)));
+  // Распознавание скана дописывает алиасы в обход формы. Если админ не трогал поле, страница могла быть открыта
+  // до автообучения — тогда сохранение карточки затёрло бы выученные написания, поэтому колонку не трогаем.
+  const base = formData.get("aliasesBase");
+  const fromForm = parseAliases(d.aliases);
+  const unchanged = typeof base === "string" && parseAliases(base).join("\n") === fromForm.join("\n");
+  const aliases = unchanged ? (current?.aliases ?? fromForm) : fromForm;
   await db
     .update(subjects)
-    .set({ name: d.name, shortName: d.shortName || null, color: d.color || null, defaultTeacher: d.defaultTeacher || null, defaultRoom: d.defaultRoom || null, aliases: parseAliases(d.aliases) })
+    .set({ name: d.name, shortName: d.shortName || null, color: d.color || null, defaultTeacher: d.defaultTeacher || null, defaultRoom: d.defaultRoom || null, aliases })
     .where(and(eq(subjects.id, id), eq(subjects.groupId, admin.groupId)));
   revalidatePath("/admin/subjects");
   revalidatePath("/s", "layout");
@@ -100,6 +107,10 @@ export async function createSemester(_prev: FormState, formData: FormData): Prom
   if (!parsed.success) return { error: "Проверь поля: название от 2 символов и обе даты" };
   const d = parsed.data;
   if (d.endsOn <= d.startsOn) return { error: "Конец семестра должен быть позже начала" };
+  // «Конец» — последний день семестра вместе с сессией, поэтому «Сессия с» должна лежать внутри него,
+  // иначе экран расписания никогда не покажет фазу «Сессия» (lib/schedule/derive.ts, semesterPhase).
+  if (d.sessionStartsOn && (d.sessionStartsOn < d.startsOn || d.sessionStartsOn > d.endsOn))
+    return { error: "«Сессия с» должна быть внутри семестра: между началом и концом" };
   await db.insert(semesters).values({
     groupId: admin.groupId,
     title: d.title,
@@ -118,6 +129,10 @@ export async function updateSemester(id: string, _prev: FormState, formData: For
   if (!parsed.success) return { error: "Проверь поля: название от 2 символов и обе даты" };
   const d = parsed.data;
   if (d.endsOn <= d.startsOn) return { error: "Конец семестра должен быть позже начала" };
+  // «Конец» — последний день семестра вместе с сессией, поэтому «Сессия с» должна лежать внутри него,
+  // иначе экран расписания никогда не покажет фазу «Сессия» (lib/schedule/derive.ts, semesterPhase).
+  if (d.sessionStartsOn && (d.sessionStartsOn < d.startsOn || d.sessionStartsOn > d.endsOn))
+    return { error: "«Сессия с» должна быть внутри семестра: между началом и концом" };
   await db
     .update(semesters)
     .set({ title: d.title, startsOn: d.startsOn, endsOn: d.endsOn, sessionStartsOn: d.sessionStartsOn || null })

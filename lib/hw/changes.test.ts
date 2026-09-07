@@ -56,3 +56,11 @@ test("предмет и дедлайн — существенно, и в опи�
   assert.equal(describeHwChanges(["dueDate", "text"]), "дедлайн и текст");
   assert.equal(describeHwChanges(["subject", "dueDate", "text"]), "предмет, дедлайн и текст");
 });
+
+test("исчезнувшее отрицание — существенная правка, даже если правка короткая", () => {
+  const hw = (body: string) => ({ title: null, body, dueDate: "2026-09-14", subjectId: null });
+  assert.deepEqual(hwChangeKinds(hw("Задачу 5 сдавать не нужно"), hw("Задачу 5 сдавать нужно")), ["text"]);
+  assert.deepEqual(hwChangeKinds(hw("Конспект нужен"), hw("Конспект не нужен")), ["text"]);
+  // Обычная опечатка того же размера по-прежнему не событие.
+  assert.deepEqual(hwChangeKinds(hw("Прочитать параграф"), hw("Прочитать параграф")), []);
+});

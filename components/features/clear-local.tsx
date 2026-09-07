@@ -2,12 +2,16 @@
 
 import { useEffect } from "react";
 
-/** На экране входа сессии нет — вычищаем кеш прошлого пользователя (расписание в localStorage и кеши service worker). */
+/**
+ * На экране входа сессии нет — вычищаем данные прошлого пользователя: расписание и отметки просмотра вкладок
+ * в localStorage плюс кеши service worker. Подсказку установки и отметку баннера дней рождения не трогаем:
+ * они про устройство, а не про человека, и всплывали бы заново после каждой протухшей сессии.
+ */
 export function ClearLocal() {
   useEffect(() => {
     try {
       Object.keys(localStorage)
-        .filter((k) => k.startsWith("raspison.schedule"))
+        .filter((k) => k.startsWith("raspison.schedule") || k.startsWith("raspison.tab.seen."))
         .forEach((k) => localStorage.removeItem(k));
     } catch {}
     if ("caches" in window) {

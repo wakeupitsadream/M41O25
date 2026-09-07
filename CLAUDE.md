@@ -53,7 +53,7 @@ npm run e2e:offline         # только против production-сборки 
 ## Известные проблемы
 
 - P0, вылечен обновлением на Next 16.3 (React 19.2.8): в production-сборке на Next 15.5 клиентская навигация, server action или `router.refresh()` иногда не коммитились — React терял ping от ленивого чанка Flight (гонка на границах чанков потока). На Next 16 репро `e2e/nav-hang.mjs` даёт 0 зависаний из 28 попыток без сторожа против 6/6 и 8/8 на Next 15.5. Сторож `NavWatchdog` и `useGuardedRouter` пока оставлены как страховка: правило проекта «`useRouter` из `next/navigation` напрямую не импортировать» действует, ESLint это проверяет. Убрать сторож после недели на реальных телефонах (`docs/ROADMAP.md`, раздел «Проблема P0»).
-- Маршрутный middleware в Next 16 называется `proxy.ts` с экспортом `proxy` (переименование из `middleware.ts`).
+- Маршрутный middleware в Next 16 называется `proxy.ts` с экспортом `proxy` (переименование из `middleware.ts`). Next 16 всегда собирает корневой `proxy.ts` в Node-рантайм, а не в edge; тяжёлые импорты (`pg`, `lib/db`) туда всё равно не тянуть — сессионные константы лежат в `lib/session-cookie.ts`.
 
 ## Проверки перед push
 

@@ -42,6 +42,8 @@ export default async function EditSubjectPage({ params }: { params: Promise<{ id
           </div>
           <Field label="Как пишут в расписании" hint="По одному в строке. Пополняется само, когда в черновике скана строку привязывают к этому предмету.">
             <Textarea name="aliases" defaultValue={s.aliases.join("\n")} placeholder={"Матан\nМатем. анализ"} className="min-h-20" />
+            {/* Снимок на момент отрисовки: если поле не меняли, действие не трогает колонку и не затирает то, что выучилось из скана. */}
+            <input type="hidden" name="aliasesBase" value={s.aliases.join("\n")} />
           </Field>
           <SubmitButton className="w-full">Сохранить</SubmitButton>
         </ActionForm>

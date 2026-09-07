@@ -111,6 +111,10 @@ export function ScanRecognizer({ weekId, hasLessons, subjects, parity = null }: 
         effectiveMode,
       );
       if (!res.ok) return setError(res.error);
+      // В режиме «только новые» сервер мог не добавить ничего (все пары уже есть) — молча закрывать шторку нельзя.
+      if (effectiveMode !== "replace" && res.data && res.data.count === 0) {
+        return setError(`Ничего не добавлено: все ${res.data.skipped} пар уже есть в неделе.`);
+      }
       setOpen(false);
       setRec(null);
       setFiles([]);

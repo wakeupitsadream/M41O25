@@ -137,8 +137,10 @@ async function main() {
         groupId: group.id,
         title: `Осень ${today.getFullYear()}`,
         startsOn: semStart,
+        // Сессия — последние две недели семестра, обязательно внутри [startsOn, endsOn]:
+        // иначе фаза «Сессия» недостижима и недели сессии не подсвечиваются (lib/schedule/derive.ts).
         endsOn: `${today.getFullYear()}-12-27`,
-        sessionStartsOn: `${today.getFullYear()}-12-28`,
+        sessionStartsOn: `${today.getFullYear()}-12-14`,
       })
       .returning();
     console.log(`[seed] семестр «${semester.title}»`);

@@ -49,6 +49,8 @@ export function editDistance(a: string, b: string, cap = Number.POSITIVE_INFINIT
 
 const fullText = (h: HwEssentials) => normalizeHwText(`${h.title ?? ""}\n${h.body}`);
 const digitsOf = (s: string) => s.replace(/\D+/g, "");
+/** Отрицания переворачивают смысл задания при расстоянии в 2–3 символа: «сдавать не нужно» → «сдавать нужно». */
+const negations = (s: string) => (s.match(/(?:^|\s)(не|нет|без)(?=\s|$)/g) ?? []).length;
 
 /** Список того, что существенно изменилось; пустой список — правка опечатки или ничего не менялось. */
 export function hwChangeKinds(before: HwEssentials, after: HwEssentials): HwChangeKind[] {
@@ -57,7 +59,8 @@ export function hwChangeKinds(before: HwEssentials, after: HwEssentials): HwChan
   if (before.dueDate !== after.dueDate) kinds.push("dueDate");
   const a = fullText(before);
   const b = fullText(after);
-  if (a !== b && (digitsOf(a) !== digitsOf(b) || editDistance(a, b, TYPO_EDIT_DISTANCE) >= TYPO_EDIT_DISTANCE)) kinds.push("text");
+  const substantialText = digitsOf(a) !== digitsOf(b) || negations(a) !== negations(b) || editDistance(a, b, TYPO_EDIT_DISTANCE) >= TYPO_EDIT_DISTANCE;
+  if (a !== b && substantialText) kinds.push("text");
   return kinds;
 }
 

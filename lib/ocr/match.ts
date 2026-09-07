@@ -104,13 +104,15 @@ export function matchSubjectDetailed(title: string, subjects: SubjectRef[]): Sub
   if (byAlias) return { id: byAlias.id, kind: "alias" };
   // Короткое имя — только как целое слово и от 3 символов: «ИЯ» не должно цеплять «История».
   const tokens = new Set(t.split(" "));
+  // Ниже — догадки, а не совпадения: помечаем их kind "fuzzy", чтобы в черновике был бейдж «≈ предмет»
+  // и админ проверил строку глазами (иначе неверная привязка молча уедет в алиасы предмета).
   const byShort = subjects.filter((s) => s.shortName && normalizeTitle(s.shortName).length >= 3 && tokens.has(normalizeTitle(s.shortName)));
-  if (byShort.length === 1) return { id: byShort[0].id, kind: "exact" };
+  if (byShort.length === 1) return { id: byShort[0].id, kind: "fuzzy" };
   const contains = subjects.filter((s) => t.length >= 5 && (normalizeTitle(s.name).includes(t) || t.includes(normalizeTitle(s.name))));
-  if (contains.length === 1) return { id: contains[0].id, kind: "exact" };
+  if (contains.length === 1) return { id: contains[0].id, kind: "fuzzy" };
   const head = t.slice(0, 6);
   const prefix = subjects.filter((s) => head.length >= 5 && normalizeTitle(s.name).startsWith(head));
-  if (prefix.length === 1) return { id: prefix[0].id, kind: "exact" };
+  if (prefix.length === 1) return { id: prefix[0].id, kind: "fuzzy" };
 
   const scored = subjects
     .map((s) => ({ id: s.id, score: Math.max(0, ...spellings(s).map((sp) => fuzzyScore(t, sp))) }))

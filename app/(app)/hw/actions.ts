@@ -113,17 +113,21 @@ export async function updateHomework(id: string, input: z.infer<typeof updateSch
       // Если запись сегодня уже появлялась в ленте (добавлена или изменена), обновляем то событие, а не плодим новое.
       if (kinds.length === 0) return;
       const [last] = await tx
-        .select({ id: activity.id, eventType: activity.eventType, createdAt: activity.createdAt, payload: activity.payload })
+        .select({ id: activity.id, eventType: activity.eventType, actorId: activity.actorId, createdAt: activity.createdAt, payload: activity.payload })
         .from(activity)
         .where(and(eq(activity.entityType, "homework"), eq(activity.entityId, id), inArray(activity.eventType, ["hw_added", "hw_updated"])))
         .orderBy(desc(activity.createdAt))
         .limit(1);
       const head = { title: after.title || after.body.slice(0, 80), dueDate: after.dueDate, subjectId: after.subjectId, lessonId };
-      if (last && last.createdAt >= startOfDayTz(todayIso())) {
-        const prevKinds = last.eventType === "hw_updated" && Array.isArray(last.payload?.kinds) ? (last.payload.kinds as HwChangeKind[]) : [];
+      // Сливаем только в СВОЁ сегодняшнее событие правки: иначе правка подменяет чужую строку ленты (и «Аня добавила»
+      // остаётся автором), а при обновлении без сдвига createdAt те, кто уже открывал ленту, изменение не увидят вовсе.
+      if (last && last.eventType === "hw_updated" && last.actorId === user.id && last.createdAt >= startOfDayTz(todayIso())) {
+        const prevKinds = Array.isArray(last.payload?.kinds) ? (last.payload.kinds as HwChangeKind[]) : [];
         const merged = (["subject", "dueDate", "text"] as HwChangeKind[]).filter((k) => prevKinds.includes(k) || kinds.includes(k));
-        const payload = last.eventType === "hw_updated" ? { ...last.payload, ...head, kinds: merged, what: describeHwChanges(merged) } : { ...last.payload, ...head };
-        await tx.update(activity).set({ payload }).where(eq(activity.id, last.id));
+        await tx
+          .update(activity)
+          .set({ payload: { ...last.payload, ...head, kinds: merged, what: describeHwChanges(merged) }, createdAt: new Date() })
+          .where(eq(activity.id, last.id));
         return;
       }
       await tx.insert(activity).values({
@@ -200,6 +204,16 @@ export async function deleteEdit(editId: string): Promise<ActionResult> {
     if (!e) return fail("Не найдено");
     if (e.authorId !== user.id && !hasRole(user, "admin")) return fail("Удалять может автор дополнения или админ");
     await db.update(hwEdits).set({ deletedAt: new Date() }).where(eq(hwEdits.id, editId));
+    // Файлы блока висят на его id (см. lib/hw/query.ts). Без этого они остаются в хранилище навсегда:
+    // чистильщик сирот в cron берёт только entity_id is null, а через /api/files по ссылке они бы ещё отдавались.
+    const files = await db
+      .select({ id: attachments.id, fileKey: attachments.fileKey })
+      .from(attachments)
+      .where(and(eq(attachments.groupId, user.groupId), eq(attachments.entityType, "homework"), eq(attachments.entityId, editId)));
+    if (files.length) {
+      await db.delete(attachments).where(inArray(attachments.id, files.map((f) => f.id)));
+      for (const f of files) await storage.delete(f.fileKey).catch((e) => console.error("[hw] storage.delete failed:", e));
+    }
     await db.delete(activity).where(and(eq(activity.eventType, "hw_edit_added"), sql`${activity.payload}->>'editId' = ${editId}`));
     bump(e.homeworkId);
     return ok();

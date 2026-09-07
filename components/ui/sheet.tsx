@@ -17,9 +17,43 @@ type SheetProps = {
  * Нижний лист: тянется вниз для закрытия, учитывает safe-area. Скролл фона блокируется «классическим» способом
  * (body position:fixed), потому что iOS Safari игнорирует overflow:hidden на body.
  */
+/**
+ * Замок скролла на весь документ со счётчиком: шторка поверх шторки не должна ни повторно запоминать уже
+ * заблокированное состояние body, ни снимать замок, пока открыта хоть одна. Восстанавливаем стили и позицию
+ * только когда закрылась последняя.
+ */
+let locks = 0;
+let lockState: { position: string; top: string; width: string; overflow: string; scrollY: number } | null = null;
+
+function lockScroll(): () => void {
+  const body = document.body;
+  if (locks === 0) {
+    lockState = { position: body.style.position, top: body.style.top, width: body.style.width, overflow: body.style.overflow, scrollY: window.scrollY };
+    body.style.position = "fixed";
+    body.style.top = `-${lockState.scrollY}px`;
+    body.style.width = "100%";
+    body.style.overflow = "hidden";
+  }
+  locks++;
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    locks--;
+    if (locks > 0 || !lockState) return;
+    body.style.position = lockState.position;
+    body.style.top = lockState.top;
+    body.style.width = lockState.width;
+    body.style.overflow = lockState.overflow;
+    window.scrollTo({ top: lockState.scrollY, behavior: "instant" as ScrollBehavior });
+    lockState = null;
+  };
+}
+
 export function Sheet({ open, onClose, title, children, className }: SheetProps) {
   const controls = useDragControls();
-  const savedScroll = useRef(0);
+  // Escape закрывает актуальным обработчиком, но не переинициализирует замок скролла.
+  const closeRef = useRef(onClose);
   // Клавиатура iOS не меняет layout viewport: следим за visualViewport и поднимаем лист над клавиатурой.
   const [kb, setKb] = useState<{ height: number; offset: number } | null>(null);
 
@@ -50,25 +84,21 @@ export function Sheet({ open, onClose, title, children, className }: SheetProps)
   }, [open]);
 
   useEffect(() => {
+    closeRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
     if (!open) return;
-    savedScroll.current = window.scrollY;
-    const body = document.body;
-    const prev = { position: body.style.position, top: body.style.top, width: body.style.width, overflow: body.style.overflow };
-    body.style.position = "fixed";
-    body.style.top = `-${savedScroll.current}px`;
-    body.style.width = "100%";
-    body.style.overflow = "hidden";
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const release = lockScroll();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && closeRef.current();
     window.addEventListener("keydown", onKey);
     return () => {
-      body.style.position = prev.position;
-      body.style.top = prev.top;
-      body.style.width = prev.width;
-      body.style.overflow = prev.overflow;
-      window.scrollTo({ top: savedScroll.current, behavior: "instant" as ScrollBehavior });
+      release();
       window.removeEventListener("keydown", onKey);
     };
-  }, [open, onClose]);
+    // onClose намеренно вне зависимостей: у шторок он часто инлайновая стрелка, и переинициализация замка
+    // на каждый ре-рендер ломала бы восстановление скролла (особенно у шторки поверх шторки).
+  }, [open]);
 
   return (
     <AnimatePresence>
