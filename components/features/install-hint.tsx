@@ -17,6 +17,7 @@ export function InstallHint() {
       const standalone = window.matchMedia("(display-mode: standalone)").matches || (navigator as unknown as { standalone?: boolean }).standalone === true;
       const dismissed = localStorage.getItem("raspison.install.dismissed") === "1";
       const mobile = /iphone|ipad|ipod|android/i.test(navigator.userAgent);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- То же: подсказка установки определяется по клиентскому окружению.
       setIos(/iphone|ipad|ipod/i.test(navigator.userAgent));
       setShow(!standalone && !dismissed && mobile);
     } catch {

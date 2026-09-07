@@ -113,3 +113,6 @@ export async function diagnostics() {
     healthcheck: Boolean(env.healthcheckUrl),
   };
 }
+
+/** Бэкап считается несвежим, если его нет или он старше двух суток (Date.now() вне рендера — правило react-hooks/purity). */
+export const isBackupStale = (iso: string | null) => !iso || Date.now() - Date.parse(iso) > 2 * 86_400_000;

@@ -29,6 +29,7 @@ export function EnterInstallHint() {
 
   useEffect(() => {
     try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Режим подсказки зависит от navigator и display-mode — только на клиенте после монтирования.
       setMode(detect());
       setIos(/iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent));
       setHidden(sessionStorage.getItem("raspison.enter.hint") === "1");

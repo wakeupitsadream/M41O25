@@ -48,6 +48,7 @@ export function TabBar({ latest = {}, feedSeenAt = null }: { latest?: SectionLat
         // без storage отметка живёт только в этом рендере
       }
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Точки непрочитанного читаются из localStorage после монтирования, иначе mismatch гидратации.
     setDots(unreadSections(JSON.parse(latestKey) as SectionLatest, readSeen(), feedSeenAt, active));
   }, [active, latestKey, feedSeenAt]);
 

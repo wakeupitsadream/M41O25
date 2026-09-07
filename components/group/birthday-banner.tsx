@@ -22,6 +22,7 @@ export function BirthdayBanner({ today, people, meId }: { today: string; people:
     try {
       dismissed = localStorage.getItem(key) === "1";
     } catch {}
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Показ баннера зависит от sessionStorage — только после монтирования.
     setHidden(dismissed);
     if (isMine && !dismissed) {
       void import("canvas-confetti").then(({ default: confetti }) => {

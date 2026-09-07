@@ -12,6 +12,7 @@ export default function ErrorPage({ error, reset }: { error: Error & { digest?: 
   const [offline, setOffline] = useState(false);
   useEffect(() => {
     console.error(error);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Флаг «нет сети» ставится один раз после монтирования: на сервере navigator недоступен.
     setOffline(typeof navigator !== "undefined" && (!navigator.onLine || /Failed to fetch|Load failed|NetworkError|fetch failed/i.test(error.message)));
   }, [error]);
 

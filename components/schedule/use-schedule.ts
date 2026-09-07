@@ -33,6 +33,8 @@ export function useSchedule(initial: SchedulePayload | null) {
   const [status, setStatus] = useState<ScheduleStatus>(initial ? "fresh" : "loading");
   const inflight = useRef(false);
   const retried = useRef(false);
+  // Повтор через 4 с вызывает refresh из его же тела: держим ссылку в ref, иначе обращение к переменной до объявления.
+  const refreshRef = useRef<((isRetry?: boolean) => Promise<void>) | null>(null);
 
   const refresh = useCallback(async (isRetry = false) => {
     if (inflight.current) return;
@@ -40,6 +42,8 @@ export function useSchedule(initial: SchedulePayload | null) {
     try {
       const res = await fetch("/api/schedule", { cache: "no-store", credentials: "same-origin" });
       if (res.status === 401) {
+        // Сессия умерла: нужна полная перезагрузка с сервера, а не клиентский переход.
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination
         window.location.href = "/enter";
         return;
       }
@@ -60,7 +64,7 @@ export function useSchedule(initial: SchedulePayload | null) {
         // Сеть вроде есть, а ответ из кеша: скорее всего функция холодная или связь моргнула. Пробуем ещё раз, потом уже «Офлайн».
         retried.current = true;
         setStatus("loading");
-        setTimeout(() => void refresh(true), 4000);
+        setTimeout(() => void refreshRef.current?.(true), 4000);
         return;
       }
       if (!fromCache && !stale) retried.current = false;
@@ -73,10 +77,15 @@ export function useSchedule(initial: SchedulePayload | null) {
   }, []);
 
   useEffect(() => {
+    refreshRef.current = refresh;
+  }, [refresh]);
+
+  useEffect(() => {
     const cached = readLocal();
     if (initial && (!cached || new Date(initial.generatedAt) >= new Date(cached.generatedAt))) {
       writeLocal(initial);
     } else if (cached) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Начальный статус уточняется после первого запроса к /api/schedule.
       setData(cached);
     }
     // Всегда дёргаем API при открытии: так service worker держит свежую копию для офлайна.

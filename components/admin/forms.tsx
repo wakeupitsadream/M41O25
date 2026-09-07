@@ -13,6 +13,7 @@ import { useToast } from "@/components/ui/toast";
 export function SubmitButton(props: ButtonProps) {
   const { pending } = useFormStatus();
   const [ready, setReady] = useState(false);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- Кнопка включается только после гидратации, иначе тап до неё отправляет форму без обработчика.
   useEffect(() => setReady(true), []);
   return <Button type="submit" loading={pending} {...props} disabled={!ready || props.disabled} />;
 }

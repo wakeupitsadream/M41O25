@@ -4,14 +4,14 @@ PWA группы М41О25 (РАНХиГС, Оренбург): расписани
 
 ## Стек и команды
 
-Next.js 15.5 App Router (React 19, Server Actions), TypeScript strict, Tailwind 4 (CSS-first токены в `app/globals.css`), Motion, Drizzle ORM + `pg`, Serwist (service worker `app/sw.ts`), Zod 4, next/og.
+Next.js 16.3 App Router (React 19.2, Server Actions), TypeScript strict, Tailwind 4 (CSS-first токены в `app/globals.css`), Motion, Drizzle ORM + `pg`, Serwist (service worker `app/sw.ts`), Zod 4, next/og.
 
 ```bash
-npm run dev                 # turbopack, SW отключён
+npm run dev                 # turbopack (по умолчанию в Next 16), SW отключён
 npm run typecheck && npm run lint
 npm test                    # unit-тесты чистой логики lib/**/*.test.ts (node:test через tsx)
 npm run db:check            # drizzle-kit check: миграции согласованы со схемой
-npm run build               # scripts/build.mjs → next build (webpack, нужен для Serwist)
+npm run build               # scripts/build.mjs → next build --webpack (Serwist не работает с turbopack)
 npm run db:generate         # drizzle-kit generate после правки lib/db/schema.ts
 npm run db:migrate          # применить drizzle/*.sql к DATABASE_URL
 npm run db:seed -- --demo   # группа + админ + 20 студентов + расписание (локально)
@@ -52,7 +52,8 @@ npm run e2e:offline         # только против production-сборки 
 
 ## Известные проблемы
 
-- P0, обойдено, не решено: в production-сборке клиентская навигация, server action или `router.refresh()` иногда не коммитятся (URL не меняется, ошибок нет, RSC-ответ пришёл целиком) — React (canary 19.2 от августа 2025) внутри Next 15.5 теряет ping от ленивого чанка Flight, гонка на границах чанков потока. Вероятность растёт с объёмом страницы. Обход: `NavWatchdog` в лэйаутах и `useGuardedRouter` вместо `useRouter` во всех клиентских компонентах (правило проекта: `useRouter` из `next/navigation` напрямую не импортировать). Репро `e2e/nav-hang.mjs`, детали в `docs/ROADMAP.md`, раздел «Открытая проблема P0». Падающий `waitForURL` в e2e не считать флейком.
+- P0, вылечен обновлением на Next 16.3 (React 19.2.8): в production-сборке на Next 15.5 клиентская навигация, server action или `router.refresh()` иногда не коммитились — React терял ping от ленивого чанка Flight (гонка на границах чанков потока). На Next 16 репро `e2e/nav-hang.mjs` даёт 0 зависаний из 28 попыток без сторожа против 6/6 и 8/8 на Next 15.5. Сторож `NavWatchdog` и `useGuardedRouter` пока оставлены как страховка: правило проекта «`useRouter` из `next/navigation` напрямую не импортировать» действует, ESLint это проверяет. Убрать сторож после недели на реальных телефонах (`docs/ROADMAP.md`, раздел «Проблема P0»).
+- Маршрутный middleware в Next 16 называется `proxy.ts` с экспортом `proxy` (переименование из `middleware.ts`).
 
 ## Проверки перед push
 

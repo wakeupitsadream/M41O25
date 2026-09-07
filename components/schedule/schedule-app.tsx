@@ -58,6 +58,7 @@ export function ScheduleApp({ initialData, serverToday, weather = null }: { init
 
   // Направление анимации: глубже (+1), обратно (−1) или соседний экран того же уровня (0).
   const prevRef = useRef<View>(view);
+  // eslint-disable-next-line react-hooks/refs -- Направление анимации сравнивает предыдущий экран с текущим — значение не влияет на разметку, только на сторону перехода.
   const dir = DEPTH[view.level] === DEPTH[prevRef.current.level] ? 0 : DEPTH[view.level] > DEPTH[prevRef.current.level] ? 1 : -1;
   useEffect(() => {
     prevRef.current = view;

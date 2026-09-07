@@ -5,7 +5,7 @@ import { SESSION_COOKIE, SESSION_MAX_AGE, cookieOptions } from "@/lib/session-co
 // /api/files и /api/admin/backup сами проверяют cookie или подписанный токен в URL.
 const PUBLIC = [/^\/enter(\/|$)/, /^\/~offline$/, /^\/api\/auth\//, /^\/api\/cron\//, /^\/api\/files\//, /^\/api\/admin\/backup$/, /^\/manifest\.webmanifest$/, /^\/sw\.js$/, /^\/icons\//, /^\/favicon\.ico$/];
 
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   // Роуты сброса сессии не должны получать продлённую cookie поверх своего удаления.
   if (pathname.startsWith("/api/auth/")) return NextResponse.next();

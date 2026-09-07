@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { and, count, eq, desc } from "drizzle-orm";
 import { Activity, CalendarPlus, ChevronRight, DatabaseBackup, KeyRound, Users2, BookMarked, Wallet } from "lucide-react";
-import { diagnostics, lastBackup, polzaBalance } from "@/lib/admin/status";
+import { diagnostics, isBackupStale, lastBackup, polzaBalance } from "@/lib/admin/status";
 import { signScoped } from "@/lib/files/token";
 import { storage } from "@/lib/storage";
 import { db } from "@/lib/db";
@@ -24,7 +24,7 @@ export default async function AdminHome() {
   const current = recent.find((w) => w.startsOn === thisMonday);
   const next = recent.find((w) => w.startsOn === nextMonday);
   const [polza, backup, diag] = user.role === "admin" ? await Promise.all([polzaBalance(), lastBackup(), diagnostics()]) : [null, null, null];
-  const backupStale = backup ? Date.now() - Date.parse(backup) > 2 * 86_400_000 : true;
+  const backupStale = isBackupStale(backup);
 
   return (
     <div className="space-y-4">

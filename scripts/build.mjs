@@ -36,4 +36,4 @@ if (onVercel && hasDb && allowed) {
   );
 }
 
-run("npx", ["next", "build"]);
+run("npx", ["next", "build", "--webpack"]);

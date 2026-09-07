@@ -56,6 +56,7 @@ export function ScanRecognizer({ weekId, hasLessons, subjects, parity = null }: 
 
   useEffect(() => {
     if (!busy) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Счётчик секунд распознавания стартует после монтирования.
     setElapsed(0);
     const t = setInterval(() => setElapsed((s) => s + 1), 1000);
     return () => clearInterval(t);
