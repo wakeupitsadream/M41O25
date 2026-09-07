@@ -137,8 +137,11 @@ export function SemesterView({ data, today, semesterId, archiveStatus, onSelectS
             const load = Math.min(1, count / 18);
             return (
               <Fragment key={m}>
+                {/* Разделитель занимает обе колонки. Если сессия начинается во втором столбце, остаток строки
+                    закрываем пустой ячейкой, иначе перенос col-span-2 оставил бы дыру в сетке. */}
+                {firstSession && sem && i % 2 === 1 && <span aria-hidden />}
                 {firstSession && sem && (
-                  <div className="col-span-2 mt-1 flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-warn">
+                  <div className="col-span-2 col-start-1 mt-1 flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-warn">
                     <span>Сессия</span>
                     <span className="h-px flex-1 bg-warn/30" />
                     <span className="font-medium normal-case tracking-normal text-muted">{fmtRangeShort(sem.sessionStartsOn!, sem.endsOn)}</span>
