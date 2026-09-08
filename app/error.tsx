@@ -4,15 +4,16 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { CircleCheck, CircleAlert, RotateCcw, ServerCrash, Stethoscope, TriangleAlert, WifiOff } from "lucide-react";
 import { classifyError, errorCopy, probeVerdict, type ErrorKind, type ProbeVerdict } from "@/lib/ops/error-kind";
+import { WrongOriginNotice } from "@/components/features/wrong-origin";
 
 const ICONS = { offline: WifiOff, "server-error": ServerCrash, unknown: TriangleAlert } as const;
 const TONE = { ok: "text-ok", warn: "text-warn", bad: "text-danger" } as const;
 
 /**
  * Граница ошибок вместо «Application error». В production Next скрывает текст серверных ошибок, поэтому
- * по тексту ничего не угадываем: «Нет сети» показываем, только когда браузер сам сказал, что сети нет
- * (иначе поломка сервера читается как проблема со связью и человек чинит не то — см. lib/ops/error-kind.ts).
- * Кнопка «Проверить связь» отвечает на этот вопрос за секунду и работает в установленной PWA.
+ * по тексту ничего не угадываем: серверная 500 в установленной PWA приходит как «Failed to fetch», и по
+ * этому тексту экран однажды сказал «Нет сети» при живой сети — человек искал проблему у себя. Единственный
+ * признак офлайна — navigator.onLine (см. lib/ops/error-kind.ts); кнопка «Проверить связь» отвечает за секунду.
  */
 export default function ErrorPage({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   const [kind, setKind] = useState<ErrorKind>("unknown");
@@ -53,6 +54,8 @@ export default function ErrorPage({ error, reset }: { error: Error & { digest?: 
       </div>
       <h1 className="font-display text-2xl font-bold">{copy.title}</h1>
       <p className="max-w-xs text-[15px] leading-relaxed text-muted">{copy.hint}</p>
+      {/* Самая частая причина падения «на ровном месте» — открыт preview-адрес без базы. Говорим об этом прямо. */}
+      <WrongOriginNotice className="w-full max-w-xs text-left" />
       <div className="flex flex-wrap justify-center gap-2 pt-2">
         <button type="button" onClick={reset} className="flex min-h-11 items-center gap-2 rounded-full bg-accent px-6 py-3 font-semibold text-accent-ink active:bg-accent-press">
           <RotateCcw className="size-4" /> Повторить

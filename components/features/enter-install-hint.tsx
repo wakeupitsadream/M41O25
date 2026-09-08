@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Compass, Share, Smartphone, SquarePlus } from "lucide-react";
+import { APP_ORIGIN, originStatus } from "@/lib/origin";
 
 type Mode = "standalone" | "inapp" | "browser" | "desktop";
 
@@ -26,6 +27,7 @@ export function EnterInstallHint() {
   const [mode, setMode] = useState<Mode | null>(null);
   const [ios, setIos] = useState(true);
   const [hidden, setHidden] = useState(false);
+  const [foreign, setForeign] = useState(false);
 
   useEffect(() => {
     try {
@@ -33,12 +35,14 @@ export function EnterInstallHint() {
       setMode(detect());
       setIos(/iPhone|iPad|iPod|Macintosh/.test(navigator.userAgent));
       setHidden(sessionStorage.getItem("raspison.enter.hint") === "1");
+      setForeign(originStatus(APP_ORIGIN, window.location.origin).kind === "foreign");
     } catch {
       setMode("desktop");
     }
   }, []);
 
-  if (!mode || mode === "desktop" || hidden) return null;
+  // На чужом адресе инструкция «поставь приложение отсюда» вредна: своё говорит WrongOriginNotice выше.
+  if (!mode || mode === "desktop" || hidden || foreign) return null;
 
   if (mode === "standalone") {
     return (

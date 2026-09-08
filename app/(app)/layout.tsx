@@ -8,6 +8,7 @@ import { RefreshOnResume } from "@/components/features/refresh-on-resume";
 import { NetStatus } from "@/components/features/net-status";
 import { NavWatchdog } from "@/components/features/nav-guard";
 import { HwOutbox } from "@/components/hw/hw-outbox";
+import { WrongOriginBanner } from "@/components/features/wrong-origin";
 import { ToastProvider } from "@/components/ui/toast";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -22,14 +23,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <NavWatchdog />
         <RefreshOnResume />
         {/*
-          Одна колонка на все верхние плашки: раскладку держит контейнер, а NetStatus, HwOutbox и BirthdayBanner
-          не знают друг о друге и не считают отступы — иначе они наезжают друг на друга в любой новой комбинации.
-          Сам контейнер тапы не ловит, интерактивные плашки внутри включают pointer-events сами.
+          Одна колонка на все верхние плашки: раскладку держит контейнер, а WrongOriginBanner, NetStatus, HwOutbox
+          и BirthdayBanner не знают друг о друге и не считают отступы — иначе они наезжают друг на друга в любой
+          новой комбинации. Сам контейнер тапы не ловит, интерактивные плашки внутри включают pointer-events сами.
+          Порядок сверху вниз — по серьёзности: чужой адрес значит, что всё остальное скоро перестанет работать.
         */}
         <div
           className="pointer-events-none fixed inset-x-0 z-30 mx-auto flex w-full max-w-lg flex-col items-center gap-1.5 px-4"
           style={{ top: "calc(var(--sat) + 0.5rem)" }}
         >
+          <WrongOriginBanner />
           <NetStatus />
           <HwOutbox meId={user.id} />
           <BirthdayBanner today={today} people={todays} meId={user.id} />

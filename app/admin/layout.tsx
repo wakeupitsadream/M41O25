@@ -4,6 +4,7 @@ import { requireRole } from "@/lib/auth";
 import { AdminNav } from "@/components/admin/admin-nav";
 import { RefreshOnResume } from "@/components/features/refresh-on-resume";
 import { NavWatchdog } from "@/components/features/nav-guard";
+import { WrongOriginBanner } from "@/components/features/wrong-origin";
 import { ToastProvider } from "@/components/ui/toast";
 
 export const metadata = { title: "Админка" };
@@ -22,6 +23,10 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <div className="flex-1" />
         <span className="rounded-full bg-accent/15 px-3 py-1 text-[12px] font-semibold text-accent">{user.role === "admin" ? "Админ" : "Староста"}</span>
       </header>
+      {/* У админки своя раскладка без колонки верхних плашек: empty:hidden убирает отступ, когда адрес свой. */}
+      <div className="px-3 pb-2 empty:hidden">
+        <WrongOriginBanner />
+      </div>
       <AdminNav role={user.role} />
       <div className="px-5 pt-4">{children}</div>
     </div>

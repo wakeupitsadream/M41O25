@@ -1,5 +1,11 @@
 import type { MetadataRoute } from "next";
 
+/**
+ * start_url и scope — только относительные пути. Абсолютный адрес здесь означал бы, что preview-сборка
+ * ставит на домашний экран ярлык на production (и наоборот), а превью-проверки уводят на боевые данные.
+ * Установленное приложение остаётся на своём домене; о том, что домен не рабочий, предупреждает
+ * WrongOriginNotice на экране входа — до установки, а не после.
+ */
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Raspison",

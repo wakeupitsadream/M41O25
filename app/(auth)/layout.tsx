@@ -1,6 +1,12 @@
 import { Wordmark } from "@/components/ui/primitives";
 import { NavWatchdog } from "@/components/features/nav-guard";
+import { WrongOriginNotice } from "@/components/features/wrong-origin";
 
+/**
+ * Группа (auth) — это целиком экраны входа (/enter, /enter/who, /enter/pin), то есть ровно то место,
+ * где человек ставит приложение на домашний экран и навсегда привязывается к адресу. Поэтому здесь
+ * не компактная плашка, как внутри приложения, а развёрнутое предупреждение с кнопкой перехода.
+ */
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <main className="relative mx-auto flex min-h-dvh w-full max-w-md flex-col px-6 pb-10 pt-safe">
@@ -12,7 +18,10 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <header className="relative flex items-center justify-between pt-8">
         <Wordmark className="text-2xl" />
       </header>
-      <div className="relative flex flex-1 flex-col justify-center py-10">{children}</div>
+      <div className="relative flex flex-1 flex-col justify-center py-10">
+        <WrongOriginNotice className="mb-6" />
+        {children}
+      </div>
     </main>
   );
 }
