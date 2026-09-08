@@ -11,7 +11,7 @@ import { assertRate } from "@/lib/rate-limit";
 import { storage } from "@/lib/storage";
 import { startOfDayTz, todayIso } from "@/lib/tz";
 import { describeHwChanges, hwChangeKinds, type HwChangeKind } from "@/lib/hw/changes";
-import { DEDUP_WINDOW_MS, findRecentDuplicate } from "@/lib/hw/draft";
+import { dedupSince, findRecentDuplicate } from "@/lib/hw/draft";
 import { matchLesson, resolveLessonId } from "@/lib/hw/query";
 import { fail, ok, type ActionResult } from "@/lib/utils";
 import { wrapAction } from "@/lib/actions";
@@ -31,6 +31,8 @@ const createSchema = z.object({
   /** Пара, к которой привязана запись; сервер перепроверяет по дате и предмету (см. resolveLessonId). */
   lessonId: z.string().uuid().nullable().optional(),
   attachmentIds: uuidList(MAX_HW_ATTACHMENTS),
+  /** Когда запись легла в офлайн-очередь (epoch ms). Свежая отправка его не шлёт — см. окно дедупликации ниже. */
+  queuedAt: z.number().int().positive().optional(),
 });
 
 export type CreateHomeworkInput = z.infer<typeof createSchema>;
@@ -61,15 +63,27 @@ export async function createHomework(input: CreateHomeworkInput): Promise<Action
 
     // Идемпотентность отложенной отправки (components/hw/hw-outbox.tsx): телефон повторяет запись, когда не понял,
     // дошла ли она (оборванный ответ, «Load failed»). Ключ повтора хранить негде — колонок под него нет, — поэтому
-    // повтор узнаём по содержимому: тот же автор, текст, дедлайн и предмет за последние DEDUP_WINDOW_MS.
+    // повтор узнаём по содержимому: тот же автор, текст, дедлайн и предмет начиная с sinceMs. Для записи из очереди
+    // окно отсчитывается от её queuedAt: замороженная PWA может повторить отправку через сутки после вставки.
     // Проверка идёт до assertRate: повтор не должен упираться в часовой лимит и не должен его тратить.
+    const sinceMs = dedupSince(Date.now(), d.queuedAt);
     const recent = await db
       .select({ id: homework.id, body: homework.body, dueDate: homework.dueDate, subjectId: homework.subjectId, createdAt: homework.createdAt })
       .from(homework)
-      .where(and(eq(homework.groupId, user.groupId), eq(homework.createdBy, user.id), isNull(homework.deletedAt), gte(homework.createdAt, new Date(Date.now() - DEDUP_WINDOW_MS))))
+      .where(
+        and(
+          eq(homework.groupId, user.groupId),
+          eq(homework.createdBy, user.id),
+          isNull(homework.deletedAt),
+          gte(homework.createdAt, new Date(sinceMs)),
+          // Сужаем выборку прямо в SQL, чтобы небольшой limit не отрезал искомый повтор на длинном окне.
+          eq(homework.dueDate, d.dueDate),
+          d.subjectId ? eq(homework.subjectId, d.subjectId) : isNull(homework.subjectId),
+        ),
+      )
       .orderBy(desc(homework.createdAt))
       .limit(10);
-    const dup = findRecentDuplicate(recent, d, Date.now());
+    const dup = findRecentDuplicate(recent, d, sinceMs);
     // Вложения первой отправки уже привязаны к найденной записи — второй раз ничего забирать не надо.
     if (dup) return ok({ id: dup.id });
 
@@ -105,7 +119,7 @@ export async function createHomework(input: CreateHomeworkInput): Promise<Action
   });
 }
 
-const updateSchema = createSchema.omit({ attachmentIds: true, lessonId: true });
+const updateSchema = createSchema.omit({ attachmentIds: true, lessonId: true, queuedAt: true });
 
 export async function updateHomework(id: string, input: z.infer<typeof updateSchema>): Promise<ActionResult> {
   return wrapAction(async () => {

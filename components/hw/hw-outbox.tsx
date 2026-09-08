@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { CloudUpload, Loader2 } from "lucide-react";
 import { createHomework } from "@/app/(app)/hw/actions";
 import { useGuardedRouter } from "@/components/features/nav-guard";
@@ -14,8 +15,10 @@ import {
   QUEUE_EVENT,
   queueLabel,
   queueToSend,
+  readDraft,
   readQueue,
   removeFromQueue,
+  saveDraft,
   writeQueue,
   type QueuedHw,
 } from "@/lib/hw/draft";
@@ -34,6 +37,7 @@ const online = () => (typeof navigator === "undefined" ? true : navigator.onLine
  */
 export function HwOutbox({ meId }: { meId: string }) {
   const router = useGuardedRouter();
+  const pathname = usePathname();
   const toast = useToast();
   const [mine, setMine] = useState<QueuedHw[]>([]);
   const [sending, setSending] = useState(false);
@@ -68,6 +72,9 @@ export function HwOutbox({ meId }: { meId: string }) {
             dueDate: e.dueDate,
             lessonId: e.lessonId,
             attachmentIds: e.attachmentIds,
+            // Момент постановки в очередь: сервер считает от него окно дедупликации, иначе повтор после
+            // многочасовой заморозки PWA создаст второй такой же ДЗ (app/(app)/hw/actions.ts).
+            queuedAt: e.queuedAt > 0 ? Math.floor(e.queuedAt) : undefined,
           });
           // Очередь перечитываем на каждом шаге: пока идёт отправка, человек мог добавить ещё одну запись.
           const cur = pruneQueue(readQueue(), Date.now());
@@ -121,6 +128,30 @@ export function HwOutbox({ meId }: { meId: string }) {
     };
   }, [flush, sync]);
 
+  /**
+   * Сервер отверг запись (слишком длинный текст, удалённый предмет) — сама она больше не уйдёт и висела бы
+   * плашкой неделю до конца TTL. Не стираем её молча: возвращаем текст в черновик и уводим человека в форму,
+   * где его видно и можно поправить.
+   */
+  const fixFailed = (e: QueuedHw) => {
+    if (readDraft(meId)) {
+      // На /hw/new уже начата другая запись — затирать её нельзя. Запись остаётся в очереди.
+      toast("Сначала разберись с тем, что уже набрано в «Что задали?»");
+      router.push("/hw/new");
+      return;
+    }
+    if (!saveDraft({ userId: meId, body: e.body, title: e.title, subjectId: e.subjectId, dueOverride: e.dueDate, savedAt: Date.now() })) {
+      // Хранилище отказало: из очереди запись не убираем, иначе текст пропал бы совсем.
+      toast("Не вышло открыть запись — на телефоне нет места");
+      return;
+    }
+    writeQueue(removeFromQueue(pruneQueue(readQueue(), Date.now()), e.key));
+    // Форма уже открыта на этом экране: она перечитывает черновик только при монтировании, а её пустое состояние
+    // затёрло бы только что записанное. Поэтому перезагружаем экран (офлайн его отдаст service worker).
+    if (pathname === "/hw/new") window.location.reload();
+    else router.push("/hw/new");
+  };
+
   if (!mine.length) return null;
   const failed = mine.find((e) => e.lastError);
 
@@ -128,6 +159,11 @@ export function HwOutbox({ meId }: { meId: string }) {
     <div className="pointer-events-auto flex max-w-full items-center gap-2 rounded-full bg-surface-2 py-1.5 pl-3.5 pr-1.5 shadow-float hairline">
       {sending ? <Loader2 className="size-3.5 shrink-0 animate-spin text-muted" /> : <CloudUpload className="size-3.5 shrink-0 text-muted" />}
       <span className="truncate text-[12px] font-medium text-muted">{failed?.lastError ?? queueLabel(mine.length)}</span>
+      {failed && (
+        <button type="button" onClick={() => fixFailed(failed)} className="h-10 shrink-0 rounded-full px-3 text-[13px] font-semibold text-muted">
+          Исправить
+        </button>
+      )}
       <button
         type="button"
         onClick={() => void flush(true)}

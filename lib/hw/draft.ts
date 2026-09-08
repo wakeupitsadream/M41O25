@@ -154,6 +154,18 @@ export const queueToSend = (list: QueuedHw[], userId: string, manual: boolean) =
 /** «1 запись ждёт отправки», «2 записи ждут отправки». */
 export const queueLabel = (n: number) => `${n} ${pluralRu(n, "запись", "записи", "записей")} ${n === 1 ? "ждёт" : "ждут"} отправки`;
 
+/* ─── Дедлайн ──────────────────────────────────────────────────────────────── */
+
+/**
+ * Ближайшая ещё не прошедшая пара предмета. Страница /hw/new в офлайне приезжает из кеша service worker
+ * и может быть многодневной давности, поэтому «сегодня» приходит от клиента, а не из серверных пропсов:
+ * запись с прошедшим дедлайном ушла бы сразу в архив (lib/hw/query.ts берёт только dueDate >= today).
+ */
+export const nextLessonDate = (lessons: { date: string }[], today: string) => lessons.find((l) => l.date >= today)?.date ?? null;
+
+/** Своя дата из черновика живёт до суток и за ночь может протухнуть: прошедшую не подставляем. */
+export const freshDue = (due: string | null, today: string) => (due && due >= today ? due : null);
+
 /* ─── Ошибка сети ──────────────────────────────────────────────────────────── */
 
 /**
@@ -193,12 +205,22 @@ export const sameHwEntry = (a: HwIdentity, b: HwIdentity) =>
   a.dueDate === b.dueDate && (a.subjectId ?? null) === (b.subjectId ?? null) && a.body.trim() === b.body.trim();
 
 /**
+ * Нижняя граница окна дедупликации (epoch ms). Для свежей отправки это «последние DEDUP_WINDOW_MS».
+ * Для записи из очереди анкер — момент её постановки в очередь: iOS замораживает PWA, и повтор той же
+ * записи может прийти через часы или сутки после того, как сервер её уже вставил. Клиентскому времени
+ * не доверяем: снизу зажимаем сроком жизни очереди, сверху — обычным окном.
+ */
+export function dedupSince(now: number, queuedAt?: number | null): number {
+  return Math.min(now - DEDUP_WINDOW_MS, Math.max(queuedAt ?? Infinity, now - QUEUE_TTL_MS));
+}
+
+/**
  * Ключ идемпотентности живёт только на телефоне (колонки под него нет, миграции запрещены), поэтому сервер
- * узнаёт повтор по содержимому: та же запись того же автора за последние DEDUP_WINDOW_MS. Это ловит и
+ * узнаёт повтор по содержимому: та же запись того же автора начиная с sinceMs (см. dedupSince). Это ловит и
  * самый неприятный случай — когда запрос дошёл, а ответ по дороге потерялся, и телефон честно шлёт его снова.
  */
-export function findRecentDuplicate<T extends HwIdentity & { id: string; createdAt: Date }>(rows: T[], input: HwIdentity, now: number): T | null {
-  return rows.find((r) => now - r.createdAt.getTime() <= DEDUP_WINDOW_MS && sameHwEntry(r, input)) ?? null;
+export function findRecentDuplicate<T extends HwIdentity & { id: string; createdAt: Date }>(rows: T[], input: HwIdentity, sinceMs: number): T | null {
+  return rows.find((r) => r.createdAt.getTime() >= sinceMs && sameHwEntry(r, input)) ?? null;
 }
 
 /* ─── localStorage ─────────────────────────────────────────────────────────── */
@@ -220,13 +242,22 @@ const read = (key: string) => {
   }
 };
 
-const write = (key: string, value: string) => {
+/**
+ * Запись, отчитывающаяся об успехе. Оба отказа тихие и оба означают потерю: хранилище выключено
+ * (приватный режим, «сайтовые данные» отключены — store() === null, setItem даже не вызывается)
+ * либо кончилась квота (setItem бросает). Вызывающий обязан проверить результат, прежде чем чистить форму.
+ */
+export function writeTo(s: Storage | null, key: string, value: string): boolean {
+  if (!s) return false;
   try {
-    store()?.setItem(key, value);
+    s.setItem(key, value);
+    return true;
   } catch {
-    /* нет места или приватный режим — черновик просто не сохранится */
+    return false;
   }
-};
+}
+
+const write = (key: string, value: string) => writeTo(store(), key, value);
 
 const drop = (key: string) => {
   try {
@@ -242,7 +273,14 @@ export const readDraft = (userId: string, now = Date.now()): HwDraft | null => {
   return draft;
 };
 
-export const saveDraft = (draft: HwDraft) => (isEmptyDraft(draft) ? drop(DRAFT_KEY) : write(DRAFT_KEY, JSON.stringify(draft)));
+/** true — черновик лежит в хранилище (или его нечего хранить); false — сохранить не вышло, текст есть только на экране. */
+export const saveDraft = (draft: HwDraft): boolean => {
+  if (isEmptyDraft(draft)) {
+    drop(DRAFT_KEY);
+    return true;
+  }
+  return write(DRAFT_KEY, JSON.stringify(draft));
+};
 export const clearDraft = () => drop(DRAFT_KEY);
 
 /** Ключ идемпотентности отложенной записи. randomUUID есть в Safari с iOS 15.4; на всякий случай — запасной вариант. */
@@ -257,10 +295,13 @@ export const newQueueKey = () => {
 export const readQueue = () => parseQueue(read(QUEUE_KEY));
 
 /** Пишем очередь и сообщаем окну — плашка «ждёт отправки» обновляется без перезагрузки. */
-export const writeQueue = (list: QueuedHw[]) => {
-  if (list.length) write(QUEUE_KEY, serializeQueue(list));
+export const writeQueue = (list: QueuedHw[]): boolean => {
+  // Пустую очередь просто стираем: терять нечего, это всегда успех.
+  let saved = true;
+  if (list.length) saved = write(QUEUE_KEY, serializeQueue(list));
   else drop(QUEUE_KEY);
   try {
     window.dispatchEvent(new Event(QUEUE_EVENT));
   } catch {}
+  return saved;
 };

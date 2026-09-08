@@ -3,23 +3,31 @@ import assert from "node:assert/strict";
 import {
   addToQueue,
   DEDUP_WINDOW_MS,
+  dedupSince,
+  DRAFT_KEY,
   DRAFT_TTL_MS,
   findRecentDuplicate,
+  freshDue,
   isEmptyDraft,
   isOfflineError,
   markQueueFailed,
   markQueueRetry,
   myQueue,
+  nextLessonDate,
   parseDraft,
   parseQueue,
   pruneQueue,
+  QUEUE_KEY,
   QUEUE_MAX,
   QUEUE_TTL_MS,
   queueLabel,
   queueToSend,
   removeFromQueue,
   sameHwEntry,
+  saveDraft,
   serializeQueue,
+  writeQueue,
+  writeTo,
   type HwDraft,
   type QueuedHw,
 } from "./draft";
@@ -144,6 +152,104 @@ test("queueLabel: русские числительные", () => {
   assert.equal(queueLabel(11), "11 записей ждут отправки");
 });
 
+/* ─── Хранилище ────────────────────────────────────────────────────────────── */
+
+/** Минимальный localStorage: `fail` заставляет setItem бросать, как переполненная квота в Safari. */
+const fakeStore = (fail = false) => {
+  const map = new Map<string, string>();
+  return {
+    map,
+    storage: {
+      getItem: (k: string) => map.get(k) ?? null,
+      setItem: (k: string, v: string) => {
+        if (fail) throw new Error("QuotaExceededError");
+        map.set(k, v);
+      },
+      removeItem: (k: string) => void map.delete(k),
+      clear: () => map.clear(),
+      key: () => null,
+      length: 0,
+    } as unknown as Storage,
+  };
+};
+
+/** Подменяет глобальный localStorage на время одного теста (в node его нет вовсе). */
+const withStorage = (storage: Storage | null, fn: () => void) => {
+  const g = globalThis as { localStorage?: Storage };
+  const had = "localStorage" in g;
+  const prev = g.localStorage;
+  if (storage) g.localStorage = storage;
+  else delete g.localStorage;
+  try {
+    fn();
+  } finally {
+    if (had) g.localStorage = prev;
+    else delete g.localStorage;
+  }
+};
+
+test("writeTo: отчитывается об отказе, а не молчит", () => {
+  const okStore = fakeStore();
+  assert.equal(writeTo(okStore.storage, "k", "v"), true);
+  assert.equal(okStore.map.get("k"), "v");
+  // Квота кончилась: setItem бросил.
+  assert.equal(writeTo(fakeStore(true).storage, "k", "v"), false);
+  // Хранилище выключено (приватный режим, отключённые данные сайта): setItem даже не зовётся.
+  assert.equal(writeTo(null, "k", "v"), false);
+});
+
+test("writeQueue: не сохранённая очередь — это false, а не тихий успех", () => {
+  const okStore = fakeStore();
+  withStorage(okStore.storage, () => {
+    assert.equal(writeQueue([entry()]), true);
+    assert.deepEqual(parseQueue(okStore.map.get(QUEUE_KEY) ?? null), [entry()]);
+    // Пустая очередь просто стирается — терять нечего.
+    assert.equal(writeQueue([]), true);
+    assert.equal(okStore.map.has(QUEUE_KEY), false);
+  });
+  withStorage(fakeStore(true).storage, () => {
+    assert.equal(writeQueue([entry()]), false);
+  });
+  withStorage(null, () => {
+    assert.equal(writeQueue([entry()]), false);
+  });
+});
+
+test("saveDraft: отказ хранилища виден вызывающему", () => {
+  const okStore = fakeStore();
+  withStorage(okStore.storage, () => {
+    assert.equal(saveDraft(draft()), true);
+    assert.deepEqual(parseDraft(okStore.map.get(DRAFT_KEY) ?? null, ME, NOW), draft());
+    // Пустой черновик хранить нечего — стираем и считаем успехом.
+    assert.equal(saveDraft(draft({ body: "  ", title: "" })), true);
+    assert.equal(okStore.map.has(DRAFT_KEY), false);
+  });
+  withStorage(fakeStore(true).storage, () => {
+    assert.equal(saveDraft(draft()), false);
+  });
+  withStorage(null, () => {
+    assert.equal(saveDraft(draft()), false);
+  });
+});
+
+/* ─── Дедлайн ──────────────────────────────────────────────────────────────── */
+
+test("nextLessonDate: из кеша SW могли приехать уже прошедшие пары", () => {
+  const lessons = [{ date: "2026-09-08" }, { date: "2026-09-11" }];
+  assert.equal(nextLessonDate(lessons, "2026-09-08"), "2026-09-08");
+  // Страница пролежала в кеше несколько дней: вчерашняя пара дедлайном не станет.
+  assert.equal(nextLessonDate(lessons, "2026-09-09"), "2026-09-11");
+  assert.equal(nextLessonDate(lessons, "2026-09-12"), null);
+  assert.equal(nextLessonDate([], "2026-09-08"), null);
+});
+
+test("freshDue: протухшая своя дата из черновика не возвращается", () => {
+  assert.equal(freshDue("2026-09-11", "2026-09-08"), "2026-09-11");
+  assert.equal(freshDue("2026-09-08", "2026-09-08"), "2026-09-08");
+  assert.equal(freshDue("2026-09-07", "2026-09-08"), null);
+  assert.equal(freshDue(null, "2026-09-08"), null);
+});
+
 /* ─── Ошибка сети ──────────────────────────────────────────────────────────── */
 
 test("isOfflineError: исключения fetch из разных браузеров считаем отсутствием сети", () => {
@@ -191,13 +297,32 @@ test("sameHwEntry: текст, дедлайн и предмет; пробелы 
 });
 
 test("findRecentDuplicate: повтор внутри окна возвращает уже созданную запись", () => {
-  assert.equal(findRecentDuplicate([row()], input, NOW + 60_000)?.id, "h1");
-  assert.equal(findRecentDuplicate([], input, NOW), null);
+  assert.equal(findRecentDuplicate([row()], input, dedupSince(NOW + 60_000))?.id, "h1");
+  assert.equal(findRecentDuplicate([], input, dedupSince(NOW)), null);
 });
 
-test("findRecentDuplicate: за окном — это новая запись, а не дубль", () => {
-  assert.equal(findRecentDuplicate([row()], input, NOW + DEDUP_WINDOW_MS - 1)?.id, "h1");
-  assert.equal(findRecentDuplicate([row()], input, NOW + DEDUP_WINDOW_MS + 1), null);
+test("findRecentDuplicate: старше нижней границы — это новая запись, а не дубль", () => {
+  assert.equal(findRecentDuplicate([row()], input, dedupSince(NOW + DEDUP_WINDOW_MS - 1))?.id, "h1");
+  assert.equal(findRecentDuplicate([row()], input, dedupSince(NOW + DEDUP_WINDOW_MS + 1)), null);
+});
+
+test("dedupSince: свежая отправка — обычное окно, отложенная — от момента постановки в очередь", () => {
+  assert.equal(dedupSince(NOW), NOW - DEDUP_WINDOW_MS);
+  assert.equal(dedupSince(NOW, NOW - 60 * 60_000), NOW - 60 * 60_000);
+  // Запись из будущего (часы телефона врут) окно не сужает.
+  assert.equal(dedupSince(NOW, NOW + 60 * 60_000), NOW - DEDUP_WINDOW_MS);
+  // И не растягивает его дальше срока жизни очереди.
+  assert.equal(dedupSince(NOW, NOW - 30 * QUEUE_TTL_MS), NOW - QUEUE_TTL_MS);
+});
+
+test("dedupSince: повтор после суточной заморозки PWA не создаёт второй такой же ДЗ", () => {
+  // Вечером запись ушла на сервер, но ответ потерялся: телефон заснул, запись осталась в очереди.
+  const queuedAt = NOW;
+  const inserted = row({ createdAt: new Date(NOW + 1_000) });
+  const morning = NOW + 14 * 60 * 60_000;
+  assert.equal(findRecentDuplicate([inserted], input, dedupSince(morning, queuedAt))?.id, "h1");
+  // А набранная утром заново запись с тем же текстом дублем не считается — это осознанный повтор.
+  assert.equal(findRecentDuplicate([inserted], input, dedupSince(morning)), null);
 });
 
 test("findRecentDuplicate: одинаковый текст для разных предметов не склеивается", () => {

@@ -72,7 +72,9 @@ export async function GET(req: Request) {
   await db.delete(anonQuota).where(lt(anonQuota.day, today));
   await db.delete(authAttempts).where(lt(authAttempts.createdAt, new Date(Date.now() - 24 * 3600_000)));
   await db.delete(deviceSessions).where(or(lt(deviceSessions.createdAt, new Date(Date.now() - 366 * 86_400_000)), sql`${deviceSessions.revokedAt} < now() - interval '7 days'`));
-  // Сканы чистит шаг 2 (свои 30 дней), у домашки окно длиннее очереди отправки — иначе cron стирает ждущие фото.
+  // Сканы чистит шаг 2 (свои 30 дней). У домашки окно длиннее: пока запись лежит в офлайн-очереди, её вложения
+  // ничейные — привязывает их только успешная отправка (claimUploads). Окно = срок жизни очереди плюс сутки,
+  // считает orphanCutoffs; правите его — проверьте QUEUE_TTL_MS, иначе «отправлю вместе с фото» окажется враньём.
   const cut = orphanCutoffs(Date.now());
   const orphans = await db
     .select()

@@ -5,10 +5,10 @@ import { useGuardedRouter } from "@/components/features/nav-guard";
 import { CalendarClock, ChevronDown, CloudUpload, Send } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { createHomework } from "@/app/(app)/hw/actions";
-import { addDaysIso, capitalize, fmtDayShort, fmtWeekday } from "@/lib/schedule/time";
+import { addDaysIso, capitalize, fmtDayShort, fmtWeekday, nowParts } from "@/lib/schedule/time";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea } from "@/components/ui/input";
-import { addToQueue, clearDraft, isOfflineError, newQueueKey, pruneQueue, readDraft, readQueue, saveDraft, writeQueue } from "@/lib/hw/draft";
+import { addToQueue, clearDraft, freshDue, isOfflineError, newQueueKey, nextLessonDate, pruneQueue, readDraft, readQueue, saveDraft, writeQueue } from "@/lib/hw/draft";
 import { AttachmentUploader, type UploadedFile } from "./attachment-uploader";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +32,10 @@ type DraftFields = { body: string; title: string; subjectId: string | null; dueO
 /** Пауза перед записью черновика: набор текста не должен дёргать localStorage на каждую букву. */
 const DRAFT_DEBOUNCE_MS = 400;
 
+/** Пределы полей повторяют createSchema (app/(app)/hw/actions.ts): длинный текст не должен попадать в очередь и вечно получать отказ. */
+const MAX_BODY = 4000;
+const MAX_TITLE = 120;
+
 const isOnline = () => (typeof navigator === "undefined" ? true : navigator.onLine);
 
 /**
@@ -51,6 +55,9 @@ export function QuickAddForm({ subjects, suggestedSubjectId, upcomingBySubject, 
   const [more, setMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [queued, setQueued] = useState<string | null>(null);
+  // Серверное «сегодня» может быть многодневной давности: офлайн страница /hw/new приезжает из кеша service worker.
+  // Стартуем с серверного значения (иначе рассинхрон гидратации) и уточняем по часам телефона после монтирования.
+  const [clientToday, setClientToday] = useState(today);
   // Пока черновик не восстановлен, писать его нельзя: пустая форма затёрла бы сохранённое.
   const restored = useRef(false);
   // Запись ушла на сервер — черновик больше не воскрешаем.
@@ -61,9 +68,11 @@ export function QuickAddForm({ subjects, suggestedSubjectId, upcomingBySubject, 
   const patch = (p: Partial<DraftFields>) => setForm((f) => ({ ...f, ...p }));
 
   const subjectLessons = useMemo(() => (subjectId ? upcomingBySubject[subjectId] ?? [] : []), [subjectId, upcomingBySubject]);
-  const autoDue = subjectLessons[0]?.date ?? addDaysIso(today, 7);
+  // Прошедшая пара дедлайном не станет: запись с dueDate < сегодня не попадёт в список ДЗ, только в архив.
+  const nextLesson = nextLessonDate(subjectLessons, clientToday);
+  const autoDue = nextLesson ?? addDaysIso(clientToday, 7);
   const dueDate = dueOverride ?? autoDue;
-  const dueIsAuto = dueOverride === null && subjectLessons.length > 0;
+  const dueIsAuto = dueOverride === null && nextLesson !== null;
   // Пара предмета в день дедлайна — к ней привяжем запись; если на выбранную дату пары нет, привязки не будет.
   const lesson = subjectLessons.find((l) => l.date === dueDate) ?? null;
 
@@ -75,20 +84,29 @@ export function QuickAddForm({ subjects, suggestedSubjectId, upcomingBySubject, 
 
   // Черновик восстанавливается при появлении формы: после перезапуска замороженной PWA это новое монтирование.
   useEffect(() => {
+    const todayNow = nowParts().dateIso;
     const d = readDraft(meId);
     restored.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- дата телефона и черновик из localStorage: на сервере их нет, подставить можно только после монтирования.
+    setClientToday(todayNow);
     if (!d) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- черновик лежит в localStorage: на сервере его нет, подставить можно только после монтирования.
-    setForm({ body: d.body, title: d.title, subjectId: d.subjectId, dueOverride: d.dueOverride });
+    // Своя дата черновика живёт до суток и могла протухнуть за ночь — прошедшую не возвращаем.
+    const due = freshDue(d.dueOverride, todayNow);
+    setForm({ body: d.body, title: d.title, subjectId: d.subjectId, dueOverride: due });
     // Вместе с черновиком возвращаем раскрытую часть формы, иначе сохранённый заголовок и своя дата не видны.
-    if (d.title || d.dueOverride) setMore(true);
+    if (d.title || due) setMore(true);
   }, [meId]);
 
   // Пишем с задержкой, чтобы не дёргать localStorage на каждую букву.
   useEffect(() => {
     live.current = form;
-    if (!restored.current || sent.current) return;
-    const t = setTimeout(() => saveDraft({ userId: meId, ...form, savedAt: Date.now() }), DRAFT_DEBOUNCE_MS);
+    if (!restored.current) return;
+    const t = setTimeout(() => {
+      // Проверка именно здесь: таймер, поставленный последней правкой формы, срабатывает уже после успешной отправки
+      // (размонтирование ждёт коммита новой страницы) и иначе воскресил бы только что стёртый черновик.
+      if (sent.current) return;
+      saveDraft({ userId: meId, ...form, savedAt: Date.now() });
+    }, DRAFT_DEBOUNCE_MS);
     return () => clearTimeout(t);
   }, [meId, form]);
 
@@ -128,7 +146,13 @@ export function QuickAddForm({ subjects, suggestedSubjectId, upcomingBySubject, 
           return;
         }
         // Сети нет: запись уходит в очередь (components/hw/hw-outbox.tsx) и отправится сама, когда появится связь.
-        writeQueue(addToQueue(pruneQueue(readQueue(), Date.now()), { key: newQueueKey(), userId: meId, ...payload, queuedAt: Date.now(), tries: 0, lastError: null }));
+        const stored = writeQueue(addToQueue(pruneQueue(readQueue(), Date.now()), { key: newQueueKey(), userId: meId, ...payload, queuedAt: Date.now(), tries: 0, lastError: null }));
+        if (!stored) {
+          // Хранилище телефона отказало (нет места, приватный режим): обещать «ничего не пропадёт» нельзя.
+          // Ни черновик, ни поле не трогаем — текст остаётся на экране.
+          setError("Нет сети, и сохранить на телефоне не вышло — не закрывай экран. Скопируй текст себе и попробуй ещё раз.");
+          return;
+        }
         clearDraft();
         setQueued(
           files.length
@@ -154,6 +178,7 @@ export function QuickAddForm({ subjects, suggestedSubjectId, upcomingBySubject, 
       <Textarea
         autoFocus
         value={body}
+        maxLength={MAX_BODY}
         onChange={(e) => patch({ body: e.target.value })}
         placeholder="Что задали? Например: «№ 214–220, стр. 48. Сдать письменно»"
         className="min-h-32 text-[17px]"
@@ -197,10 +222,10 @@ export function QuickAddForm({ subjects, suggestedSubjectId, upcomingBySubject, 
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="space-y-4 overflow-hidden">
             <div className="grid grid-cols-2 gap-3">
               <Field label="Дедлайн">
-                <Input type="date" value={dueDate} min={today} onChange={(e) => patch({ dueOverride: e.target.value || null })} />
+                <Input type="date" value={dueDate} min={clientToday} onChange={(e) => patch({ dueOverride: e.target.value || null })} />
               </Field>
               <Field label="Заголовок">
-                <Input value={title} onChange={(e) => patch({ title: e.target.value })} placeholder="Контрольная" />
+                <Input value={title} maxLength={MAX_TITLE} onChange={(e) => patch({ title: e.target.value })} placeholder="Контрольная" />
               </Field>
             </div>
             <Field label="Вложения">
