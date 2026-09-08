@@ -4,6 +4,8 @@ import { db } from "@/lib/db";
 import { appErrors, cronRuns } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { storage } from "@/lib/storage";
+import { cronWarnings, describeBackup, latestBackupDay } from "@/lib/ops/health";
+import { todayIso } from "@/lib/tz";
 
 /** Остаток на PolzaAI в рублях (если ключ задан). Ошибки глушим — админка не должна падать из-за внешнего API. */
 export async function polzaBalance(): Promise<{ balance: number | null; error?: string }> {
@@ -28,9 +30,7 @@ export async function polzaBalance(): Promise<{ balance: number | null; error?: 
 /** Последний бэкап по ключам в хранилище (backups/YYYY-MM-DD.json.gz). */
 export async function lastBackup(): Promise<string | null> {
   try {
-    const keys = await storage.list("backups/");
-    const last = keys.sort().at(-1);
-    return last ? last.replace(/^backups\//, "").replace(/\.json\.gz$/, "") : null;
+    return latestBackupDay(await storage.list("backups/"));
   } catch {
     return null;
   }
@@ -69,20 +69,29 @@ export async function diagnostics() {
     dbError = e instanceof Error ? e.message : String(e);
   }
 
+  const onVercel = Boolean(process.env.VERCEL);
   let storageLine: string;
   let storageOk = true;
+  let lastBackupDay: string | null = null;
+  let backupListError: string | null = null;
   if (storage.kind === "local") {
-    storageOk = !process.env.VERCEL;
-    storageLine = process.env.VERCEL ? "R2 не подключён — файлы и бэкапы выключены" : "локальная папка .data/uploads";
+    storageOk = !onVercel;
+    storageLine = onVercel ? "R2 не подключён — бэкапы и вложения выключены" : "локальная папка .data/uploads";
+    lastBackupDay = await lastBackup();
   } else {
     try {
       const keys = await storage.list("backups/");
       storageLine = `R2 отвечает · бэкапов: ${keys.length}`;
+      lastBackupDay = latestBackupDay(keys);
     } catch (e) {
       storageOk = false;
-      storageLine = `R2 ошибка: ${e instanceof Error ? e.message : String(e)}`;
+      backupListError = e instanceof Error ? e.message : String(e);
+      storageLine = `R2 ошибка: ${backupListError}`;
     }
   }
+  const backup: { ok: boolean; line: string } = backupListError
+    ? { ok: false, line: `Бэкапы не проверить: R2 не отвечает (${backupListError})` }
+    : describeBackup({ lastBackupDay, todayIso: todayIso(), storageKind: storage.kind, onVercel });
 
   const since = new Date(Date.now() - 24 * 3600_000);
   const [[errCount], lastErrors, [lastCron], models] = await Promise.all([
@@ -105,6 +114,8 @@ export async function diagnostics() {
   return {
     db: { ms: dbMs, error: dbError, mb: dbMb },
     storage: { ok: storageOk, line: storageLine },
+    backup,
+    cronWarnings: cronWarnings(lastCron?.details),
     errors24h: errCount?.n ?? -1,
     lastErrors,
     lastCron: lastCron ?? null,
@@ -113,6 +124,3 @@ export async function diagnostics() {
     healthcheck: Boolean(env.healthcheckUrl),
   };
 }
-
-/** Бэкап считается несвежим, если его нет или он старше двух суток (Date.now() вне рендера — правило react-hooks/purity). */
-export const isBackupStale = (iso: string | null) => !iso || Date.now() - Date.parse(iso) > 2 * 86_400_000;

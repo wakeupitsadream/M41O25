@@ -5,6 +5,7 @@ import { anonQuota, appErrors, attachments, authAttempts, cronRuns, deviceSessio
 import { env } from "@/lib/env";
 import { storage } from "@/lib/storage";
 import { buildBackup } from "@/lib/backup";
+import { planBackup, summarizeCronRun } from "@/lib/ops/health";
 import { todayIso } from "@/lib/tz";
 
 export const runtime = "nodejs";
@@ -26,18 +27,28 @@ async function dumpToStorage() {
   return { key, bytes: payload.length, removedBackups: stale.length };
 }
 
+/** Удаление файла из хранилища не должно ронять прогон, но и молчать о себе не должно — считаем неудачи. */
+async function deleteFile(key: string, what: string): Promise<boolean> {
+  try {
+    await storage.delete(key);
+    return true;
+  } catch (e) {
+    console.error(`[cron] не удалён файл (${what}) ${key}:`, e instanceof Error ? e.message : e);
+    return false;
+  }
+}
+
 export async function GET(req: Request) {
   const auth = req.headers.get("authorization");
   if (!env.cronSecret || auth !== `Bearer ${env.cronSecret}`) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const started = Date.now();
 
-  // 1) Бэкап. На Vercel без R2 постоянного диска нет — бэкап пропускаем, чистку ниже делаем всё равно.
+  // 1) Бэкап. На Vercel без R2 складывать его некуда — это не «пропустили», а потеря данных: прогон красный.
+  const plan = planBackup({ storageKind: storage.kind, onVercel: Boolean(process.env.VERCEL) });
   let backup: Awaited<ReturnType<typeof dumpToStorage>> | null = null;
-  let backupSkipped: string | null = null;
   let backupError: string | null = null;
-  if (storage.kind === "local" && process.env.VERCEL) {
-    backupSkipped = "R2 не подключён — на Vercel бэкап складывать некуда";
-    console.warn(`[cron] ${backupSkipped}`);
+  if (!plan.run) {
+    console.warn(`[cron] бэкап не сделан: ${plan.reason}`);
   } else {
     try {
       backup = await dumpToStorage();
@@ -50,8 +61,9 @@ export async function GET(req: Request) {
   // 2) Сканы старше 30 дней.
   const cutoff = new Date(Date.now() - 30 * 86_400_000);
   const oldScans = await db.select().from(attachments).where(and(eq(attachments.entityType, "scan"), lt(attachments.createdAt, cutoff)));
+  let failedScanDeletes = 0;
   for (const s of oldScans) {
-    await storage.delete(s.fileKey).catch(() => {});
+    if (!(await deleteFile(s.fileKey, "скан"))) failedScanDeletes += 1;
     await db.delete(attachments).where(eq(attachments.id, s.id));
   }
 
@@ -64,17 +76,30 @@ export async function GET(req: Request) {
     .select()
     .from(attachments)
     .where(and(isNull(attachments.entityId), sql`${attachments.entityType} <> 'scan'`, lt(attachments.createdAt, new Date(Date.now() - 24 * 3600_000))));
+  let failedOrphanDeletes = 0;
   for (const o of orphans) {
-    await storage.delete(o.fileKey).catch(() => {});
+    if (!(await deleteFile(o.fileKey, "сирота"))) failedOrphanDeletes += 1;
     await db.delete(attachments).where(eq(attachments.id, o.id));
   }
 
   // 4) Журнал ошибок приложения: старше 30 дней не нужен.
   await db.delete(appErrors).where(lt(appErrors.createdAt, new Date(Date.now() - 30 * 86_400_000)));
 
-  const body = { ok: !backupError, backup, backupSkipped, backupError, removedScans: oldScans.length, removedOrphans: orphans.length };
+  const summary = summarizeCronRun({ plan, backupError, failedScanDeletes, failedOrphanDeletes });
+  const body = {
+    ok: summary.ok,
+    error: summary.error,
+    warnings: summary.warnings,
+    backup,
+    backupSkipped: plan.run ? null : plan.reason,
+    backupError,
+    removedScans: oldScans.length,
+    removedOrphans: orphans.length,
+    failedScanDeletes,
+    failedOrphanDeletes,
+  };
   const durationMs = Date.now() - started;
-  await db.insert(cronRuns).values({ ok: body.ok, durationMs, error: backupError, details: body }).catch((e) => console.error("[cron] журнал:", e));
+  await db.insert(cronRuns).values({ ok: body.ok, durationMs, error: summary.error, details: body }).catch((e) => console.error("[cron] журнал:", e));
   // Сторож: healthchecks.io ждёт пинг раз в сутки; молчание или /fail — письмо админу.
   if (env.healthcheckUrl) {
     await fetch(body.ok ? env.healthcheckUrl : `${env.healthcheckUrl.replace(/\/$/, "")}/fail`, {
@@ -83,5 +108,5 @@ export async function GET(req: Request) {
       signal: AbortSignal.timeout(5000),
     }).catch(() => {});
   }
-  return NextResponse.json(body, { status: backupError ? 500 : 200 });
+  return NextResponse.json(body, { status: body.ok ? 200 : 500 });
 }

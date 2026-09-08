@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { and, count, eq, desc } from "drizzle-orm";
 import { Activity, CalendarPlus, ChevronRight, DatabaseBackup, KeyRound, Users2, BookMarked, Wallet } from "lucide-react";
-import { diagnostics, isBackupStale, lastBackup, polzaBalance } from "@/lib/admin/status";
+import { diagnostics, lastBackup, polzaBalance } from "@/lib/admin/status";
 import { signScoped } from "@/lib/files/token";
 import { storage } from "@/lib/storage";
 import { db } from "@/lib/db";
@@ -24,7 +24,6 @@ export default async function AdminHome() {
   const current = recent.find((w) => w.startsOn === thisMonday);
   const next = recent.find((w) => w.startsOn === nextMonday);
   const [polza, backup, diag] = user.role === "admin" ? await Promise.all([polzaBalance(), lastBackup(), diagnostics()]) : [null, null, null];
-  const backupStale = isBackupStale(backup);
 
   return (
     <div className="space-y-4">
@@ -69,7 +68,7 @@ export default async function AdminHome() {
               <DatabaseBackup className="size-4" /> <span className="text-[12px] font-medium">Бэкап</span>
             </div>
             <div className="mt-2 font-display text-xl font-bold tnum">{backup ?? "нет"}</div>
-            <div className="truncate text-[11px] text-dim">{storage.kind === "r2" ? "ежедневно в R2" : process.env.VERCEL ? "R2 не подключён — бэкапов и файлов нет" : "локальная папка"}</div>
+            <div className="truncate text-[11px] text-dim">{storage.kind === "r2" ? "ежедневно в R2" : process.env.VERCEL ? "R2 не подключён — бэкапов нет" : "локальная папка"}</div>
             <a
               href={`/api/admin/backup?u=${user.id}&t=${signScoped(`backup:${user.id}`, 3600_000)}`}
               className="mt-2 inline-block text-[12px] font-semibold text-accent"
@@ -88,10 +87,7 @@ export default async function AdminHome() {
           <ul className="space-y-1.5 text-[13px]">
             <DiagRow ok={!diag.db.error && (diag.db.mb ?? 0) < 400} text={diag.db.error ? `База: ${diag.db.error}` : `База отвечает за ${diag.db.ms} мс${diag.db.mb !== null ? ` · ${diag.db.mb} МБ из 500 бесплатных` : ""}`} />
             <DiagRow ok={diag.storage.ok} text={diag.storage.line} />
-            <DiagRow
-              ok={!backupStale}
-              text={backup ? `Последний бэкап ${backup}${backupStale ? " — старше двух дней" : ""}` : "Бэкапов ещё не было"}
-            />
+            <DiagRow ok={diag.backup.ok} text={diag.backup.line} />
             <DiagRow
               ok={Boolean(diag.lastCron?.ok)}
               text={
@@ -100,6 +96,9 @@ export default async function AdminHome() {
                   : "Cron ещё не запускался (работает только на production)"
               }
             />
+            {diag.cronWarnings.map((w, i) => (
+              <DiagRow key={`cw${i}`} ok={false} text={`Cron: ${w}`} />
+            ))}
             <DiagRow ok={diag.errors24h === 0} text={diag.errors24h < 0 ? "Журнал ошибок недоступен" : diag.errors24h === 0 ? "Ошибок за сутки нет" : `Ошибок за сутки: ${diag.errors24h}`} />
             {diag.lastErrors.map((e, i) => (
               <li key={i} className="truncate pl-6 text-[12px] text-dim">
