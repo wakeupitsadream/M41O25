@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { asc, eq } from "drizzle-orm";
-import { ChevronRight, Lock, UserPlus } from "lucide-react";
+import { ChevronRight, ClipboardList, Lock, UserPlus } from "lucide-react";
 import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { requireRole } from "@/lib/auth";
@@ -19,9 +19,14 @@ export default async function AdminUsers() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="font-display text-[28px] font-bold leading-none">Люди</h1>
-        <Link href="/admin/users/new" className="flex h-10 items-center gap-2 rounded-full bg-accent px-4 text-[14px] font-semibold text-accent-ink active:bg-accent-press">
-          <UserPlus className="size-4" /> Добавить
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href="/admin/users/import" className="flex h-10 items-center gap-2 rounded-full px-4 text-[14px] font-semibold text-fg hairline active:bg-surface-2">
+            <ClipboardList className="size-4" /> Списком
+          </Link>
+          <Link href="/admin/users/new" className="flex h-10 items-center gap-2 rounded-full bg-accent px-4 text-[14px] font-semibold text-accent-ink active:bg-accent-press">
+            <UserPlus className="size-4" /> Добавить
+          </Link>
+        </div>
       </div>
       <p className="text-[13px] text-muted">
         {active.length} в группе · замочек — человек уже вошёл и задал PIN

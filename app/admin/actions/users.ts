@@ -7,6 +7,8 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { deviceSessions, users } from "@/lib/db/schema";
 import { actionUser } from "@/lib/auth";
+import { wrapAction } from "@/lib/actions";
+import { MAX_PEOPLE, planPeopleImport } from "@/lib/admin/people";
 import { USER_COLORS, fail, ok, type ActionResult } from "@/lib/utils";
 import type { FormState } from "@/lib/form";
 
@@ -98,4 +100,39 @@ export async function unlockPin(id: string): Promise<ActionResult> {
   await db.update(users).set({ pinFailedCount: 0, pinLockedUntil: null }).where(and(eq(users.id, id), eq(users.groupId, admin.groupId)));
   revalidatePath(`/admin/users/${id}`);
   return ok();
+}
+
+export type ImportPeopleResult = { added: number; skipped: number };
+
+/**
+ * Список из беседы одним разом: текст разбирается тем же `planPeopleImport`, что и предпросмотр,
+ * но по свежему составу группы — пока админ смотрел предпросмотр, кого-то могли завести руками.
+ * Уже существующие (по нормализованному ФИО) и повторы внутри списка пропускаются, а не дублируются.
+ */
+export async function importPeople(text: string): Promise<ActionResult<ImportPeopleResult>> {
+  return wrapAction(async () => {
+    const admin = await actionUser("admin");
+    if (typeof text !== "string" || !text.trim()) return fail("Список пустой");
+    if (text.length > 20_000) return fail("Слишком длинный список — раздели на части");
+    const existing = await db.select({ fullName: users.fullName }).from(users).where(eq(users.groupId, admin.groupId));
+    const plan = planPeopleImport(text, existing);
+    const fresh = plan.people.filter((p) => p.status === "new");
+    if (fresh.length === 0) return fail("Никого нового в списке нет");
+    if (fresh.length > MAX_PEOPLE) return fail(`За раз добавляем не больше ${MAX_PEOPLE} человек`);
+    // Цвета продолжают круг от уже заведённых, чтобы новые аватарки не были все одного оттенка.
+    await db.transaction(async (tx) => {
+      await tx.insert(users).values(
+        fresh.map((p, i) => ({
+          groupId: admin.groupId,
+          fullName: p.fullName,
+          avatarEmoji: "🙂",
+          color: USER_COLORS[(existing.length + i) % USER_COLORS.length],
+          role: "student" as const,
+          birthday: p.birthday,
+        })),
+      );
+    });
+    revalidatePath("/admin/users");
+    return ok({ added: fresh.length, skipped: plan.people.length - fresh.length });
+  });
 }
