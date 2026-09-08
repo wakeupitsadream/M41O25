@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { FileText, ImagePlus, Loader2, X } from "lucide-react";
 import { fmtBytes } from "@/lib/hw/format";
+import { isOfflineError } from "@/lib/hw/draft";
 import { cn } from "@/lib/utils";
 
 export type UploadedFile = { id: string; name: string; mime: string; size: number; url: string };
@@ -64,7 +65,14 @@ export function AttachmentUploader({
         if (!res.ok) throw new Error(json?.error ?? (res.status === 413 ? "Файл слишком большой (до 4 МБ)" : `Не загрузилось (${res.status})`));
         push([json as UploadedFile]);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Не загрузилось");
+        // Без сети файл не уйдёт вообще: говорим об этом прямо, чтобы человек отправил текст и не ждал загрузки.
+        setError(
+          isOfflineError(e, typeof navigator === "undefined" ? true : navigator.onLine)
+            ? "Нет сети — фото загрузится только со связью. Отправляй текстом, файл добавишь позже."
+            : e instanceof Error
+              ? e.message
+              : "Не загрузилось",
+        );
       } finally {
         setBusy((b) => b - 1);
       }

@@ -7,6 +7,7 @@ import { BirthdayBanner } from "@/components/group/birthday-banner";
 import { RefreshOnResume } from "@/components/features/refresh-on-resume";
 import { NetStatus } from "@/components/features/net-status";
 import { NavWatchdog } from "@/components/features/nav-guard";
+import { HwOutbox } from "@/components/hw/hw-outbox";
 import { ToastProvider } from "@/components/ui/toast";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -21,6 +22,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <NavWatchdog />
         <RefreshOnResume />
         <NetStatus />
+        <HwOutbox meId={user.id} />
         <BirthdayBanner today={today} people={todays} meId={user.id} />
         <div className="flex-1 pb-safe">{children}</div>
         <TabBar latest={latest} feedSeenAt={user.feedSeenAt?.toISOString() ?? null} />

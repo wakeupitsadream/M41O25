@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { and, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { activity, attachments, comments, homework, hwDone, hwEdits } from "@/lib/db/schema";
@@ -11,6 +11,7 @@ import { assertRate } from "@/lib/rate-limit";
 import { storage } from "@/lib/storage";
 import { startOfDayTz, todayIso } from "@/lib/tz";
 import { describeHwChanges, hwChangeKinds, type HwChangeKind } from "@/lib/hw/changes";
+import { DEDUP_WINDOW_MS, findRecentDuplicate } from "@/lib/hw/draft";
 import { matchLesson, resolveLessonId } from "@/lib/hw/query";
 import { fail, ok, type ActionResult } from "@/lib/utils";
 import { wrapAction } from "@/lib/actions";
@@ -56,8 +57,23 @@ export async function createHomework(input: CreateHomeworkInput): Promise<Action
     const user = await actionUser();
     const parsed = createSchema.safeParse(input);
     if (!parsed.success) return fail(parsed.error.issues[0].message);
-    await assertRate(user);
     const d = parsed.data;
+
+    // Идемпотентность отложенной отправки (components/hw/hw-outbox.tsx): телефон повторяет запись, когда не понял,
+    // дошла ли она (оборванный ответ, «Load failed»). Ключ повтора хранить негде — колонок под него нет, — поэтому
+    // повтор узнаём по содержимому: тот же автор, текст, дедлайн и предмет за последние DEDUP_WINDOW_MS.
+    // Проверка идёт до assertRate: повтор не должен упираться в часовой лимит и не должен его тратить.
+    const recent = await db
+      .select({ id: homework.id, body: homework.body, dueDate: homework.dueDate, subjectId: homework.subjectId, createdAt: homework.createdAt })
+      .from(homework)
+      .where(and(eq(homework.groupId, user.groupId), eq(homework.createdBy, user.id), isNull(homework.deletedAt), gte(homework.createdAt, new Date(Date.now() - DEDUP_WINDOW_MS))))
+      .orderBy(desc(homework.createdAt))
+      .limit(10);
+    const dup = findRecentDuplicate(recent, d, Date.now());
+    // Вложения первой отправки уже привязаны к найденной записи — второй раз ничего забирать не надо.
+    if (dup) return ok({ id: dup.id });
+
+    await assertRate(user);
     const lessonId = await resolveLessonId(user.groupId, d.lessonId ?? null, d.subjectId, d.dueDate);
 
     const row = await db.transaction(async (tx) => {
