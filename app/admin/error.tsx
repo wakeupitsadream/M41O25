@@ -16,7 +16,7 @@ export default function AdminError({ error, reset }: { error: Error & { digest?:
       <button type="button" onClick={reset} className="flex items-center gap-2 rounded-full bg-accent px-5 py-2.5 text-[14px] font-semibold text-accent-ink">
         <RotateCcw className="size-4" /> Повторить
       </button>
-      {error.digest && <div className="text-[11px] text-dim tnum">код {error.digest}</div>}
+      {error.digest && <div className="text-[11px] text-dim tnum">код {error.digest} — по нему ошибку видно в логах Vercel</div>}
     </div>
   );
 }

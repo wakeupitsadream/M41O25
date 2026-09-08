@@ -3,7 +3,20 @@ import { SESSION_COOKIE, SESSION_MAX_AGE, cookieOptions } from "@/lib/session-co
 
 // Публичные пути: вход, служебные файлы PWA, cron, статика.
 // /api/files и /api/admin/backup сами проверяют cookie или подписанный токен в URL.
-const PUBLIC = [/^\/enter(\/|$)/, /^\/~offline$/, /^\/api\/auth\//, /^\/api\/cron\//, /^\/api\/files\//, /^\/api\/admin\/backup$/, /^\/manifest\.webmanifest$/, /^\/sw\.js$/, /^\/icons\//, /^\/favicon\.ico$/];
+// /api/health публичен намеренно: это проверка «сервер жив» с экрана ошибки, где сессия может быть уже мертва.
+const PUBLIC = [
+  /^\/enter(\/|$)/,
+  /^\/~offline$/,
+  /^\/api\/auth\//,
+  /^\/api\/cron\//,
+  /^\/api\/files\//,
+  /^\/api\/health$/,
+  /^\/api\/admin\/backup$/,
+  /^\/manifest\.webmanifest$/,
+  /^\/sw\.js$/,
+  /^\/icons\//,
+  /^\/favicon\.ico$/,
+];
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
