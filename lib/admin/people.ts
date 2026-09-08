@@ -26,14 +26,23 @@ export type PersonLine = {
   status: "new" | "exists" | "dupe";
   /** Как человек записан в группе (если уже есть). */
   existingName?: string;
+  /** Статус того, кто уже есть: `removed` — человек в архиве, импорт его не вернёт. */
+  existingStatus?: "active" | "removed";
+  /** id того, кто уже есть, — чтобы из предпросмотра открыть его карточку. */
+  existingId?: string;
+  /** Строка похожа на шапку списка («Список группы», «ФИО»), а не на человека. */
+  looksLikeHeading: boolean;
 };
+
+/** Человек, который уже есть в группе. `status`/`id` необязательны: тесты и старые вызовы дают только ФИО. */
+export type ExistingPerson = { id?: string; fullName: string; status?: "active" | "removed" };
 
 export type ParseIssue = { line: number; raw: string; reason: string };
 
 export type ImportPlan = {
   people: PersonLine[];
   issues: ParseIssue[];
-  counts: { parsed: number; add: number; exists: number; dupe: number; issues: number };
+  counts: { parsed: number; add: number; exists: number; archived: number; dupe: number; issues: number };
 };
 
 const SPACES = /[\s\u00a0\u2000-\u200b\u202f\u2060\ufeff]+/g;
@@ -90,29 +99,6 @@ export const parseBirthday = (value: string | null | undefined): { birthday: str
 
 const DATE_LIKE = /^\d{1,2}[.\-/]\d{1,2}([.\-/]\d{2,4})?\.?$|^\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2}$/;
 
-/**
- * Текст → строки. Переводы строки и «;» разделяют всегда; запятая тоже разделяет,
- * но кусок после неё, похожий на дату, приклеивается к предыдущему как второй столбец
- * («Иванов Иван, 01.02.2000» — это один человек, а не два).
- */
-export const splitLines = (text: string): string[] => {
-  const out: string[] = [];
-  for (const chunk of text.replace(/\r/g, "").split(/[\n;]/)) {
-    const parts = chunk.split(",");
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i].replace(/[\u00a0\u2000-\u200b\u202f\u2060\ufeff]/g, " ");
-      const trimmed = part.trim();
-      if (!trimmed) continue;
-      if (i > 0 && out.length > 0 && DATE_LIKE.test(trimmed)) {
-        out[out.length - 1] = `${out[out.length - 1]} — ${trimmed}`;
-        continue;
-      }
-      out.push(part.replace(/^\s+|\s+$/g, ""));
-    }
-  }
-  return out;
-};
-
 /** Убрать нумерацию и маркеры списка: «1.», «1)», «12 -», «- », «•». */
 export const stripBullet = (line: string): string =>
   line
@@ -121,17 +107,69 @@ export const stripBullet = (line: string): string =>
     .replace(/^\s*№?\s*\d{1,3}\s*[.)\]]\s*/, "")
     .trim();
 
-/** Разделить строку на ФИО и второй столбец: таб, « — » или дата в хвосте. */
+/** Сколько слов в строке. */
+const wordCount = (value: string): number => value.split(/\s+/).filter(Boolean).length;
+
+/**
+ * Текст → строки. Переводы строки и «;» разделяют всегда; запятая тоже разделяет,
+ * но кусок после неё, похожий на дату, приклеивается к предыдущему как второй столбец
+ * («Иванов Иван, 01.02.2000» — это один человек, а не два).
+ * Отдельный случай — «Фамилия, Имя Отчество» (так список выгружают из таблицы): одно слово
+ * до запятой и не больше двух после — это один человек, запятая тут разделяет ФИО, а не людей.
+ */
+export const splitLines = (text: string): string[] => {
+  const out: string[] = [];
+  for (const rawChunk of text.replace(/\r/g, "").split(/[\n;]/)) {
+    const chunk = rawChunk.replace(/[\u00a0\u2000-\u200b\u202f\u2060\ufeff]/g, " ");
+    const parts = chunk.split(",");
+    if (parts.length === 2) {
+      const head = parts[0].trim();
+      const tail = parts[1].trim();
+      // Нумерация в счёт слов не идёт: «4. Семёнова, Алёна Сергеевна» — тоже один человек.
+      if (head && tail && wordCount(stripBullet(head)) === 1 && wordCount(tail) <= 2) {
+        out.push(`${head} ${tail}`);
+        continue;
+      }
+    }
+    for (let i = 0; i < parts.length; i++) {
+      const trimmed = parts[i].trim();
+      if (!trimmed) continue;
+      if (i > 0 && out.length > 0 && DATE_LIKE.test(trimmed)) {
+        out[out.length - 1] = `${out[out.length - 1]} — ${trimmed}`;
+        continue;
+      }
+      out.push(trimmed);
+    }
+  }
+  return out;
+};
+
+/** Дата в хвосте строки: «Иванов Иван 07.03.2006». */
+const TRAILING_DATE = /\s+(\d{1,2}[.\-/]\d{1,2}(?:[.\-/]\d{2,4})?\.?|\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})\s*$/;
+
+/** Отрезать дату в хвосте, если она там есть. */
+const byTrailingDate = (line: string): { name: string; extra: string | null } => {
+  const tail = line.match(TRAILING_DATE);
+  return tail && tail.index !== undefined ? { name: line.slice(0, tail.index), extra: tail[1] } : { name: line, extra: null };
+};
+
+/**
+ * Разделить строку на ФИО и второй столбец: таб, тире или дата в хвосте.
+ * Тире решаем по хвосту, а не по его виду: «Римский - Корсаков Пётр» — двойная фамилия
+ * (хвост без цифр и с заглавной буквы), такую строку не режем, иначе полфамилии уедет в базу.
+ * А «Иванов Иван - не помню» и «Иванов Иван - 07.03» — всё-таки второй столбец.
+ */
 export const splitColumns = (line: string): { name: string; extra: string | null } => {
   const tab = line.indexOf("\t");
   if (tab >= 0) return { name: line.slice(0, tab), extra: line.slice(tab + 1).trim() || null };
   const dash = line.match(/\s+[-–—]\s+/);
   if (dash && dash.index !== undefined) {
-    return { name: line.slice(0, dash.index), extra: line.slice(dash.index + dash[0].length).trim() || null };
+    const rest = line.slice(dash.index + dash[0].length).trim();
+    const restName = rest.replace(TRAILING_DATE, "").trim();
+    const continuesName = restName !== "" && !/\d/.test(restName) && /^\p{Lu}/u.test(restName);
+    if (!continuesName) return { name: line.slice(0, dash.index), extra: rest || null };
   }
-  const tail = line.match(/\s+(\d{1,2}[.\-/]\d{1,2}(?:[.\-/]\d{2,4})?\.?|\d{4}[.\-/]\d{1,2}[.\-/]\d{1,2})\s*$/);
-  if (tail && tail.index !== undefined) return { name: line.slice(0, tail.index), extra: tail[1] };
-  return { name: line, extra: null };
+  return byTrailingDate(line);
 };
 
 const LETTERS = /\p{L}/u;
@@ -148,13 +186,23 @@ const nameIssue = (name: string): string | null => {
   return null;
 };
 
+const HEADING = /^(список|списки|состав|группа|группы|фио|имя|фамилия|отчество|дата\s+рождения|др|студент|студенты|учащиеся|люди|человек|всего|итого|номер|курс|староста|таблица)(?![\p{L}\p{N}])/iu;
+
+/**
+ * Строка похожа не на человека, а на шапку списка: «Список группы», «ФИО», «Староста».
+ * Сигнал мягкий: строку всё равно показываем в предпросмотре, но галочку по умолчанию не ставим —
+ * решает админ. Стоп-лист специально узкий, а лишняя буква после слова («Курсов») его выключает.
+ */
+export const looksLikeHeading = (name: string): boolean => HEADING.test(name.trim());
+
 /**
  * Разбор вставленного списка с учётом того, кто уже есть в группе.
- * `existing` — все люди группы (включая удалённых): второй раз того же человека не заводим.
+ * `existing` — все люди группы (включая удалённых): второй раз того же человека не заводим,
+ * а про архивных отдельно говорим в предпросмотре — импорт их в группу не возвращает.
  */
-export const planPeopleImport = (text: string, existing: readonly { fullName: string }[] = []): ImportPlan => {
-  const known = new Map<string, string>();
-  for (const u of existing) known.set(normalizeFullName(u.fullName), u.fullName);
+export const planPeopleImport = (text: string, existing: readonly ExistingPerson[] = []): ImportPlan => {
+  const known = new Map<string, ExistingPerson>();
+  for (const u of existing) known.set(normalizeFullName(u.fullName), u);
 
   const people: PersonLine[] = [];
   const issues: ParseIssue[] = [];
@@ -175,10 +223,23 @@ export const planPeopleImport = (text: string, existing: readonly { fullName: st
     }
     const { birthday, note } = parseBirthday(extra);
     const key = normalizeFullName(fullName);
-    const existingName = known.get(key);
-    const status = existingName ? "exists" : seen.has(key) ? "dupe" : "new";
+    const found = known.get(key);
+    const status = found ? "exists" : seen.has(key) ? "dupe" : "new";
     if (status === "new") seen.add(key);
-    people.push({ line, raw: raw.trim(), fullName, key, birthday, birthdayNote: note, birthdayRaw: extra, status, existingName });
+    people.push({
+      line,
+      raw: raw.trim(),
+      fullName,
+      key,
+      birthday,
+      birthdayNote: note,
+      birthdayRaw: extra,
+      status,
+      existingName: found?.fullName,
+      existingStatus: found?.status,
+      existingId: found?.id,
+      looksLikeHeading: looksLikeHeading(fullName),
+    });
   }
   if (lines.length > MAX_LINES) {
     issues.push({ line: MAX_LINES + 1, raw: "", reason: `строк больше ${MAX_LINES}, остальные не читаем` });
@@ -187,7 +248,8 @@ export const planPeopleImport = (text: string, existing: readonly { fullName: st
   const counts = {
     parsed: people.length,
     add: people.filter((p) => p.status === "new").length,
-    exists: people.filter((p) => p.status === "exists").length,
+    exists: people.filter((p) => p.status === "exists" && p.existingStatus !== "removed").length,
+    archived: people.filter((p) => p.existingStatus === "removed").length,
     dupe: people.filter((p) => p.status === "dupe").length,
     issues: issues.length,
   };

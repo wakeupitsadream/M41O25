@@ -44,7 +44,10 @@ assert.ok(status >= 1, "неделя не опубликована");
 
 await page.goto(`${BASE}/admin/users`, { waitUntil: "networkidle" });
 await shot("25-admin-users");
-await page.locator('a[href^="/admin/users/"]').nth(1).click();
+// Ссылки «Списком» и «Добавить» тоже начинаются на /admin/users/ — берём первую карточку из списка людей
+// и убеждаемся по URL, что открылась именно она, а не форма создания.
+await page.locator('ul a[href^="/admin/users/"]').first().click();
+await page.waitForURL(/\/admin\/users\/[0-9a-f-]{36}$/, { timeout: 20000 });
 await page.waitForLoadState("networkidle");
 await shot("26-admin-user-edit");
 

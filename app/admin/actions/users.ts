@@ -102,22 +102,25 @@ export async function unlockPin(id: string): Promise<ActionResult> {
   return ok();
 }
 
-export type ImportPeopleResult = { added: number; skipped: number };
+export type ImportPeopleResult = { added: number; skipped: number; archived: number };
 
 /**
  * Список из беседы одним разом: текст разбирается тем же `planPeopleImport`, что и предпросмотр,
  * но по свежему составу группы — пока админ смотрел предпросмотр, кого-то могли завести руками.
  * Уже существующие (по нормализованному ФИО) и повторы внутри списка пропускаются, а не дублируются.
+ * `selected` — ключи строк, отмеченных галочкой в предпросмотре: разбор не отличает человека от
+ * шапки списка («Список группы»), поэтому заводим только то, что админ действительно видел и оставил.
  */
-export async function importPeople(text: string): Promise<ActionResult<ImportPeopleResult>> {
+export async function importPeople(text: string, selected?: string[]): Promise<ActionResult<ImportPeopleResult>> {
   return wrapAction(async () => {
     const admin = await actionUser("admin");
     if (typeof text !== "string" || !text.trim()) return fail("Список пустой");
     if (text.length > 20_000) return fail("Слишком длинный список — раздели на части");
-    const existing = await db.select({ fullName: users.fullName }).from(users).where(eq(users.groupId, admin.groupId));
+    const existing = await db.select({ id: users.id, fullName: users.fullName, status: users.status }).from(users).where(eq(users.groupId, admin.groupId));
     const plan = planPeopleImport(text, existing);
-    const fresh = plan.people.filter((p) => p.status === "new");
-    if (fresh.length === 0) return fail("Никого нового в списке нет");
+    const picked = Array.isArray(selected) ? new Set(selected.filter((k) => typeof k === "string")) : null;
+    const fresh = plan.people.filter((p) => p.status === "new" && (!picked || picked.has(p.key)));
+    if (fresh.length === 0) return fail(picked && plan.counts.add > 0 ? "Никого не отметили галочкой" : "Никого нового в списке нет");
     if (fresh.length > MAX_PEOPLE) return fail(`За раз добавляем не больше ${MAX_PEOPLE} человек`);
     // Цвета продолжают круг от уже заведённых, чтобы новые аватарки не были все одного оттенка.
     await db.transaction(async (tx) => {
@@ -133,6 +136,6 @@ export async function importPeople(text: string): Promise<ActionResult<ImportPeo
       );
     });
     revalidatePath("/admin/users");
-    return ok({ added: fresh.length, skipped: plan.people.length - fresh.length });
+    return ok({ added: fresh.length, skipped: plan.people.length - fresh.length, archived: plan.counts.archived });
   });
 }

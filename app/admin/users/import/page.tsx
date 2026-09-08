@@ -9,7 +9,11 @@ import { PeopleImport } from "@/components/admin/people-import";
 export default async function ImportPeoplePage() {
   const admin = await requireRole("admin");
   // Сравниваем и с удалёнными: заводить второго такого же человека не надо, старого лучше вернуть из архива.
-  const existing = await db.select({ fullName: users.fullName }).from(users).where(eq(users.groupId, admin.groupId)).orderBy(asc(users.fullName));
+  const existing = await db
+    .select({ id: users.id, fullName: users.fullName, status: users.status })
+    .from(users)
+    .where(eq(users.groupId, admin.groupId))
+    .orderBy(asc(users.fullName));
 
   return (
     <div className="space-y-4">
@@ -20,6 +24,7 @@ export default async function ImportPeoplePage() {
       <p className="text-[14px] leading-relaxed text-muted">
         Вставь список из беседы — по человеку в строке. Нумерация и лишние пробелы не мешают. Через табуляцию или « — » можно дописать день рождения:
         07.03.2006, 07.03 или 2006-03-07. Роль у всех «студент», цвет и 🙂 подставим сами — потом поправишь в карточке.
+        Перед добавлением проверь галочки: заведём только отмеченные строки.
       </p>
       <PeopleImport existing={existing} />
     </div>

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cleanFullName, normalizeFullName, parseBirthday, planPeopleImport, splitColumns, splitLines, stripBullet } from "./people";
+import { cleanFullName, looksLikeHeading, normalizeFullName, parseBirthday, planPeopleImport, splitColumns, splitLines, stripBullet } from "./people";
 
 test("normalizeFullName: регистр, ё→е, двойные пробелы и неразрывный пробел", () => {
   assert.equal(normalizeFullName("Иванов  Иван"), "иванов иван");
@@ -35,12 +35,91 @@ test("splitLines: переводы строки, «;», запятая как р
   assert.deepEqual(splitLines("Иванов Иван, 01.02.2000"), ["Иванов Иван — 01.02.2000"]);
 });
 
+test("splitLines: «Фамилия, Имя Отчество» — один человек, а не два", () => {
+  assert.deepEqual(splitLines("Иванов, Иван Иванович"), ["Иванов Иван Иванович"]);
+  assert.deepEqual(splitLines("Иванов, Иван"), ["Иванов Иван"]);
+  assert.deepEqual(splitLines("Иванов, Иван Иванович\nПетров, Пётр"), ["Иванов Иван Иванович", "Петров Пётр"]);
+  // Нумерация не мешает узнать формат: до запятой всё равно одна фамилия.
+  assert.deepEqual(splitLines("4. Семёнова, Алёна Сергеевна"), ["4. Семёнова Алёна Сергеевна"]);
+  // Дата после фамилии — по-прежнему второй столбец, а не отчество.
+  assert.deepEqual(splitLines("Иванов, 01.02.2000"), ["Иванов 01.02.2000"]);
+  // А это всё ещё два человека: до запятой больше одного слова.
+  assert.deepEqual(splitLines("Иванов Иван, Петров Пётр"), ["Иванов Иван", "Петров Пётр"]);
+  assert.deepEqual(splitLines("Иванов, Иван Иванович, Петров Пётр"), ["Иванов", "Иван Иванович", "Петров Пётр"]);
+});
+
+test("planPeopleImport: список «Фамилия, Имя Отчество» не превращается в двойников", () => {
+  const plan = planPeopleImport("Иванов, Иван Иванович\nСемёнова, Алёна Сергеевна");
+  assert.deepEqual(
+    plan.people.map((p) => p.fullName),
+    ["Иванов Иван Иванович", "Семёнова Алёна Сергеевна"],
+  );
+  assert.equal(plan.counts.add, 2);
+});
+
 test("splitColumns: второй столбец через таб, « — » и дату в хвосте", () => {
   assert.deepEqual(splitColumns("Иванов Иван\t01.02.2000"), { name: "Иванов Иван", extra: "01.02.2000" });
   assert.deepEqual(splitColumns("Иванов Иван — 01.02"), { name: "Иванов Иван", extra: "01.02" });
   assert.deepEqual(splitColumns("Иванов Иван - 2000-02-01"), { name: "Иванов Иван", extra: "2000-02-01" });
   assert.deepEqual(splitColumns("Иванов Иван 01.02.2000"), { name: "Иванов Иван", extra: "01.02.2000" });
   assert.deepEqual(splitColumns("Римский-Корсаков Пётр"), { name: "Римский-Корсаков Пётр", extra: null });
+});
+
+test("splitColumns: двойная фамилия с пробелами вокруг дефиса остаётся целой", () => {
+  assert.deepEqual(splitColumns("Римский - Корсаков Пётр"), { name: "Римский - Корсаков Пётр", extra: null });
+  assert.deepEqual(splitColumns("Иванова - Петрова Мария 07.03.2006"), { name: "Иванова - Петрова Мария", extra: "07.03.2006" });
+  assert.deepEqual(splitColumns("Иванова – Петрова Мария"), { name: "Иванова – Петрова Мария", extra: null });
+  // Хвост с цифрами или со строчной буквы — это всё-таки второй столбец.
+  assert.deepEqual(splitColumns("Иванов Иван - не помню"), { name: "Иванов Иван", extra: "не помню" });
+  assert.deepEqual(splitColumns("Иванов Иван - 07.03"), { name: "Иванов Иван", extra: "07.03" });
+});
+
+test("planPeopleImport: двойная фамилия целиком, а не полфамилии в базу", () => {
+  const plan = planPeopleImport("Римский - Корсаков Пётр\nИванова - Петрова Мария 07.03.2006");
+  assert.deepEqual(
+    plan.people.map((p) => [p.fullName, p.birthday]),
+    [
+      ["Римский - Корсаков Пётр", null],
+      ["Иванова - Петрова Мария", "2006-03-07"],
+    ],
+  );
+  assert.equal(plan.counts.add, 2);
+});
+
+test("looksLikeHeading: шапка списка — да, фамилия с тем же началом — нет", () => {
+  assert.ok(looksLikeHeading("Список группы"));
+  assert.ok(looksLikeHeading("ФИО"));
+  assert.ok(looksLikeHeading("Староста"));
+  assert.ok(looksLikeHeading("Дата рождения"));
+  assert.ok(!looksLikeHeading("Иванов Иван"));
+  assert.ok(!looksLikeHeading("Курсов Иван"));
+  assert.ok(!looksLikeHeading("Старостина Анна"));
+  assert.ok(!looksLikeHeading("Людмила Иванова"));
+});
+
+test("planPeopleImport: строку-шапку помечаем, чтобы галочка не стояла по умолчанию", () => {
+  const plan = planPeopleImport("Список группы\nФИО\tДата рождения\nИванов Иван");
+  assert.deepEqual(
+    plan.people.map((p) => [p.fullName, p.looksLikeHeading]),
+    [
+      ["Список группы", true],
+      ["ФИО", true],
+      ["Иванов Иван", false],
+    ],
+  );
+});
+
+test("planPeopleImport: человек из архива считается отдельно от тех, кто в группе", () => {
+  const plan = planPeopleImport("Иванов Иван\nПетров Пётр", [
+    { id: "u-1", fullName: "Иванов Иван", status: "removed" },
+    { id: "u-2", fullName: "Петров Пётр", status: "active" },
+  ]);
+  assert.equal(plan.counts.archived, 1);
+  assert.equal(plan.counts.exists, 1);
+  assert.equal(plan.counts.add, 0);
+  assert.equal(plan.people[0].existingStatus, "removed");
+  assert.equal(plan.people[0].existingId, "u-1");
+  assert.equal(plan.people[1].existingStatus, "active");
 });
 
 test("parseBirthday: три формата и мусор", () => {
@@ -89,7 +168,8 @@ test("planPeopleImport: нумерованный список с ДР, дубл�
     plan.issues.map((i) => i.raw),
     ["https://vk.com/im", "===", "21"],
   );
-  assert.deepEqual(plan.counts, { parsed: 6, add: 4, exists: 1, dupe: 1, issues: 3 });
+  assert.deepEqual(plan.counts, { parsed: 6, add: 4, exists: 1, archived: 0, dupe: 1, issues: 3 });
+  assert.ok(plan.people[0].looksLikeHeading, "«Список группы» помечено как шапка списка");
 });
 
 test("planPeopleImport: ё и регистр не заводят второго такого же человека", () => {
@@ -100,7 +180,7 @@ test("planPeopleImport: ё и регистр не заводят второго 
 });
 
 test("planPeopleImport: пустой текст — ничего и без ошибок", () => {
-  assert.deepEqual(planPeopleImport("   \n\n  ").counts, { parsed: 0, add: 0, exists: 0, dupe: 0, issues: 0 });
+  assert.deepEqual(planPeopleImport("   \n\n  ").counts, { parsed: 0, add: 0, exists: 0, archived: 0, dupe: 0, issues: 0 });
 });
 
 test("planPeopleImport: одна фамилия без имени тоже человек", () => {
