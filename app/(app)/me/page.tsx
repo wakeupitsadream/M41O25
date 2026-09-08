@@ -3,7 +3,7 @@ import { ChevronRight, LogOut, ShieldCheck } from "lucide-react";
 import { requireUser, hasRole } from "@/lib/auth";
 import { Avatar, PageHeader } from "@/components/ui/primitives";
 import { Card } from "@/components/ui/card";
-import { Field, Input } from "@/components/ui/input";
+import { DateInput, Field, Input } from "@/components/ui/input";
 import { SubmitButton } from "@/components/admin/forms";
 import { changePin, logout, toggleShowHwDone, updateProfile } from "./actions";
 import { ActionForm } from "@/components/ui/action-form";
@@ -50,7 +50,7 @@ export default async function MePage() {
               </Field>
             </div>
             <Field label="День рождения" hint="Покажем группе в разделе «Дни рождения». Можно не указывать.">
-              <Input type="date" name="birthday" defaultValue={user.birthday ?? ""} />
+              <DateInput name="birthday" defaultValue={user.birthday ?? ""} />
             </Field>
             <SubmitButton variant="secondary" className="w-full">
               Сохранить

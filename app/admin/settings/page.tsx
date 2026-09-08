@@ -6,7 +6,7 @@ import { groups } from "@/lib/db/schema";
 import { requireRole } from "@/lib/auth";
 import { rotateInviteCode, updateGroupName, updateSlotTimes } from "@/app/admin/actions/catalog";
 import { Card } from "@/components/ui/card";
-import { Field, Input } from "@/components/ui/input";
+import { Field, Input, TimeInput } from "@/components/ui/input";
 import { ConfirmButton, SubmitButton } from "@/components/admin/forms";
 
 export default async function AdminSettings() {
@@ -37,14 +37,12 @@ export default async function AdminSettings() {
       <Card>
         <ActionForm action={updateGroupName} className="space-y-3">
           <div className="font-display text-[16px] font-bold">Группа</div>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Шифр">
-              <Input name="shortName" defaultValue={group.shortName} required />
-            </Field>
-            <Field label="Название">
-              <Input name="name" defaultValue={group.name} />
-            </Field>
-          </div>
+          <Field label="Шифр группы" hint="Короткий: с него начинается инвайт-код.">
+            <Input name="shortName" defaultValue={group.shortName} placeholder="М41О25" required />
+          </Field>
+          <Field label="Как подписывать в приложении" hint="Видно в шапке и на экране входа.">
+            <Input name="name" defaultValue={group.name} placeholder={`Группа ${group.shortName}`} />
+          </Field>
           <SubmitButton className="w-full" variant="secondary">
             Сохранить
           </SubmitButton>
@@ -54,13 +52,18 @@ export default async function AdminSettings() {
       <Card>
         <ActionForm action={updateSlotTimes} className="space-y-3">
           <div className="font-display text-[16px] font-bold">Время пар</div>
-          <p className="text-[13px] text-muted">Подставляется при добавлении пары и распознавании скана. Пустые строки не учитываются.</p>
+          <p className="text-[13px] text-muted">Подставляется при добавлении пары и распознавании скана. 24 часа, можно набрать «830» — станет «08:30». Пустые строки не учитываются.</p>
           <div className="space-y-2">
+            <div className="grid grid-cols-[1.75rem_1fr_1fr] items-center gap-2 text-[13px] font-medium text-muted">
+              <span />
+              <span>Начало</span>
+              <span>Конец</span>
+            </div>
             {slots.map((s) => (
-              <div key={s.slot} className="grid grid-cols-[2.5rem_1fr_1fr] items-center gap-2">
+              <div key={s.slot} className="grid grid-cols-[1.75rem_1fr_1fr] items-center gap-2">
                 <span className="text-center font-semibold tnum">{s.slot}</span>
-                <Input type="time" name={`start${s.slot}`} defaultValue={s.start} className="px-3" />
-                <Input type="time" name={`end${s.slot}`} defaultValue={s.end} className="px-3" />
+                <TimeInput name={`start${s.slot}`} defaultValue={s.start} aria-label={`Начало ${s.slot}-й пары`} className="px-3" />
+                <TimeInput name={`end${s.slot}`} defaultValue={s.end} aria-label={`Конец ${s.slot}-й пары`} className="px-3" />
               </div>
             ))}
           </div>

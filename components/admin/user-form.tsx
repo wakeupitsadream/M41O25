@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Field, Input, Select } from "@/components/ui/input";
+import { DateInput, Field, Input, Select } from "@/components/ui/input";
 import { SubmitButton } from "./forms";
 import { ActionForm } from "@/components/ui/action-form";
 import type { FormState } from "@/lib/form";
@@ -31,7 +31,7 @@ export function UserForm({ action, values, isSelf, submitLabel }: { action: (pre
           <Input name="nickname" defaultValue={values?.nickname ?? ""} placeholder="Настя" />
         </Field>
         <Field label="День рождения">
-          <Input type="date" name="birthday" defaultValue={values?.birthday ?? ""} />
+          <DateInput name="birthday" defaultValue={values?.birthday ?? ""} />
         </Field>
       </div>
       <Field label="Роль">

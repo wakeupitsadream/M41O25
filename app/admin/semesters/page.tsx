@@ -5,7 +5,7 @@ import { semesters } from "@/lib/db/schema";
 import { requireRole } from "@/lib/auth";
 import { createSemester, deleteSemester, updateSemester } from "@/app/admin/actions/catalog";
 import { Card } from "@/components/ui/card";
-import { Field, Input } from "@/components/ui/input";
+import { DateInput, Field, Input } from "@/components/ui/input";
 import { ConfirmButton, SubmitButton } from "@/components/admin/forms";
 import { todayIso } from "@/lib/tz";
 
@@ -26,17 +26,15 @@ export default async function AdminSemesters() {
             <Field label="Название">
               <Input name="title" defaultValue={s.title} required />
             </Field>
-            <div className="grid grid-cols-3 gap-2">
-              <Field label="Начало">
-                <Input type="date" name="startsOn" defaultValue={s.startsOn} required className="px-2" />
-              </Field>
-              <Field label="Конец">
-                <Input type="date" name="endsOn" defaultValue={s.endsOn} required className="px-2" />
-              </Field>
-              <Field label="Сессия с">
-                <Input type="date" name="sessionStartsOn" defaultValue={s.sessionStartsOn ?? ""} className="px-2" />
-              </Field>
-            </div>
+            <Field label="Начало">
+              <DateInput name="startsOn" defaultValue={s.startsOn} required />
+            </Field>
+            <Field label="Конец">
+              <DateInput name="endsOn" defaultValue={s.endsOn} required />
+            </Field>
+            <Field label="Сессия с" hint="Необязательно — от этой даты считается счётчик до сессии.">
+              <DateInput name="sessionStartsOn" defaultValue={s.sessionStartsOn ?? ""} />
+            </Field>
             <div className="flex gap-2">
               <SubmitButton className="flex-1">Сохранить</SubmitButton>
               <ConfirmButton variant="danger" confirmText="Удалить семестр? Недели останутся, но потеряют привязку." action={deleteSemester.bind(null, s.id)}>
@@ -53,17 +51,15 @@ export default async function AdminSemesters() {
           <Field label="Название">
             <Input name="title" placeholder={`Весна ${year + 1}`} required />
           </Field>
-          <div className="grid grid-cols-3 gap-2">
-            <Field label="Начало">
-              <Input type="date" name="startsOn" required className="px-2" />
-            </Field>
-            <Field label="Конец">
-              <Input type="date" name="endsOn" required className="px-2" />
-            </Field>
-            <Field label="Сессия с">
-              <Input type="date" name="sessionStartsOn" className="px-2" />
-            </Field>
-          </div>
+          <Field label="Начало">
+            <DateInput name="startsOn" required />
+          </Field>
+          <Field label="Конец">
+            <DateInput name="endsOn" required />
+          </Field>
+          <Field label="Сессия с" hint="Необязательно — от этой даты считается счётчик до сессии.">
+            <DateInput name="sessionStartsOn" />
+          </Field>
           <SubmitButton className="w-full">Создать</SubmitButton>
         </ActionForm>
       </Card>

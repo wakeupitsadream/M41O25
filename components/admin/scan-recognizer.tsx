@@ -11,7 +11,7 @@ import { capitalize, fmtDayMonth, fmtWeekday } from "@/lib/schedule/time";
 import { KIND_LABEL, type LessonKind } from "@/lib/schedule/types";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
-import { Field, Input, Select } from "@/components/ui/input";
+import { Field, Input, Select, TimeInput } from "@/components/ui/input";
 import { Badge } from "@/components/ui/primitives";
 import { AttachmentUploader, type UploadedFile } from "@/components/hw/attachment-uploader";
 import { cn, pluralRu } from "@/lib/utils";
@@ -346,10 +346,10 @@ export function ScanRecognizer({ weekId, hasLessons, subjects, parity = null }: 
                 <Input type="number" min={1} max={10} value={edit.slot} onChange={(e) => setEdit({ ...edit, slot: Math.min(10, Math.max(1, Number(e.target.value) || 1)) })} />
               </Field>
               <Field label="Начало">
-                <Input type="time" value={edit.startsAt} onChange={(e) => setEdit({ ...edit, startsAt: e.target.value })} />
+                <TimeInput value={edit.startsAt} onChange={(v) => setEdit({ ...edit, startsAt: v })} />
               </Field>
               <Field label="Конец">
-                <Input type="time" value={edit.endsAt} onChange={(e) => setEdit({ ...edit, endsAt: e.target.value })} />
+                <TimeInput value={edit.endsAt} onChange={(v) => setEdit({ ...edit, endsAt: v })} />
               </Field>
             </div>
             <Field label="Чётность" hint={parity ? `Неделя ${PARITY_LABEL[parity]}: пара другой чётности будет выключена` : undefined}>

@@ -20,7 +20,7 @@ import { dueLabel, fmtBytes, fmtDateTime } from "@/lib/hw/format";
 import { fmtDayShort, fmtWeekday } from "@/lib/schedule/time";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
-import { Field, Input, Select, Textarea } from "@/components/ui/input";
+import { DateInput, Field, Input, Select, Textarea } from "@/components/ui/input";
 import { Avatar, Badge } from "@/components/ui/primitives";
 import { ImageGrid } from "@/components/ui/image-grid";
 import { ReactionBar } from "@/components/group/reaction-bar";
@@ -376,7 +376,7 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
             <Textarea value={orig.body} onChange={(e) => setOrig({ ...orig, body: e.target.value })} className="min-h-32" />
           </Field>
           <Field label="Дедлайн" hint="Привязка к паре пересчитается по предмету и дате">
-            <Input type="date" value={orig.dueDate} onChange={(e) => setOrig({ ...orig, dueDate: e.target.value })} />
+            <DateInput value={orig.dueDate} onChange={(e) => setOrig({ ...orig, dueDate: e.target.value })} />
           </Field>
           <Button className="w-full" loading={pending} onClick={() => run(() => updateHomework(hw.id, orig), () => setSheet(null))}>
             Сохранить

@@ -7,7 +7,7 @@ import { suggestNextWeek } from "@/lib/admin/queries";
 import { getCurrentSemester } from "@/lib/schedule/query";
 import { createWeek } from "@/app/admin/actions/schedule";
 import { addDaysIso, fmtRangeShort } from "@/lib/schedule/time";
-import { Field, Input, Select } from "@/components/ui/input";
+import { DateInput, Field, Select } from "@/components/ui/input";
 import { SubmitButton } from "@/components/admin/forms";
 import { Card } from "@/components/ui/card";
 
@@ -28,7 +28,7 @@ export default async function NewWeekPage({ searchParams }: { searchParams: Prom
       <Card>
         <ActionForm action={createWeek} className="space-y-4">
           <Field label="Неделя (любая дата внутри)">
-            <Input type="date" name="startsOn" defaultValue={sp.startsOn ?? startsOn} required />
+            <DateInput name="startsOn" defaultValue={sp.startsOn ?? startsOn} required />
           </Field>
           <Field label="Чётность">
             <Select name="parity" defaultValue={parity}>

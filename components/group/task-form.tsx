@@ -5,7 +5,7 @@ import { useGuardedRouter } from "@/components/features/nav-guard";
 import { ListChecks } from "lucide-react";
 import { createTask } from "@/app/(app)/group/actions";
 import { Button } from "@/components/ui/button";
-import { Field, Input, Textarea } from "@/components/ui/input";
+import { DateInput, Field, Input, Textarea } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 export function TaskForm() {
@@ -26,7 +26,7 @@ export function TaskForm() {
         <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Кому, куда переводить, что принести" className="min-h-24" />
       </Field>
       <Field label="Срок">
-        <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+        <DateInput value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
       </Field>
       <button
         type="button"

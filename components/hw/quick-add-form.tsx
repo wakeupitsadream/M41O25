@@ -7,7 +7,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { createHomework } from "@/app/(app)/hw/actions";
 import { addDaysIso, capitalize, fmtDayShort, fmtWeekday, nowParts } from "@/lib/schedule/time";
 import { Button } from "@/components/ui/button";
-import { Field, Input, Textarea } from "@/components/ui/input";
+import { DateInput, Field, Input, Textarea } from "@/components/ui/input";
 import { addToQueue, clearDraft, freshDue, isOfflineError, newQueueKey, nextLessonDate, pruneQueue, readDraft, readQueue, saveDraft, writeQueue } from "@/lib/hw/draft";
 import { AttachmentUploader, type UploadedFile } from "./attachment-uploader";
 import { cn } from "@/lib/utils";
@@ -222,7 +222,7 @@ export function QuickAddForm({ subjects, suggestedSubjectId, upcomingBySubject, 
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="space-y-4 overflow-hidden">
             <div className="grid grid-cols-2 gap-3">
               <Field label="Дедлайн">
-                <Input type="date" value={dueDate} min={clientToday} onChange={(e) => patch({ dueOverride: e.target.value || null })} />
+                <DateInput value={dueDate} min={clientToday} onChange={(e) => patch({ dueOverride: e.target.value || null })} />
               </Field>
               <Field label="Заголовок">
                 <Input value={title} maxLength={MAX_TITLE} onChange={(e) => patch({ title: e.target.value })} placeholder="Контрольная" />

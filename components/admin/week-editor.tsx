@@ -9,7 +9,7 @@ import { KIND_LABEL, PARITY_LABEL, type LessonKind } from "@/lib/schedule/types"
 import { deleteLesson, deleteWeek, setWeekStatus, toggleCancelLesson, updateWeekMeta, upsertLesson, type LessonInput } from "@/app/admin/actions/schedule";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
-import { Field, Input, Select, Textarea } from "@/components/ui/input";
+import { Field, Input, Select, Textarea, TimeInput } from "@/components/ui/input";
 import { Badge } from "@/components/ui/primitives";
 import { ConfirmButton } from "./forms";
 import { ScanRecognizer } from "./scan-recognizer";
@@ -259,10 +259,10 @@ export function WeekEditor({ week, lessons, subjects, semesters, slotTimes }: Pr
                 <Input type="number" min={1} max={10} value={draft.slot} onChange={(e) => setDraft({ ...draft, slot: Number(e.target.value) || 1 })} />
               </Field>
               <Field label="Начало">
-                <Input type="time" value={draft.startsAt} onChange={(e) => setDraft({ ...draft, startsAt: e.target.value })} />
+                <TimeInput value={draft.startsAt} onChange={(v) => setDraft({ ...draft, startsAt: v })} />
               </Field>
               <Field label="Конец">
-                <Input type="time" value={draft.endsAt} onChange={(e) => setDraft({ ...draft, endsAt: e.target.value })} />
+                <TimeInput value={draft.endsAt} onChange={(v) => setDraft({ ...draft, endsAt: v })} />
               </Field>
             </div>
             <Field label="Заметка (замена, перенос)">
