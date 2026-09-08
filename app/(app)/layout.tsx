@@ -21,9 +21,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <div className="mx-auto flex min-h-dvh w-full max-w-lg flex-col">
         <NavWatchdog />
         <RefreshOnResume />
-        <NetStatus />
-        <HwOutbox meId={user.id} />
-        <BirthdayBanner today={today} people={todays} meId={user.id} />
+        {/*
+          Одна колонка на все верхние плашки: раскладку держит контейнер, а NetStatus, HwOutbox и BirthdayBanner
+          не знают друг о друге и не считают отступы — иначе они наезжают друг на друга в любой новой комбинации.
+          Сам контейнер тапы не ловит, интерактивные плашки внутри включают pointer-events сами.
+        */}
+        <div
+          className="pointer-events-none fixed inset-x-0 z-30 mx-auto flex w-full max-w-lg flex-col items-center gap-1.5 px-4"
+          style={{ top: "calc(var(--sat) + 0.5rem)" }}
+        >
+          <NetStatus />
+          <HwOutbox meId={user.id} />
+          <BirthdayBanner today={today} people={todays} meId={user.id} />
+        </div>
         <div className="flex-1 pb-safe">{children}</div>
         <TabBar latest={latest} feedSeenAt={user.feedSeenAt?.toISOString() ?? null} />
       </div>

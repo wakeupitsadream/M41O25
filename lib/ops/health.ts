@@ -1,3 +1,4 @@
+import { QUEUE_TTL_MS } from "@/lib/hw/draft";
 import { pluralRu } from "@/lib/utils";
 
 /**
@@ -78,7 +79,49 @@ export function describeBackup(input: { lastBackupDay: string | null; todayIso: 
   const days = Math.max(0, dayNumber(input.todayIso) - dayNumber(input.lastBackupDay));
   if (days === 0) return { ok: true, line: "Последний бэкап сегодня" };
   if (days === 1) return { ok: true, line: "Последний бэкап вчера" };
+  // Дальше «вчера» зелёного не бывает: два пропущенных прогона подряд — это уже потеря, а не задержка.
   const age = `${days} ${pluralRu(days, "день", "дня", "дней")} назад`;
-  if (days === 2) return { ok: true, line: `Последний бэкап ${input.lastBackupDay}, ${age}` };
   return { ok: false, line: `Последний бэкап ${input.lastBackupDay}, ${age} — новых cron не кладёт` };
+}
+
+/* ─── Ротация бэкапов ──────────────────────────────────────────────────────── */
+
+/** Сколько дампов держим в хранилище. */
+export const BACKUP_KEEP = 30;
+
+/** Лишние дампы: имена backups/YYYY-MM-DD.json.gz сортируются как даты, поэтому в утиль уходит начало списка. */
+export const staleBackups = (keys: string[], keep = BACKUP_KEEP) => {
+  const sorted = [...keys].sort();
+  return sorted.slice(0, Math.max(0, sorted.length - keep));
+};
+
+/**
+ * Ротация старых дампов. К этому моменту сегодняшний бэкап уже лежит в хранилище, поэтому упавший
+ * DeleteObject (транзиентные 500 и SlowDown у R2 — обычное дело) не значит «бэкапа за сегодня нет»:
+ * считаем неудачи и идём дальше, а не роняем весь прогон и не будим админа письмом в четыре утра.
+ * `remove` возвращает признак успеха и сам не бросает (см. deleteFile в app/api/cron/daily/route.ts).
+ */
+export async function rotateBackups(keys: string[], remove: (key: string) => Promise<boolean>, keep = BACKUP_KEEP) {
+  const stale = staleBackups(keys, keep);
+  let failed = 0;
+  for (const k of stale) if (!(await remove(k))) failed += 1;
+  return { removed: stale.length - failed, failed };
+}
+
+/* ─── Сироты-вложения ──────────────────────────────────────────────────────── */
+
+/** Файл без записи — обычно брошенный крестиком в форме: сутки на «передумал» и в утиль. */
+export const ORPHAN_TTL_MS = 24 * 3600_000;
+
+/**
+ * Вложение домашки — исключение. Пока сети нет, запись ждёт в офлайн-очереди на телефоне (lib/hw/draft.ts),
+ * а файлы привяжутся к ней только при успешной отправке — до тех пор они лежат сиротами с entity_id = null.
+ * Чистить их раньше, чем очередь протухнет сама (QUEUE_TTL_MS), значит стирать фото, которое человеку
+ * пообещали отправить. Даём очереди дожить и сутки запаса сверху.
+ */
+export const HOMEWORK_ORPHAN_TTL_MS = QUEUE_TTL_MS + ORPHAN_TTL_MS;
+
+/** Границы «старше чего чистим» для сирот-вложений: общая и отдельная для домашки. */
+export function orphanCutoffs(now: number) {
+  return { common: new Date(now - ORPHAN_TTL_MS), homework: new Date(now - HOMEWORK_ORPHAN_TTL_MS) };
 }

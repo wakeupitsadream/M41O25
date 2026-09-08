@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, eq, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { anonQuota, appErrors, attachments, authAttempts, cronRuns, deviceSessions } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { storage } from "@/lib/storage";
 import { buildBackup } from "@/lib/backup";
-import { planBackup, summarizeCronRun } from "@/lib/ops/health";
+import { orphanCutoffs, planBackup, rotateBackups, summarizeCronRun } from "@/lib/ops/health";
 import { todayIso } from "@/lib/tz";
 
 export const runtime = "nodejs";
@@ -18,14 +18,6 @@ export const maxDuration = 60;
  * 3) гигиена служебных таблиц.
  * Файлы-вложения не бэкапим: риск принят.
  */
-async function dumpToStorage() {
-  const { key, payload } = await buildBackup();
-  await storage.put(key, payload, "application/gzip");
-  const keys = await storage.list("backups/");
-  const stale = keys.sort().slice(0, Math.max(0, keys.length - 30));
-  for (const k of stale) await storage.delete(k);
-  return { key, bytes: payload.length, removedBackups: stale.length };
-}
 
 /** Удаление файла из хранилища не должно ронять прогон, но и молчать о себе не должно — считаем неудачи. */
 async function deleteFile(key: string, what: string): Promise<boolean> {
@@ -36,6 +28,14 @@ async function deleteFile(key: string, what: string): Promise<boolean> {
     console.error(`[cron] не удалён файл (${what}) ${key}:`, e instanceof Error ? e.message : e);
     return false;
   }
+}
+
+async function dumpToStorage() {
+  const { key, payload } = await buildBackup();
+  await storage.put(key, payload, "application/gzip");
+  // Дамп за сегодня уже лежит: дальше только уборка старых, и её неудача — не «бэкап не удался» (lib/ops/health.ts).
+  const rotated = await rotateBackups(await storage.list("backups/"), (k) => deleteFile(k, "старый бэкап"));
+  return { key, bytes: payload.length, removedBackups: rotated.removed, failedBackupDeletes: rotated.failed };
 }
 
 export async function GET(req: Request) {
@@ -72,10 +72,21 @@ export async function GET(req: Request) {
   await db.delete(anonQuota).where(lt(anonQuota.day, today));
   await db.delete(authAttempts).where(lt(authAttempts.createdAt, new Date(Date.now() - 24 * 3600_000)));
   await db.delete(deviceSessions).where(or(lt(deviceSessions.createdAt, new Date(Date.now() - 366 * 86_400_000)), sql`${deviceSessions.revokedAt} < now() - interval '7 days'`));
+  // Сканы чистит шаг 2 (свои 30 дней), у домашки окно длиннее очереди отправки — иначе cron стирает ждущие фото.
+  const cut = orphanCutoffs(Date.now());
   const orphans = await db
     .select()
     .from(attachments)
-    .where(and(isNull(attachments.entityId), sql`${attachments.entityType} <> 'scan'`, lt(attachments.createdAt, new Date(Date.now() - 24 * 3600_000))));
+    .where(
+      and(
+        isNull(attachments.entityId),
+        ne(attachments.entityType, "scan"),
+        or(
+          and(ne(attachments.entityType, "homework"), lt(attachments.createdAt, cut.common)),
+          and(eq(attachments.entityType, "homework"), lt(attachments.createdAt, cut.homework)),
+        ),
+      ),
+    );
   let failedOrphanDeletes = 0;
   for (const o of orphans) {
     if (!(await deleteFile(o.fileKey, "сирота"))) failedOrphanDeletes += 1;

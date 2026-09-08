@@ -1,6 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { NO_R2_ON_VERCEL, cronWarnings, describeBackup, latestBackupDay, planBackup, summarizeCronRun } from "./health";
+import { QUEUE_TTL_MS } from "@/lib/hw/draft";
+import {
+  BACKUP_KEEP,
+  HOMEWORK_ORPHAN_TTL_MS,
+  NO_R2_ON_VERCEL,
+  ORPHAN_TTL_MS,
+  cronWarnings,
+  describeBackup,
+  latestBackupDay,
+  orphanCutoffs,
+  planBackup,
+  rotateBackups,
+  staleBackups,
+  summarizeCronRun,
+} from "./health";
 
 test("latestBackupDay: берёт самый свежий день и игнорирует посторонние ключи", () => {
   assert.equal(latestBackupDay(["backups/2026-08-31.json.gz", "backups/2026-09-01.json.gz", "backups/readme.txt"]), "2026-09-01");
@@ -71,9 +85,61 @@ test("describeBackup: свежесть считается по календар�
   const at = (day: string) => describeBackup({ lastBackupDay: day, todayIso: "2026-09-08", storageKind: "r2", onVercel: true });
   assert.deepEqual(at("2026-09-08"), { ok: true, line: "Последний бэкап сегодня" });
   assert.deepEqual(at("2026-09-07"), { ok: true, line: "Последний бэкап вчера" });
-  assert.deepEqual(at("2026-09-06"), { ok: true, line: "Последний бэкап 2026-09-06, 2 дня назад" });
+  // Два пропущенных прогона подряд — уже красное: зелёная строка здесь означала бы, что беду видно только на третьи сутки.
+  assert.deepEqual(at("2026-09-06"), { ok: false, line: "Последний бэкап 2026-09-06, 2 дня назад — новых cron не кладёт" });
   assert.deepEqual(at("2026-09-05"), { ok: false, line: "Последний бэкап 2026-09-05, 3 дня назад — новых cron не кладёт" });
   assert.equal(at("2026-08-27").line, "Последний бэкап 2026-08-27, 12 дней назад — новых cron не кладёт");
   // Часы на сервере могли уехать назад: бэкап «из будущего» считаем сегодняшним, а не отрицательным.
   assert.deepEqual(at("2026-09-09"), { ok: true, line: "Последний бэкап сегодня" });
+});
+
+test("staleBackups: держим последние BACKUP_KEEP дампов, лишними становятся самые старые", () => {
+  const keys = ["backups/2026-09-03.json.gz", "backups/2026-09-01.json.gz", "backups/2026-09-02.json.gz"];
+  assert.deepEqual(staleBackups(keys, 2), ["backups/2026-09-01.json.gz"]);
+  assert.deepEqual(staleBackups(keys, 5), []);
+  assert.deepEqual(staleBackups([], 2), []);
+  // Порядок исходного списка не важен и сам список не портится.
+  assert.deepEqual(keys[0], "backups/2026-09-03.json.gz");
+  assert.equal(BACKUP_KEEP, 30);
+});
+
+test("rotateBackups: неудачное удаление старого дампа не роняет бэкап, а считается", async () => {
+  const keys = ["backups/2026-09-03.json.gz", "backups/2026-09-01.json.gz", "backups/2026-09-02.json.gz"];
+  const seen: string[] = [];
+  const res = await rotateBackups(
+    keys,
+    async (k) => {
+      seen.push(k);
+      return false; // R2 ответил 500 на DeleteObject
+    },
+    1,
+  );
+  assert.deepEqual(seen, ["backups/2026-09-01.json.gz", "backups/2026-09-02.json.gz"]);
+  assert.deepEqual(res, { removed: 0, failed: 2 });
+
+  // Прогон с такой ротацией остаётся зелёным: дамп за сегодня лежит, backupError не появился.
+  assert.deepEqual(summarizeCronRun({ plan: { run: true }, backupError: null, failedScanDeletes: 0, failedOrphanDeletes: 0 }), {
+    ok: true,
+    error: null,
+    warnings: [],
+  });
+});
+
+test("rotateBackups: удачная ротация считает удалённые, частичная — только дошедшие", async () => {
+  assert.deepEqual(await rotateBackups(["a", "b", "c"], async () => true, 1), { removed: 2, failed: 0 });
+  assert.deepEqual(await rotateBackups(["a", "b", "c"], async (k) => k !== "a", 1), { removed: 1, failed: 1 });
+  assert.deepEqual(await rotateBackups(["a"], async () => true, 30), { removed: 0, failed: 0 });
+});
+
+test("orphanCutoffs: вложение домашки живёт дольше офлайн-очереди, остальные сироты — сутки", () => {
+  const now = Date.parse("2026-09-08T00:00:00.000Z");
+  const cut = orphanCutoffs(now);
+  assert.equal(cut.common.toISOString(), "2026-09-07T00:00:00.000Z");
+  assert.equal(cut.homework.toISOString(), "2026-08-31T00:00:00.000Z");
+  // Главное свойство: фото, приложенное к записи, которая всю неделю ждёт сети в очереди, cron не заберёт.
+  const oldestLivingQueueEntry = now - QUEUE_TTL_MS;
+  assert.ok(cut.homework.getTime() < oldestLivingQueueEntry, "окно домашки должно перекрывать всю жизнь очереди");
+  assert.equal(HOMEWORK_ORPHAN_TTL_MS, QUEUE_TTL_MS + ORPHAN_TTL_MS);
+  // Сутки для остальных не трогали: брошенные крестиком файлы новостей и задач по-прежнему уходят на следующий день.
+  assert.ok(cut.common.getTime() > oldestLivingQueueEntry);
 });

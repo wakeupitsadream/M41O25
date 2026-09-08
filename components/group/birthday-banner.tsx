@@ -10,6 +10,8 @@ type Person = { id: string; fullName: string; firstName: string };
 /**
  * День рождения: именинник получает конфетти на весь экран (один раз в день на устройстве),
  * остальные — баннер над контентом. Данные уже есть в профилях, бэкенд не нужен.
+ * Место на экране даёт колонка верхних плашек в app/(app)/layout.tsx — здесь ни fixed, ни z-index:
+ * иначе баннер накрывает собой плашку очереди отправки, и человек не видит, что домашка не ушла.
  */
 export function BirthdayBanner({ today, people, meId }: { today: string; people: Person[]; meId: string }) {
   const [hidden, setHidden] = useState(true);
@@ -54,8 +56,7 @@ export function BirthdayBanner({ today, people, meId }: { today: string; people:
           initial={{ y: -40, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           exit={{ y: -40, opacity: 0 }}
-          className="fixed inset-x-0 z-30 mx-auto flex w-full max-w-lg justify-center px-4"
-          style={{ top: "calc(var(--sat) + 0.5rem)" }}
+          className="pointer-events-auto flex w-full justify-center"
         >
           <div className="flex w-full items-center gap-3 rounded-full bg-accent py-2 pl-4 pr-2 text-accent-ink shadow-glow">
             <span className="text-xl">🎉</span>

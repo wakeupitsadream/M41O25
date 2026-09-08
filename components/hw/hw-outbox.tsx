@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
 import { CloudUpload, Loader2 } from "lucide-react";
 import { createHomework } from "@/app/(app)/hw/actions";
 import { useGuardedRouter } from "@/components/features/nav-guard";
@@ -30,14 +29,14 @@ const online = () => (typeof navigator === "undefined" ? true : navigator.onLine
  *
  * Дубли исключены на сервере (createHomework сверяет автора, текст, дедлайн и предмет за последние минуты),
  * поэтому повторить отправку не страшно: в худшем случае вернётся id уже созданной записи.
+ *
+ * Где плашка стоит на экране, решает колонка верхних плашек в app/(app)/layout.tsx — здесь ни fixed, ни отступов.
  */
 export function HwOutbox({ meId }: { meId: string }) {
   const router = useGuardedRouter();
   const toast = useToast();
-  const pathname = usePathname();
   const [mine, setMine] = useState<QueuedHw[]>([]);
   const [sending, setSending] = useState(false);
-  const [offline, setOffline] = useState(false);
   // Единственная отправка за раз: событие online и возвращение на экран приходят почти одновременно.
   const busy = useRef(false);
 
@@ -105,53 +104,38 @@ export function HwOutbox({ meId }: { meId: string }) {
   );
 
   useEffect(() => {
-    const onNet = () => setOffline(!online());
-    onNet();
     // eslint-disable-next-line react-hooks/set-state-in-effect -- очередь лежит в localStorage: на сервере её нет, прочитать можно только после монтирования.
     sync();
     void flush(false);
     const onVisible = () => {
       if (document.visibilityState === "visible") void flush(false);
     };
-    const onOnline = () => {
-      onNet();
-      void flush(false);
-    };
+    const onOnline = () => void flush(false);
     window.addEventListener(QUEUE_EVENT, sync);
     window.addEventListener("online", onOnline);
-    window.addEventListener("offline", onNet);
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       window.removeEventListener(QUEUE_EVENT, sync);
       window.removeEventListener("online", onOnline);
-      window.removeEventListener("offline", onNet);
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [flush, sync]);
 
   if (!mine.length) return null;
   const failed = mine.find((e) => e.lastError);
-  // На расписании плашки «нет сети» нет (у него своя, с датой данных) — там не отступаем.
-  const belowNetStatus = offline && pathname !== "/s" && !pathname.startsWith("/s/");
 
   return (
-    <div
-      className="pointer-events-none fixed inset-x-0 z-20 flex justify-center px-4"
-      // Плашка «нет сети» (components/features/net-status.tsx) стоит выше — не наезжаем на неё.
-      style={{ top: belowNetStatus ? "calc(var(--sat) + 3rem)" : "calc(var(--sat) + 0.5rem)" }}
-    >
-      <div className="pointer-events-auto flex max-w-full items-center gap-2 rounded-full bg-surface-2 py-1.5 pl-3.5 pr-1.5 shadow-float hairline">
-        {sending ? <Loader2 className="size-3.5 shrink-0 animate-spin text-muted" /> : <CloudUpload className="size-3.5 shrink-0 text-muted" />}
-        <span className="truncate text-[12px] font-medium text-muted">{failed?.lastError ?? queueLabel(mine.length)}</span>
-        <button
-          type="button"
-          onClick={() => void flush(true)}
-          disabled={sending}
-          className="h-10 shrink-0 rounded-full px-3.5 text-[13px] font-semibold text-accent disabled:opacity-50"
-        >
-          {sending ? "Шлю…" : "Отправить"}
-        </button>
-      </div>
+    <div className="pointer-events-auto flex max-w-full items-center gap-2 rounded-full bg-surface-2 py-1.5 pl-3.5 pr-1.5 shadow-float hairline">
+      {sending ? <Loader2 className="size-3.5 shrink-0 animate-spin text-muted" /> : <CloudUpload className="size-3.5 shrink-0 text-muted" />}
+      <span className="truncate text-[12px] font-medium text-muted">{failed?.lastError ?? queueLabel(mine.length)}</span>
+      <button
+        type="button"
+        onClick={() => void flush(true)}
+        disabled={sending}
+        className="h-10 shrink-0 rounded-full px-3.5 text-[13px] font-semibold text-accent disabled:opacity-50"
+      >
+        {sending ? "Шлю…" : "Отправить"}
+      </button>
     </div>
   );
 }
