@@ -87,7 +87,7 @@ export function ShareDayButton({ date }: { date: string }) {
 
   return (
     <>
-      <button type="button" onClick={share} aria-label="Поделиться днём" disabled={state === "busy"} className="grid size-9 place-items-center rounded-full text-muted active:bg-surface-2">
+      <button type="button" onClick={share} aria-label="Поделиться днём" disabled={state === "busy"} className="grid size-10 place-items-center rounded-full text-muted active:bg-surface-2">
         {state === "busy" ? <Loader2 className="size-5 animate-spin" /> : state === "done" ? <Check className="size-5 text-accent" /> : <Share2 className="size-5" />}
       </button>
       {hint && !preview && (

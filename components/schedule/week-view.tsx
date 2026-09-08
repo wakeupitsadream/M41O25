@@ -78,7 +78,7 @@ export function WeekView({ data, now, today, weekStart, defaultWeekStart, weathe
           type="button"
           onClick={() => onShiftWeek(-1)}
           aria-label="Предыдущая неделя"
-          className="grid size-9 place-items-center rounded-full text-muted active:bg-surface-2"
+          className="grid size-10 place-items-center rounded-full text-muted active:bg-surface-2"
         >
           <ChevronLeft className="size-5" />
         </button>
@@ -87,7 +87,7 @@ export function WeekView({ data, now, today, weekStart, defaultWeekStart, weathe
           type="button"
           onClick={() => onShiftWeek(1)}
           aria-label="Следующая неделя"
-          className="grid size-9 place-items-center rounded-full text-muted active:bg-surface-2"
+          className="grid size-10 place-items-center rounded-full text-muted active:bg-surface-2"
         >
           <ChevronRight className="size-5" />
         </button>

@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Dices, RotateCcw, UserMinus } from "lucide-react";
 import { Avatar } from "@/components/ui/primitives";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { cn, firstName } from "@/lib/utils";
 
 type Person = { id: string; fullName: string; avatarEmoji: string; color: string };
@@ -100,12 +101,17 @@ export function Roulette({ people }: { people: Person[] }) {
 
       <button
         type="button"
+        role="switch"
+        aria-checked={noRepeat}
         onClick={() => setNoRepeat((v) => !v)}
-        className={cn("flex w-full items-center gap-3 rounded-md px-3.5 py-3 text-left text-[14px] hairline", noRepeat ? "bg-accent/15 text-accent" : "bg-surface-2 text-muted")}
+        className={cn("flex min-h-11 w-full items-center gap-3 rounded-md px-3.5 py-2 text-left text-[14px] hairline", noRepeat ? "bg-accent/15 text-accent" : "bg-surface-2 text-muted")}
       >
-        <UserMinus className="size-4" />
-        <span className="flex-1">Без повторов · осталось {pool.length} из {people.length}</span>
-        <span className={cn("size-5 rounded-full border-2", noRepeat ? "border-accent bg-accent" : "border-border-strong")} />
+        <UserMinus className="size-4 shrink-0" />
+        <span className="min-w-0 flex-1">
+          <span className="block">Без повторов</span>
+          <span className="block text-[12px] text-muted">осталось {pool.length} из {people.length}</span>
+        </span>
+        <Switch checked={noRepeat} />
       </button>
     </div>
   );

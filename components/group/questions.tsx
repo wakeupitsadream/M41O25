@@ -63,7 +63,7 @@ export function QuestionsClient({ items, canAnswer, isAdmin }: { items: Item[]; 
               <span>{fmtHour(q.createdAt)}</span>
               <span className="flex-1" />
               {isAdmin && (
-                <button type="button" aria-label="Удалить" className="text-dim" onClick={() => { if (window.confirm("Удалить вопрос?")) run(() => deleteAnon(q.id)); }}>
+                <button type="button" aria-label="Удалить" className="-my-2 -mr-2 grid size-10 shrink-0 place-items-center text-dim" onClick={() => { if (window.confirm("Удалить вопрос?")) run(() => deleteAnon(q.id)); }}>
                   <Trash2 className="size-4" />
                 </button>
               )}

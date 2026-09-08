@@ -17,20 +17,25 @@ export default async function AdminUsers() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="font-display text-[28px] font-bold leading-none">Люди</h1>
+      <div className="space-y-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <h1 className="min-w-0 truncate font-display text-[28px] font-bold leading-none">Люди</h1>
+          <span className="shrink-0 text-[13px] text-muted">{active.length} в группе</span>
+        </div>
         <div className="flex items-center gap-2">
-          <Link href="/admin/users/import" className="flex h-10 items-center gap-2 rounded-full px-4 text-[14px] font-semibold text-fg hairline active:bg-surface-2">
-            <ClipboardList className="size-4" /> Списком
+          <Link href="/admin/users/import" className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full px-3 text-[15px] font-semibold text-fg hairline active:bg-surface-2">
+            <ClipboardList className="size-4 shrink-0" /> Списком
           </Link>
-          <Link href="/admin/users/new" className="flex h-10 items-center gap-2 rounded-full bg-accent px-4 text-[14px] font-semibold text-accent-ink active:bg-accent-press">
-            <UserPlus className="size-4" /> Добавить
+          <Link href="/admin/users/new" className="flex h-11 flex-1 items-center justify-center gap-2 rounded-full bg-accent px-3 text-[15px] font-semibold text-accent-ink active:bg-accent-press">
+            <UserPlus className="size-4 shrink-0" /> Добавить
           </Link>
         </div>
       </div>
-      <p className="text-[13px] text-muted">
-        {active.length} в группе · замочек — человек уже вошёл и задал PIN
-      </p>
+      {list.some((u) => u.pinHash) && (
+        <p className="flex items-center justify-end gap-1.5 px-1 text-[12px] text-dim">
+          <Lock className="size-3.5 shrink-0" /> — вошёл и задал PIN
+        </p>
+      )}
       <ul className="overflow-hidden rounded-lg bg-surface hairline">
         {[...active, ...removed].map((u) => (
           <li key={u.id} className="border-b border-border last:border-0">

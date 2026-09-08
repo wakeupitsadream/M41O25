@@ -99,7 +99,7 @@ export function PollCard({ poll, me }: { poll: PollItem; me: { id: string; isMod
         {poll.closesAt && !state.closed && <span>· до {fmtDateTime(poll.closesAt)}</span>}
         <span className="flex-1" />
         {canManage && (
-          <button type="button" className="flex items-center gap-1 text-dim" disabled={pending} onClick={() => start(async () => { const res = await setPollClosed(poll.id, !state.closed); if (!res.ok) toast(res.error ?? "Не получилось"); router.refresh(); })}>
+          <button type="button" className="-my-2 flex h-10 items-center gap-1 text-dim" disabled={pending} onClick={() => start(async () => { const res = await setPollClosed(poll.id, !state.closed); if (!res.ok) toast(res.error ?? "Не получилось"); router.refresh(); })}>
             {state.closed ? <Undo2 className="size-3.5" /> : <Lock className="size-3.5" />}
             {state.closed ? "открыть" : "закрыть"}
           </button>
@@ -108,7 +108,7 @@ export function PollCard({ poll, me }: { poll: PollItem; me: { id: string; isMod
           <button
             type="button"
             aria-label="Удалить"
-            className="text-dim"
+            className="-my-2 -mr-2 grid size-10 shrink-0 place-items-center text-dim"
             disabled={pending}
             onClick={() => {
               if (window.confirm("Удалить опрос?")) start(async () => { const res = await deletePoll(poll.id); if (!res.ok) toast(res.error ?? "Не получилось"); router.refresh(); });

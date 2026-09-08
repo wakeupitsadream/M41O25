@@ -5,10 +5,10 @@ import { Avatar, PageHeader } from "@/components/ui/primitives";
 import { Card } from "@/components/ui/card";
 import { DateInput, Field, Input } from "@/components/ui/input";
 import { SubmitButton } from "@/components/admin/forms";
-import { changePin, logout, toggleShowHwDone, updateProfile } from "./actions";
+import { changePin, logout, updateProfile } from "./actions";
 import { ActionForm } from "@/components/ui/action-form";
-import { cn } from "@/lib/utils";
 import { InstallHint } from "@/components/features/install-hint";
+import { HwDoneSwitch } from "@/components/features/hw-done-switch";
 
 export const metadata = { title: "Профиль" };
 
@@ -78,19 +78,14 @@ export default async function MePage() {
           </ActionForm>
         </Card>
 
+        <HwDoneSwitch value={user.showHwDone} />
+
         <p className="px-1 text-[12px] leading-relaxed text-dim">Удалиться из группы — напиши админу: он убирает профиль из списка, записи остаются без имени.</p>
 
         <form action={logout}>
           <button type="submit" className="flex w-full items-center gap-3 rounded-lg bg-surface p-4 text-danger hairline active:bg-surface-2">
             <LogOut className="size-5" />
             <span className="flex-1 text-left font-medium">Выйти на этом устройстве</span>
-          </button>
-        </form>
-
-        <form action={toggleShowHwDone} className="pt-6">
-          <button type="submit" className="mx-auto flex items-center gap-2 text-[12px] text-dim">
-            <span className={cn("inline-block size-2 rounded-full", user.showHwDone ? "bg-accent" : "bg-border-strong")} />
-            личные отметки «сделал» {user.showHwDone ? "включены" : "выключены"}
           </button>
         </form>
       </div>

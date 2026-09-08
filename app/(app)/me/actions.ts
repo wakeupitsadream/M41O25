@@ -7,17 +7,20 @@ import { db } from "@/lib/db";
 import { users } from "@/lib/db/schema";
 import { actionUser, destroySession, hashPin, verifyPin } from "@/lib/auth";
 import type { FormState } from "@/lib/form";
+import { ok, type ActionResult } from "@/lib/utils";
 
 export async function logout() {
   await destroySession();
   redirect("/enter");
 }
 
-export async function toggleShowHwDone() {
+/** Личные отметки «сделал»: значение приходит с клиента, чтобы оптимистичный тумблер и база не разъезжались. */
+export async function toggleShowHwDone(next: boolean): Promise<ActionResult> {
   const user = await actionUser();
-  await db.update(users).set({ showHwDone: !user.showHwDone }).where(eq(users.id, user.id));
+  await db.update(users).set({ showHwDone: next }).where(eq(users.id, user.id));
   revalidatePath("/me");
   revalidatePath("/hw");
+  return ok();
 }
 
 export async function updateProfile(formData: FormData) {

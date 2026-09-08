@@ -46,7 +46,7 @@ export default async function ContactsPage() {
                         {c.note && <div className="mt-1 text-[13px] text-muted">{c.note}</div>}
                       </div>
                       {canEdit && (
-                        <Link href={`/group/contacts/${c.id}`} aria-label="Изменить" className="grid size-8 place-items-center rounded-full bg-surface-2 text-muted">
+                        <Link href={`/group/contacts/${c.id}`} aria-label="Изменить" className="grid size-10 shrink-0 place-items-center rounded-full bg-surface-2 text-muted active:bg-surface-3">
                           <Pencil className="size-3.5" />
                         </Link>
                       )}

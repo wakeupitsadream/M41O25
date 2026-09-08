@@ -48,10 +48,10 @@ export function DayView({ data, now, today, date, onBack, onShiftDay }: Props) {
         </button>
         <div className="flex-1" />
         {lessons.length > 0 && <ShareDayButton date={date} />}
-        <button type="button" onClick={() => onShiftDay(-1)} aria-label="Предыдущий день" className="grid size-9 place-items-center rounded-full text-muted active:bg-surface-2">
+        <button type="button" onClick={() => onShiftDay(-1)} aria-label="Предыдущий день" className="grid size-10 place-items-center rounded-full text-muted active:bg-surface-2">
           <ChevronLeft className="size-5" />
         </button>
-        <button type="button" onClick={() => onShiftDay(1)} aria-label="Следующий день" className="grid size-9 place-items-center rounded-full text-muted active:bg-surface-2">
+        <button type="button" onClick={() => onShiftDay(1)} aria-label="Следующий день" className="grid size-10 place-items-center rounded-full text-muted active:bg-surface-2">
           <ChevronRight className="size-5" />
         </button>
       </header>

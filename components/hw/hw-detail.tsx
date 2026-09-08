@@ -155,7 +155,7 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
                 <span className="font-semibold">{displayName(e.author)}</span>
                 <span className="text-dim">дополнил · {fmtDateTime(e.createdAt)}</span>
                 {(me.isAdmin || e.author.id === me.id) && (
-                  <button type="button" aria-label="Удалить дополнение" className="ml-auto grid size-10 -mr-2 place-items-center text-dim" onClick={() => run(() => deleteEdit(e.id))}>
+                  <button type="button" aria-label="Удалить дополнение" className="ml-auto grid size-10 shrink-0 -mr-2 place-items-center text-dim" onClick={() => run(() => deleteEdit(e.id))}>
                     <Trash2 className="size-3.5" />
                   </button>
                 )}
@@ -221,7 +221,7 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
                 </span>
                 <span>{fmtDateTime(c.createdAt)}</span>
                 {(me.isAdmin || c.author.id === me.id) && (
-                  <button type="button" aria-label="Удалить" className="ml-auto text-dim" onClick={() => run(() => deleteComment(c.id))}>
+                  <button type="button" aria-label="Удалить" className="-my-2 -mr-2 ml-auto grid size-10 shrink-0 place-items-center text-dim" onClick={() => run(() => deleteComment(c.id))}>
                     <Trash2 className="size-3.5" />
                   </button>
                 )}
@@ -237,7 +237,7 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
             if (comment.trim()) run(() => addComment(hw.id, comment), () => setComment(""));
           }}
         >
-          <Textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="«А точно к пятнице?», «препод сказал ещё №3»" className="min-h-12 flex-1 py-2.5" rows={1} />
+          <Textarea value={comment} onChange={(e) => setComment(e.target.value)} placeholder="«А точно к пятнице?»" className="min-h-12 flex-1 py-2.5" rows={1} />
           <Button type="submit" size="icon" loading={pending} disabled={!comment.trim()} aria-label="Отправить">
             <Send className="size-4" />
           </Button>

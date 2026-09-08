@@ -39,7 +39,7 @@ export function NewsCard({ item, canManage, isAdmin, meId }: { item: NewsItem; c
         )}
         <span className="flex-1" />
         {canManage && (
-          <button type="button" aria-label={item.pinned ? "Открепить" : "Закрепить"} disabled={pending} className="text-dim" onClick={() => start(async () => { const res = await togglePinNews(item.id); if (!res.ok) toast(res.error ?? "Не получилось"); router.refresh(); })}>
+          <button type="button" aria-label={item.pinned ? "Открепить" : "Закрепить"} disabled={pending} className="-my-2 grid size-10 shrink-0 place-items-center text-dim" onClick={() => start(async () => { const res = await togglePinNews(item.id); if (!res.ok) toast(res.error ?? "Не получилось"); router.refresh(); })}>
             {item.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
           </button>
         )}
@@ -48,7 +48,7 @@ export function NewsCard({ item, canManage, isAdmin, meId }: { item: NewsItem; c
             type="button"
             aria-label="Удалить"
             disabled={pending}
-            className="text-dim"
+            className="-my-2 -mr-2 grid size-10 shrink-0 place-items-center text-dim"
             onClick={() => {
               if (window.confirm("Удалить новость?")) start(async () => { const res = await deleteNews(item.id); if (!res.ok) toast(res.error ?? "Не получилось"); router.refresh(); });
             }}
