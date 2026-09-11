@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useGuardedRouter } from "@/components/features/nav-guard";
+import { useToast } from "@/components/ui/toast";
 import { useState, useTransition } from "react";
 import { CalendarDays, Check, Copy, FileText, MessageCircle, Paperclip, Pencil, PencilLine, Send, Trash2, Undo2, X } from "lucide-react";
 import {
@@ -73,6 +74,7 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
   const [newFiles, setNewFiles] = useState<UploadedFile[]>([]);
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
   const [orig, setOrig] = useState({ title: hw.title ?? "", body: hw.body, dueDate: hw.dueDate, subjectId: hw.subject?.id ?? null });
 
   const canEditOrig = me.isAdmin || hw.author.id === me.id;
@@ -86,7 +88,15 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
     setError(null);
     start(async () => {
       const res = await fn();
-      if (res && !res.ok) return setError(res.error ?? "Ошибка");
+      if (res && !res.ok) {
+        // Тостом, а не только строкой на странице: половина действий запускается из шторки, а строка ошибки
+        // живёт в обычном потоке под ней — оттуда её не видно, и отказ (например, часовой лимит правок)
+        // выглядел бы как «ничего не произошло».
+        const message = res.error ?? "Ошибка";
+        setError(message);
+        toast(message);
+        return;
+      }
       after?.();
       router.refresh();
     });
@@ -382,7 +392,7 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
             Сохранить
           </Button>
           <p className="text-[12px] text-dim">В ленту «Что нового» попадёт только существенная правка: другой предмет, дедлайн или текст. Опечатки — нет.</p>
-          <p className="text-[12px] text-dim">Новый дедлайн ещё и разбудит группу пушем — правка текста и смена предмета молчат.</p>
+          <p className="text-[12px] text-dim">Новый дедлайн разбудит группу пушем, если он ещё не прошёл. Правка текста и смена предмета молчат.</p>
           {hw.done && (
             <p className="flex items-center gap-1 text-[12px] text-dim">
               <Undo2 className="size-3" /> Отметка «сделано» останется твоей личной
