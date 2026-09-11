@@ -77,4 +77,51 @@ const serwist = new Serwist({
   },
 });
 
+/**
+ * Пуш-уведомления (Web Push). На iPhone это работает только у приложения, поставленного на «Домой», и только с iOS 16.4.
+ * Показать уведомление обязаны всегда: iOS отзывает разрешение у приложения, которое получило пуш и промолчало.
+ * Поэтому при кривом или пустом payload показываем нейтральный текст, а не выходим молча.
+ */
+type PushBody = { title?: string; body?: string; url?: string; tag?: string };
+
+self.addEventListener("push", (event) => {
+  let data: PushBody = {};
+  try {
+    data = (event.data?.json() as PushBody) ?? {};
+  } catch {
+    const text = event.data?.text();
+    if (text) data = { body: text };
+  }
+  const title = data.title || "Raspison";
+  const url = typeof data.url === "string" && data.url.startsWith("/") ? data.url : "/";
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body: data.body || "Что-то новое в группе",
+      icon: "/icons/icon-192.png",
+      badge: "/icons/icon-192.png",
+      tag: data.tag || "raspison",
+      data: { url },
+    }),
+  );
+});
+
+/** Тап по уведомлению: открытую вкладку приложения переиспользуем (на iPhone она обычно уже есть), иначе открываем новую. */
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const data = event.notification.data as { url?: string } | undefined;
+  const url = typeof data?.url === "string" && data.url.startsWith("/") ? data.url : "/";
+  event.waitUntil(
+    (async () => {
+      const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const client of clients) {
+        if (new URL(client.url).origin !== self.location.origin) continue;
+        await client.focus();
+        if ("navigate" in client) await client.navigate(url).catch(() => {});
+        return;
+      }
+      await self.clients.openWindow(url);
+    })(),
+  );
+});
+
 serwist.addEventListeners();

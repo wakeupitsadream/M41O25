@@ -398,6 +398,32 @@ export const anonQuota = pgTable(
   (t) => [primaryKey({ columns: [t.keyHash, t.day] })],
 );
 
+/**
+ * Подписки на пуши (Web Push, VAPID). Одна строка — одно устройство: endpoint уникален, ключи шифрования
+ * приходят от браузера. На iPhone подписка живёт только у установленной PWA и умирает при удалении иконки —
+ * поэтому мёртвые (404/410 от push-сервиса) удаляем сразу, а подозрительные копим в fail_count и чистит cron.
+ * topics — что этому устройству слать; массив вместо трёх колонок, чтобы новый вид уведомлений не требовал миграции.
+ */
+export const pushSubscriptions = pgTable(
+  "push_subscriptions",
+  {
+    id: id(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    endpoint: text("endpoint").notNull(),
+    p256dh: text("p256dh").notNull(),
+    auth: text("auth").notNull(),
+    userAgent: text("user_agent"),
+    topics: text("topics").array().notNull().default(sql`'{news,questions,polls}'::text[]`),
+    lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
+    failCount: integer("fail_count").notNull().default(0),
+    lastError: text("last_error"),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex("push_subscriptions_endpoint_idx").on(t.endpoint), index("push_subscriptions_user_idx").on(t.userId)],
+);
+
 export const reactions = pgTable(
   "reactions",
   {
@@ -492,6 +518,7 @@ export type Lesson = typeof lessons.$inferSelect;
 export type Homework = typeof homework.$inferSelect;
 export type LessonKind = (typeof lessonKindEnum.enumValues)[number];
 export type Role = (typeof roleEnum.enumValues)[number];
+export type PushSubscriptionRow = typeof pushSubscriptions.$inferSelect;
 
 /** Ошибки серверного рендера и роутов (instrumentation.ts → onRequestError): у Vercel Hobby логи живут около часа. */
 export const appErrors = pgTable(

@@ -5,6 +5,18 @@ export const env = {
   cronSecret: process.env.CRON_SECRET ?? "",
   /** healthchecks.io (или аналог): cron пингует после каждого запуска, /fail — при ошибке. */
   healthcheckUrl: process.env.HEALTHCHECK_URL ?? "",
+  /**
+   * Web Push (VAPID). Публичный ключ нужен и клиенту (NEXT_PUBLIC_), приватный — только серверу.
+   * Ключей нет → пуши выключены целиком: подписка не предлагается, отправка молча пропускается.
+   */
+  push: {
+    publicKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "",
+    privateKey: process.env.VAPID_PRIVATE_KEY ?? "",
+    subject: process.env.VAPID_SUBJECT ?? "",
+    get configured() {
+      return Boolean(this.publicKey && this.privateKey && this.subject);
+    },
+  },
   polza: {
     apiKey: process.env.POLZA_API_KEY ?? "",
     baseUrl: process.env.POLZA_BASE_URL ?? "https://polza.ai/api/v1",

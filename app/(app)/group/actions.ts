@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { createHmac } from "node:crypto";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { homework } from "@/lib/db/schema";
@@ -14,6 +15,8 @@ import { parseLocalDateTime, todayIso } from "@/lib/tz";
 import { env } from "@/lib/env";
 import { fail, ok, type ActionResult } from "@/lib/utils";
 import { wrapAction } from "@/lib/actions";
+import { pushAuthorName } from "@/lib/push/format";
+import { notifyQuietly } from "@/lib/push/send";
 import type { FormState } from "@/lib/form";
 
 const iso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -77,6 +80,8 @@ export async function createNews(input: z.infer<typeof newsSchema>): Promise<Act
       return n;
     });
     bump("/group/news");
+    // Пуш — после ответа: новость уже создана, и упавшая рассылка её не отменяет и не задерживает.
+    after(() => notifyQuietly({ kind: "news", author: pushAuthorName(user), title: d.title || null, body: d.body }, { groupId: user.groupId, exceptUserId: user.id }));
     return ok({ id: row.id });
   });
 }
@@ -193,6 +198,7 @@ export async function createPoll(input: z.infer<typeof pollSchema>): Promise<Act
       return p;
     });
     bump("/group/polls");
+    after(() => notifyQuietly({ kind: "poll", author: pushAuthorName(user), question: d.question }, { groupId: user.groupId, exceptUserId: user.id }));
     return ok({ id: row.id });
   });
 }
@@ -339,6 +345,8 @@ export async function askAnon(body: string): Promise<ActionResult> {
     const [row] = await db.insert(anonQuestions).values({ groupId: user.groupId, body: text, createdAt: rounded }).returning({ id: anonQuestions.id });
     await db.insert(activity).values({ groupId: user.groupId, eventType: "anon_question", entityType: "anon_question", entityId: row.id, actorId: null, payload: {}, createdAt: rounded });
     bump("/group/questions");
+    // exceptUserId нет намеренно: пуш приходит всем, включая спросившего. Исключение автора выдало бы его.
+    after(() => notifyQuietly({ kind: "anon_question", body: text }, { groupId: user.groupId, exceptUserId: null }));
     return ok();
   });
 }
@@ -354,6 +362,7 @@ export async function answerAnon(id: string, body: string): Promise<ActionResult
       .where(and(eq(anonQuestions.id, id), eq(anonQuestions.groupId, user.groupId)));
     await log(user.groupId, "anon_answered", "anon_question", id, user.id, { text: text.slice(0, 80) });
     bump("/group/questions");
+    after(() => notifyQuietly({ kind: "anon_answer", author: pushAuthorName(user), body: text }, { groupId: user.groupId, exceptUserId: user.id }));
     return ok();
   });
 }
