@@ -59,7 +59,8 @@ export function buildNotification(event: PushEvent): PushPayload {
     case "anon_question":
       return { title: "Анонимный вопрос", body: snippet(event.body), url: "/group/questions", tag: "questions" };
     case "anon_answer":
-      return { title: `${event.author} ответил на вопрос`, body: snippet(event.body), url: "/group/questions", tag: "questions" };
+      // Без «ответил/ответила»: пола в профиле нет, а половине группы такой заголовок был бы неверен.
+      return { title: `Ответ от ${genitiveName(event.author)}`, body: snippet(event.body), url: "/group/questions", tag: "questions" };
     case "poll":
       return { title: `Опрос от ${genitiveName(event.author)}`, body: snippet(event.question), url: "/group/polls", tag: "polls" };
   }

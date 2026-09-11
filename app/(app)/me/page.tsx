@@ -21,7 +21,11 @@ export const metadata = { title: "Профиль" };
 export default async function MePage() {
   const user = await requireUser();
   // Темы уведомлений одинаковые на всех устройствах человека — берём из любой его подписки.
-  const [sub] = await db.select({ topics: pushSubscriptions.topics }).from(pushSubscriptions).where(eq(pushSubscriptions.userId, user.id)).limit(1);
+  // Без ключей VAPID строку вообще не показываем: 21 человеку нечего делать с «напиши админу».
+  const push = env.push.configured;
+  const [sub] = push
+    ? await db.select({ topics: pushSubscriptions.topics }).from(pushSubscriptions).where(eq(pushSubscriptions.userId, user.id)).limit(1)
+    : [];
   const topics = sub ? normalizeTopics(sub.topics) : DEFAULT_TOPICS;
   return (
     <>
@@ -87,7 +91,7 @@ export default async function MePage() {
           </ActionForm>
         </Card>
 
-        <PushSwitch vapidPublicKey={env.push.publicKey} topics={topics} />
+        {push && <PushSwitch vapidPublicKey={env.push.publicKey} topics={topics} />}
 
         <HwDoneSwitch value={user.showHwDone} />
 

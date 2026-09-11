@@ -30,7 +30,8 @@ export async function toggleShowHwDone(next: boolean): Promise<ActionResult> {
 // ---------- Пуш-уведомления ----------
 
 const subscriptionSchema = z.object({
-  endpoint: z.string().url().max(1000),
+  // Только https: endpoint приходит с клиента, и слать зашифрованный payload по произвольному http-адресу незачем.
+  endpoint: z.string().url().max(1000).refine((u) => u.startsWith("https://"), "endpoint должен быть https"),
   p256dh: z.string().min(8).max(300),
   auth: z.string().min(4).max(200),
   topics: z.array(z.string()).max(20).optional(),

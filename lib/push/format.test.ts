@@ -40,6 +40,8 @@ test("анонимный вопрос: в заголовке нет имени",
 
 test("ответ на вопрос и опрос ведут на свои экраны", () => {
   strictEqual(buildNotification({ kind: "anon_answer", author: "Максим", body: "В пятницу" }).url, "/group/questions");
+  // Заголовок не должен угадывать пол: «Аня ответил» и «Аня ответила» одинаково плохи, пола в профиле нет.
+  strictEqual(buildNotification({ kind: "anon_answer", author: "Аня", body: "В пятницу" }).title, "Ответ от Ани");
   strictEqual(buildNotification({ kind: "poll", author: "Максим", question: "Идём в кино?" }).url, "/group/polls");
   strictEqual(buildNotification({ kind: "poll", author: "Максим", question: "Идём в кино?" }).title, "Опрос от Максима");
 });
