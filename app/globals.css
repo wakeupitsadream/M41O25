@@ -9,7 +9,8 @@
   --color-border-strong: #34343f;
   --color-fg: #f4f4f6;
   --color-muted: #9c9ca8;
-  --color-dim: #62626e;
+  /* #62626e давал 3.3:1 на фоне — мелкие подписи на iPhone читались с трудом; #82828e это 4.5:1 (AA). */
+  --color-dim: #82828e;
   --color-accent: #c8ff2e;
   --color-accent-press: #a8db1f;
   --color-accent-ink: #0a0a0e;
@@ -38,54 +39,62 @@
   --tabbar-h: 4.25rem;
 }
 
-html,
-body {
-  height: 100%;
-}
+/*
+ * Всё базовое — внутри @layer base. Правило вне слоёв побеждает любой слой независимо
+ * от специфичности, а утилиты Tailwind живут в @layer utilities: неслоёный
+ * `button { color: inherit }` съедал `text-accent-ink` и текст на лаймовых кнопках
+ * становился белым. В слое base порядок обычный: utilities > base.
+ */
+@layer base {
+  html,
+  body {
+    height: 100%;
+  }
 
-html {
-  background: var(--color-bg);
-  -webkit-text-size-adjust: 100%;
-  -webkit-tap-highlight-color: transparent;
-  overscroll-behavior-y: none;
-}
+  html {
+    background: var(--color-bg);
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
 
-body {
-  background: var(--color-bg);
-  color: var(--color-fg);
-  font-family: var(--font-sans);
-  font-feature-settings: "cv11", "ss01", "tnum" 0;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  min-height: 100dvh;
-}
+  body {
+    background: var(--color-bg);
+    color: var(--color-fg);
+    font-family: var(--font-sans);
+    font-feature-settings: "cv11", "ss01", "tnum" 0;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100dvh;
+  }
 
-/* Долгое нажатие подавляем только на кнопках и drag-списках: телефон из контактов и фото должны копироваться/сохраняться. */
-button,
-[role="button"],
-[data-drag] {
-  -webkit-touch-callout: none;
-}
-a,
-img {
-  -webkit-touch-callout: default;
-}
+  /* Долгое нажатие подавляем только на кнопках и drag-списках: телефон из контактов и фото должны копироваться/сохраняться. */
+  button,
+  [role="button"],
+  [data-drag] {
+    -webkit-touch-callout: none;
+  }
+  a,
+  img {
+    -webkit-touch-callout: default;
+  }
 
-input,
-textarea,
-button {
-  font: inherit;
-  color: inherit;
-}
+  input,
+  textarea,
+  button {
+    font: inherit;
+    color: inherit;
+  }
 
-input,
-textarea {
-  -webkit-user-select: text;
-  user-select: text;
-}
+  input,
+  textarea {
+    -webkit-user-select: text;
+    user-select: text;
+  }
 
-::selection {
-  background: rgba(200, 255, 46, 0.25);
+  ::selection {
+    background: rgba(200, 255, 46, 0.25);
+  }
 }
 
 @utility font-display {
