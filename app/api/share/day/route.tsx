@@ -55,7 +55,7 @@ export async function GET(req: Request) {
             <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 28, background: "#141419", borderRadius: 28, padding: "26px 32px", border: "1px solid #26262F" }}>
               <div style={{ display: "flex", flexDirection: "column", width: 150 }}>
                 <div style={{ fontSize: 40, fontWeight: 700 }}>{l.startsAt}</div>
-                <div style={{ fontSize: 26, color: "#62626E" }}>{l.endsAt}</div>
+                <div style={{ fontSize: 26, color: "#82828E" }}>{l.endsAt}</div>
               </div>
               <div style={{ width: 8, height: 88, borderRadius: 4, background: l.subjectColor ?? "#9C9CA8" }} />
               <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
@@ -68,7 +68,7 @@ export async function GET(req: Request) {
           ))}
         </div>
 
-        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 26, color: "#62626E" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 26, color: "#82828E" }}>
           <div>{lessons.length ? `${lessons.length} ${lessons.length === 1 ? "пара" : lessons.length < 5 ? "пары" : "пар"} · ${lessons[0].startsAt}–${lessons[lessons.length - 1].endsAt}` : ""}</div>
           <div>расписание группы</div>
         </div>

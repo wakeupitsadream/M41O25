@@ -12,40 +12,51 @@ type Person = { id: string; fullName: string; avatarEmoji: string; color: string
 
 /**
  * «Кто отвечает»: барабан крутит аватарки и замедляется на случайном человеке.
- * Режим «без повторов» убирает уже выбранных до конца сессии страницы.
+ * Режим «без повторов» убирает уже выбранных до конца сессии страницы; выключение режима
+ * и кнопка сброса возвращают всех обратно.
  */
 export function Roulette({ people }: { people: Person[] }) {
   const [pool, setPool] = useState(people);
   const [noRepeat, setNoRepeat] = useState(true);
-  const [current, setCurrent] = useState<number>(0);
+  // Тумблер можно переключить прямо во время кручения — барабан читает актуальное значение, а не то, что было на старте.
+  const noRepeatRef = useRef(noRepeat);
+  // Храним самого человека, а не индекс: пул после победы уменьшается, и индекс начинал показывать соседа.
+  const [shown, setShown] = useState<Person | null>(people[0] ?? null);
   const [spinning, setSpinning] = useState(false);
   const [winner, setWinner] = useState<Person | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  const stop = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+  };
+
+  useEffect(() => stop, []);
 
   const spin = () => {
     if (spinning || pool.length === 0) return;
+    const round = pool;
     setWinner(null);
     setSpinning(true);
-    const target = Math.floor(Math.random() * pool.length);
-    const totalSteps = pool.length * 2 + 8 + Math.floor(Math.random() * pool.length);
+    const target = Math.floor(Math.random() * round.length);
+    const totalSteps = round.length * 2 + 8 + Math.floor(Math.random() * round.length);
     let step = 0;
-    let idx = current;
+    let idx = Math.max(0, round.findIndex((p) => p.id === shown?.id));
     const tick = () => {
-      idx = (idx + 1) % pool.length;
-      setCurrent(idx);
+      idx = (idx + 1) % round.length;
+      const person = round[idx];
+      setShown(person);
       step++;
       const remaining = totalSteps - step;
       if (remaining <= 0 && idx === target) {
+        stop();
         setSpinning(false);
-        const w = pool[idx];
-        setWinner(w);
+        setWinner(person);
         try { navigator.vibrate?.([30, 40, 80]); } catch {}
         void import("canvas-confetti").then(({ default: confetti }) =>
-          confetti({ particleCount: 60, spread: 70, origin: { y: 0.55 }, colors: ["#C8FF2E", "#F4F4F6", w.color] }),
+          confetti({ particleCount: 60, spread: 70, origin: { y: 0.55 }, colors: ["#C8FF2E", "#F4F4F6", person.color] }),
         );
-        if (noRepeat) setPool((p) => p.filter((x) => x.id !== w.id));
+        if (noRepeatRef.current) setPool((p) => p.filter((x) => x.id !== person.id));
         return;
       }
       // Ускорение → плавное замедление к концу
@@ -56,7 +67,23 @@ export function Roulette({ people }: { people: Person[] }) {
     tick();
   };
 
-  const shown = pool[current % Math.max(1, pool.length)];
+  const reset = () => {
+    stop();
+    setSpinning(false);
+    setPool(people);
+    setWinner(null);
+    setShown(people[0] ?? null);
+  };
+
+  // Выключили «без повторов» — возвращаем всех: иначе тумблер обещает повторы, а крутится урезанный список.
+  const toggleNoRepeat = () => {
+    const next = !noRepeat;
+    noRepeatRef.current = next;
+    setNoRepeat(next);
+    if (!next) setPool(people);
+  };
+
+  const empty = pool.length === 0;
 
   return (
     <div className="space-y-6">
@@ -78,7 +105,7 @@ export function Roulette({ people }: { people: Person[] }) {
           ) : (
             <div className="text-center text-muted">
               <div className="text-4xl">🏁</div>
-              <div className="mt-2 text-[14px]">Все уже отвечали</div>
+              <div className="mt-2 text-[14px]">Некого крутить</div>
             </div>
           )}
         </AnimatePresence>
@@ -91,10 +118,10 @@ export function Roulette({ people }: { people: Person[] }) {
       )}
 
       <div className="flex gap-2">
-        <Button size="lg" className="flex-1" disabled={spinning || pool.length === 0} onClick={spin}>
-          <Dices className="size-5" /> {winner ? "Ещё раз" : "Крутить"}
+        <Button size="lg" className="flex-1" disabled={spinning || empty} onClick={spin}>
+          <Dices className="size-5" /> {empty ? "Все отвечали" : winner ? "Ещё раз" : "Крутить"}
         </Button>
-        <Button size="lg" variant="secondary" aria-label="Сбросить" onClick={() => { setPool(people); setWinner(null); }}>
+        <Button size="lg" variant="secondary" aria-label="Сбросить" onClick={reset}>
           <RotateCcw className="size-5" />
         </Button>
       </div>
@@ -103,13 +130,15 @@ export function Roulette({ people }: { people: Person[] }) {
         type="button"
         role="switch"
         aria-checked={noRepeat}
-        onClick={() => setNoRepeat((v) => !v)}
+        onClick={toggleNoRepeat}
         className={cn("flex min-h-11 w-full items-center gap-3 rounded-md px-3.5 py-2 text-left text-[14px] hairline", noRepeat ? "bg-accent/15 text-accent" : "bg-surface-2 text-muted")}
       >
         <UserMinus className="size-4 shrink-0" />
         <span className="min-w-0 flex-1">
           <span className="block">Без повторов</span>
-          <span className="block text-[12px] text-muted">осталось {pool.length} из {people.length}</span>
+          <span className="block text-[12px] text-muted">
+            {noRepeat ? `осталось ${pool.length} из ${people.length}` : "повторы разрешены"}
+          </span>
         </span>
         <Switch checked={noRepeat} />
       </button>

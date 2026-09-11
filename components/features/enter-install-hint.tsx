@@ -67,7 +67,7 @@ export function EnterInstallHint() {
         <p className="mt-1 text-[13px] leading-relaxed text-muted">
           Ссылка открылась внутри другого приложения, отсюда Raspison на экран не поставить. Нажми «⋯» или «Поделиться» → «Открыть в {ios ? "Safari" : "браузере"}», потом вернись к коду.
         </p>
-        <button type="button" onClick={skip} className="mt-3 text-[13px] font-medium text-muted underline-offset-4 hover:underline">
+        <button type="button" onClick={skip} className="mt-1 inline-flex min-h-11 items-center text-[14px] font-medium text-fg underline underline-offset-4">
           Просто войти здесь
         </button>
       </div>
@@ -98,7 +98,7 @@ export function EnterInstallHint() {
           Открой иконку Raspison и введи код там
         </li>
       </ol>
-      <button type="button" onClick={skip} className="mt-3 text-[13px] font-medium text-muted underline-offset-4 hover:underline">
+      <button type="button" onClick={skip} className="mt-1 inline-flex min-h-11 items-center text-[14px] font-medium text-fg underline underline-offset-4">
         Уже установил или хочу просто войти
       </button>
     </div>
