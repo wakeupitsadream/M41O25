@@ -74,3 +74,14 @@ export function describeHwChanges(kinds: HwChangeKind[]): string {
   if (labels.length <= 1) return labels[0] ?? "";
   return `${labels.slice(0, -1).join(", ")} и ${labels[labels.length - 1]}`;
 }
+
+/**
+ * Будить ли группу пушем после правки записи ДЗ. Единственный повод — сдвинутый дедлайн: планы поменялись у всех,
+ * а открыть приложение до вечера успеют не все. Смена предмета и правка текста видны в ленте, двадцати телефонов
+ * они не стоят; опечатка не доходит и сюда — её отсеивает hwChangeKinds.
+ * Перенос в прошлое молчит: это либо опечатка в дате, либо уборка старой записи, и ни то, ни другое не новость.
+ * `today` передаёт вызывающий — на сервере только из lib/tz (правило проекта «Время»), чтобы функция осталась
+ * чистой и проверяемой.
+ */
+export const shouldNotifyDueMoved = (kinds: HwChangeKind[], dueDate: string, today: string): boolean =>
+  kinds.includes("dueDate") && dueDate >= today;

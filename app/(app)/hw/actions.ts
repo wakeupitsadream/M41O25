@@ -11,7 +11,7 @@ import { actionUser, hasRole } from "@/lib/auth";
 import { assertRate } from "@/lib/rate-limit";
 import { storage } from "@/lib/storage";
 import { startOfDayTz, todayIso } from "@/lib/tz";
-import { describeHwChanges, hwChangeKinds, type HwChangeKind } from "@/lib/hw/changes";
+import { describeHwChanges, hwChangeKinds, shouldNotifyDueMoved, type HwChangeKind } from "@/lib/hw/changes";
 import { dedupSince, findRecentDuplicate } from "@/lib/hw/draft";
 import { matchLesson, resolveLessonId } from "@/lib/hw/query";
 import { pushAuthorName } from "@/lib/push/format";
@@ -159,16 +159,21 @@ export async function updateHomework(id: string, input: z.infer<typeof updateSch
     const [hw] = await db.select().from(homework).where(and(eq(homework.id, id), eq(homework.groupId, user.groupId), isNull(homework.deletedAt)));
     if (!hw) return fail("Запись не найдена");
     if (hw.createdBy !== user.id && !hasRole(user, "admin")) return fail("Менять оригинал может автор или админ. Чужое — дополни блоком.");
+    // Правка — такое же шумное действие, как создание: перенос дедлайна будит всю группу. Тот же часовой лимит,
+    // что у createHomework; старосту и админа он не трогает (lib/rate-limit.ts) — им правки нужны массово.
+    // Границу этого лимита см. там же: правки ОДНОЙ записи за сутки сливаются в одно событие ленты, поэтому
+    // «дата туда-сюда у одной записи» счётчиком почти не ловится. Дыра прикрыта частично, а не закрыта.
+    await assertRate(user);
     const d = parsed.data;
 
     const before = { title: hw.title, body: hw.body, dueDate: hw.dueDate, subjectId: hw.subjectId };
-    const after = { title: d.title || null, body: d.body, dueDate: d.dueDate, subjectId: d.subjectId };
-    const kinds = hwChangeKinds(before, after);
+    const next = { title: d.title || null, body: d.body, dueDate: d.dueDate, subjectId: d.subjectId };
+    const kinds = hwChangeKinds(before, next);
     // Привязка к паре пересчитывается, если сменились предмет или дедлайн (или её ещё не было).
     const lessonId = kinds.includes("subject") || kinds.includes("dueDate") || !hw.lessonId ? await matchLesson(user.groupId, d.subjectId, d.dueDate) : hw.lessonId;
 
     await db.transaction(async (tx) => {
-      await tx.update(homework).set({ ...after, lessonId, updatedAt: new Date() }).where(eq(homework.id, id));
+      await tx.update(homework).set({ ...next, lessonId, updatedAt: new Date() }).where(eq(homework.id, id));
       // Лента: только существенные правки (lib/hw/changes.ts) и не чаще раза в день на запись — сутки в поясе группы.
       // Если запись сегодня уже появлялась в ленте (добавлена или изменена), обновляем то событие, а не плодим новое.
       if (kinds.length === 0) return;
@@ -178,7 +183,7 @@ export async function updateHomework(id: string, input: z.infer<typeof updateSch
         .where(and(eq(activity.entityType, "homework"), eq(activity.entityId, id), inArray(activity.eventType, ["hw_added", "hw_updated"])))
         .orderBy(desc(activity.createdAt))
         .limit(1);
-      const head = { title: after.title || after.body.slice(0, 80), dueDate: after.dueDate, subjectId: after.subjectId, lessonId };
+      const head = { title: next.title || next.body.slice(0, 80), dueDate: next.dueDate, subjectId: next.subjectId, lessonId };
       // Сливаем только в СВОЁ сегодняшнее событие правки: иначе правка подменяет чужую строку ленты (и «Аня добавила»
       // остаётся автором), а при обновлении без сдвига createdAt те, кто уже открывал ленту, изменение не увидят вовсе.
       if (last && last.eventType === "hw_updated" && last.actorId === user.id && last.createdAt >= startOfDayTz(todayIso())) {
@@ -200,6 +205,20 @@ export async function updateHomework(id: string, input: z.infer<typeof updateSch
       });
     });
     bump(id);
+    // Кого будить и за что — решает shouldNotifyDueMoved (lib/hw/changes.ts), здесь условие не дублируется.
+    // Подавления повторов внутри лимита нет: подвинули дедлайн три раза — уйдут три пуша. Неверная дата на телефоне
+    // дороже лишнего звонка, а «последний пуш выиграл» — ровно то поведение, которое нужно.
+    if (shouldNotifyDueMoved(kinds, d.dueDate, todayIso())) {
+      after(async () => {
+        // Без ключей VAPID рассылать некому, а лишний SELECT по предметам уходил бы после каждой правки.
+        if (!pushConfigured()) return;
+        const subject = d.subjectId ? await subjectLabel(d.subjectId) : null;
+        await notifyQuietly(
+          { kind: "hw_due_moved", id, author: pushAuthorName(user), subject, prevDueDate: before.dueDate, dueDate: d.dueDate },
+          { groupId: user.groupId, exceptUserId: user.id },
+        );
+      });
+    }
     return ok();
   });
 }

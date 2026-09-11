@@ -382,6 +382,7 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
             Сохранить
           </Button>
           <p className="text-[12px] text-dim">В ленту «Что нового» попадёт только существенная правка: другой предмет, дедлайн или текст. Опечатки — нет.</p>
+          <p className="text-[12px] text-dim">Новый дедлайн ещё и разбудит группу пушем — правка текста и смена предмета молчат.</p>
           {hw.done && (
             <p className="flex items-center gap-1 text-[12px] text-dim">
               <Undo2 className="size-3" /> Отметка «сделано» останется твоей личной

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { describeHwChanges, editDistance, hwChangeKinds, isSubstantialHwChange, normalizeHwText, TYPO_EDIT_DISTANCE, type HwEssentials } from "./changes";
+import { describeHwChanges, editDistance, hwChangeKinds, isSubstantialHwChange, normalizeHwText, shouldNotifyDueMoved, TYPO_EDIT_DISTANCE, type HwEssentials } from "./changes";
 
 const base: HwEssentials = { title: null, body: "№ 214–220, стр. 48. Сдать письменно, проверка на паре.", dueDate: "2026-09-11", subjectId: "m" };
 const with_ = (over: Partial<HwEssentials>): HwEssentials => ({ ...base, ...over });
@@ -63,4 +63,37 @@ test("исчезнувшее отрицание — существенная п�
   assert.deepEqual(hwChangeKinds(hw("Конспект нужен"), hw("Конспект не нужен")), ["text"]);
   // Обычная опечатка того же размера по-прежнему не событие.
   assert.deepEqual(hwChangeKinds(hw("Прочитать параграф"), hw("Прочитать параграф")), []);
+});
+
+// --- Кого будить пушем после правки (shouldNotifyDueMoved) ---
+
+const TODAY = "2026-09-11";
+/** Как это считает updateHomework: сначала что изменилось, потом — будить ли группу. */
+const wouldPush = (before: HwEssentials, after: HwEssentials, today = TODAY) => shouldNotifyDueMoved(hwChangeKinds(before, after), after.dueDate, today);
+
+test("пуш после правки: только правка текста или предмета группу не будит", () => {
+  assert.equal(wouldPush(base, with_({ body: base.body.replace("письменно", "устно у доски") })), false);
+  assert.equal(wouldPush(base, with_({ title: "Контрольная" })), false);
+  assert.equal(wouldPush(base, with_({ subjectId: "e" })), false);
+  // Правка ни на что не повлияла — тем более молчим.
+  assert.equal(wouldPush(base, base), false);
+});
+
+test("пуш после правки: сдвинутый дедлайн будит, в том числе вместе с текстом", () => {
+  assert.equal(wouldPush(base, with_({ dueDate: "2026-09-18" })), true);
+  assert.equal(wouldPush(base, with_({ dueDate: "2026-09-18", body: "Совсем другое задание" })), true);
+  // Перенос на сегодня — тоже новость: дедлайн стал ближе некуда.
+  assert.equal(wouldPush(with_({ dueDate: "2026-09-18" }), with_({ dueDate: TODAY })), true);
+});
+
+test("пуш после правки: опечатка при том же дедлайне не будит", () => {
+  assert.equal(wouldPush(base, with_({ body: base.body.replace("письменно", "письмено") })), false);
+  assert.equal(wouldPush(base, with_({ body: base.body.toUpperCase() })), false);
+});
+
+test("пуш после правки: перенос в прошлое не будит — это опечатка или уборка старой записи", () => {
+  assert.equal(wouldPush(with_({ dueDate: "2026-09-18" }), with_({ dueDate: "2026-09-10" })), false);
+  assert.equal(wouldPush(with_({ dueDate: "2026-09-18" }), with_({ dueDate: "2025-12-31" })), false);
+  // Дата в прошлом молчит и вместе с существенной правкой текста.
+  assert.equal(wouldPush(with_({ dueDate: "2026-09-18" }), with_({ dueDate: "2026-09-01", body: "Совсем другое задание" })), false);
 });

@@ -1,6 +1,6 @@
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { test } from "node:test";
-import { buildNotification, dueDateLabel, genitiveName, joinSentence, pushAuthorName, snippet, topicOf } from "@/lib/push/format";
+import { buildNotification, dueDateLabel, genitiveName, joinAuthor, joinSentence, pushAuthorName, snippet, topicOf } from "@/lib/push/format";
 
 test("snippet: короткий текст остаётся как есть, переносы схлопываются", () => {
   strictEqual(snippet("  Завтра\n\nпары нет  "), "Завтра пары нет");
@@ -135,10 +135,129 @@ test("домашка: заголовок записи со знаком не у�
   strictEqual(dot.body, "Максим: Контрольная. Повторить главы 1–3");
 });
 
+test("перенос дедлайна: в заголовке новая дата и предмет, в теле — автор и старая", () => {
+  const n = buildNotification({ kind: "hw_due_moved", id: "h8", author: "Максим", subject: "Матан", prevDueDate: "2026-09-18", dueDate: "2026-09-16" });
+  // Тот же порядок, что у «Задали к 15 сентября: Матан», и такой же безличный глагол: пола в профиле нет.
+  strictEqual(n.title, "Перенесли на 16 сентября: Матан");
+  strictEqual(n.body, "Максим. Было 18 сентября");
+  strictEqual(n.url, "/hw/h8");
+  // Тег свой не ради экрана блокировки: send.ts дописывает к тегу время отправки, и затирания не бывает ни при
+  // каком теге. Тег — вид события, «Перенесли» и «Задали» не смешиваем.
+  strictEqual(n.tag, "homework-due");
+  strictEqual(topicOf("hw_due_moved"), "homework");
+});
+
+test("перенос дедлайна: без предмета заголовок всё равно осмысленный", () => {
+  const n = buildNotification({ kind: "hw_due_moved", id: "h9", author: "Аня", subject: null, prevDueDate: "2026-09-01", dueDate: "2026-10-05" });
+  strictEqual(n.title, "Перенесли на 5 октября");
+  strictEqual(n.body, "Аня. Было 1 сентября");
+  // Пустое короткое название предмета — то же самое, что его отсутствие.
+  for (const subject of ["", "   "]) {
+    strictEqual(
+      buildNotification({ kind: "hw_due_moved", id: "h9", author: "Аня", subject, prevDueDate: "2026-09-01", dueDate: "2026-10-05" }).title,
+      "Перенесли на 5 октября",
+      JSON.stringify(subject),
+    );
+  }
+});
+
+test("перенос дедлайна внутри года: и вперёд, и ближе, и без года в тексте", () => {
+  const later = buildNotification({ kind: "hw_due_moved", id: "h10", author: "Максим", subject: "Матан", prevDueDate: "2026-09-15", dueDate: "2026-09-22" });
+  strictEqual(later.title, "Перенесли на 22 сентября: Матан");
+  strictEqual(later.body, "Максим. Было 15 сентября");
+  const earlier = buildNotification({ kind: "hw_due_moved", id: "h10", author: "Максим", subject: "Матан", prevDueDate: "2026-09-15", dueDate: "2026-09-09" });
+  strictEqual(earlier.title, "Перенесли на 9 сентября: Матан");
+  strictEqual(earlier.body, "Максим. Было 15 сентября");
+  // Год у обеих дат один — печатать его незачем, в дедлайне ближайших недель он только шум.
+  for (const n of [later, earlier]) strictEqual(`${n.title} ${n.body}`.includes("2026"), false, n.title);
+});
+
+test("перенос дедлайна через Новый год: год виден у обеих дат, в обе стороны", () => {
+  // Без года «Перенесли на 3 января. Было 28 декабря» читается как перенос на девять месяцев НАЗАД, хотя срок
+  // сдвинули на неделю вперёд. Обе даты на руках, поэтому сравнение чистое и «сегодня» для него не нужно.
+  const forward = buildNotification({ kind: "hw_due_moved", id: "h13", author: "Максим", subject: "Матан", prevDueDate: "2026-12-28", dueDate: "2027-01-03" });
+  strictEqual(forward.title, "Перенесли на 3 января 2027: Матан");
+  strictEqual(forward.body, "Максим. Было 28 декабря 2026");
+  // Назад — ровно так же: год нужен обеим датам, иначе «Перенесли на 28 декабря. Было 3 января».
+  const back = buildNotification({ kind: "hw_due_moved", id: "h13", author: "Максим", subject: "Матан", prevDueDate: "2027-01-03", dueDate: "2026-12-28" });
+  strictEqual(back.title, "Перенесли на 28 декабря 2026: Матан");
+  strictEqual(back.body, "Максим. Было 3 января 2027");
+});
+
+test("перенос дедлайна на тот же день другого года: две одинаковые даты больше не выходят", () => {
+  const n = buildNotification({ kind: "hw_due_moved", id: "h14", author: "Максим", subject: null, prevDueDate: "2026-09-15", dueDate: "2027-09-15" });
+  strictEqual(n.title, "Перенесли на 15 сентября 2027");
+  strictEqual(n.body, "Максим. Было 15 сентября 2026");
+});
+
+test("перенос дедлайна на ту же дату: «Было» не повторяет новую дату", () => {
+  // Сервер такой пуш слать не должен — переносить не на что. Но если событие всё же соберут, текст не ломается:
+  // «Перенесли на 15 сентября. Было 15 сентября» выглядит сбоем, а сказать тут просто нечего — остаётся имя.
+  const n = buildNotification({ kind: "hw_due_moved", id: "h15", author: "Максим", subject: "Матан", prevDueDate: "2026-09-15", dueDate: "2026-09-15" });
+  strictEqual(n.title, "Перенесли на 15 сентября: Матан");
+  strictEqual(n.body, "Максим");
+});
+
+test("перенос дедлайна: имя автора остаётся при любом нике", () => {
+  const body = (author: string) =>
+    buildNotification({ kind: "hw_due_moved", id: "h16", author, subject: null, prevDueDate: "2026-09-15", dueDate: "2026-09-17" }).body;
+  strictEqual(body("Максим"), "Максим. Было 15 сентября");
+  // Ник пишет человек, «Батут!» встречается: пунктуацию не удваиваем.
+  strictEqual(body("Батут!"), "Батут! Было 15 сентября");
+  // Ник без букв и цифр — тоже имя. Через joinSentence он считался бы отсутствующим заголовком, и автор молча
+  // исчезал бы из тела, а больше его в этом уведомлении нет нигде.
+  strictEqual(body("🔥"), "🔥. Было 15 сентября");
+  strictEqual(body("!!!"), "!!! Было 15 сентября");
+  // Пробелы по краям ника до экрана блокировки не доезжают.
+  strictEqual(body("  Батут "), "Батут. Было 15 сентября");
+});
+
+test("склейка имени: имя — не заголовок, из одних знаков оно остаётся", () => {
+  // HAS_WORD_CHAR — правило для заголовка ЗАПИСИ: «.» там означает отсутствие заголовка. К имени оно неприменимо.
+  strictEqual(joinSentence("🔥", "Было 15 сентября"), "Было 15 сентября");
+  strictEqual(joinAuthor("🔥", "Было 15 сентября"), "🔥. Было 15 сентября");
+  strictEqual(joinAuthor("Максим", "Было 15 сентября"), "Максим. Было 15 сентября");
+  strictEqual(joinAuthor("Батут!", "Было 15 сентября"), "Батут! Было 15 сентября");
+  strictEqual(joinAuthor("Ну и ну…", "Было 15 сентября"), "Ну и ну… Было 15 сентября");
+  // Точка встаёт снаружи кавычек, как и у заголовка записи.
+  strictEqual(joinAuthor("«Батут»", "Было 15 сентября"), "«Батут». Было 15 сентября");
+  // Имени нет вовсе — остаётся одна фраза, без ведущей точки и пробела.
+  strictEqual(joinAuthor("", "Было 15 сентября"), "Было 15 сентября");
+  strictEqual(joinAuthor("   ", "Было 15 сентября"), "Было 15 сентября");
+});
+
+test("перенос дедлайна: новая дата влезает в 40 символов заголовка — и с годом тоже", () => {
+  const long = "Основы российской государственности";
+  const n = buildNotification({ kind: "hw_due_moved", id: "h12", author: "Максим", subject: long, prevDueDate: "2026-09-15", dueDate: "2026-09-17" });
+  strictEqual(n.title, `Перенесли на 17 сентября: ${long}`);
+  // На экране блокировки iPhone видно около 40 символов заголовка: обрезаться должен хвост названия предмета,
+  // но не дата. «Перенесли на » — 13 символов, самая длинная дата с годом («30 сентября 2026») — 16, запас есть.
+  strictEqual(n.title.slice(0, 40).includes("17 сентября"), true, n.title.slice(0, 40));
+  const withYear = buildNotification({ kind: "hw_due_moved", id: "h12", author: "Максим", subject: long, prevDueDate: "2027-01-03", dueDate: "2026-12-28" });
+  strictEqual(withYear.title.slice(0, 40).includes("28 декабря 2026"), true, withYear.title.slice(0, 40));
+  // Все месяцы в обоих режимах: год в заголовке появляется, когда годы дат разошлись.
+  for (const prev of ["2026-01-01", "2027-01-01"]) {
+    for (let m = 1; m <= 12; m++) {
+      const iso = `2026-${String(m).padStart(2, "0")}-28`;
+      const title = buildNotification({ kind: "hw_due_moved", id: "h12", author: "Максим", subject: long, prevDueDate: prev, dueDate: iso }).title;
+      const label = dueDateLabel(iso, !prev.startsWith("2026-"));
+      strictEqual(title.slice(0, 40).includes(label), true, `${title.slice(0, 40)} | ${label}`);
+    }
+  }
+});
+
 test("дедлайн: родительный падеж месяца, день без ведущего нуля", () => {
   strictEqual(dueDateLabel("2026-09-15"), "15 сентября");
   strictEqual(dueDateLabel("2026-01-05"), "5 января");
   strictEqual(dueDateLabel("2026-12-31"), "31 декабря");
+});
+
+test("дедлайн: год печатается только когда его попросили", () => {
+  strictEqual(dueDateLabel("2026-09-15", true), "15 сентября 2026");
+  strictEqual(dueDateLabel("2027-01-03", true), "3 января 2027");
+  strictEqual(dueDateLabel("2026-09-15", false), "15 сентября");
+  // Непонятная строка остаётся собой в обоих режимах: приписывать к ней год неоткуда.
+  strictEqual(dueDateLabel("завтра", true), "завтра");
 });
 
 test("дедлайн: непонятная строка возвращается как есть, а не мусором", () => {
@@ -162,8 +281,8 @@ test("ответ на вопрос и опрос ведут на свои экр
 
 test("темы событий", () => {
   deepStrictEqual(
-    (["news", "homework", "anon_question", "anon_answer", "poll"] as const).map(topicOf),
-    ["news", "homework", "questions", "questions", "polls"],
+    (["news", "homework", "hw_due_moved", "anon_question", "anon_answer", "poll"] as const).map(topicOf),
+    ["news", "homework", "homework", "questions", "questions", "polls"],
   );
 });
 
