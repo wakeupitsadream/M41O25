@@ -1,6 +1,11 @@
 import Link from "next/link";
 import { ChevronRight, LogOut, ShieldCheck } from "lucide-react";
+import { eq } from "drizzle-orm";
 import { requireUser, hasRole } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { pushSubscriptions } from "@/lib/db/schema";
+import { env } from "@/lib/env";
+import { DEFAULT_TOPICS, normalizeTopics } from "@/lib/push/topics";
 import { Avatar, PageHeader } from "@/components/ui/primitives";
 import { Card } from "@/components/ui/card";
 import { DateInput, Field, Input } from "@/components/ui/input";
@@ -9,11 +14,15 @@ import { changePin, logout, updateProfile } from "./actions";
 import { ActionForm } from "@/components/ui/action-form";
 import { InstallHint } from "@/components/features/install-hint";
 import { HwDoneSwitch } from "@/components/features/hw-done-switch";
+import { PushSwitch } from "@/components/features/push-switch";
 
 export const metadata = { title: "Профиль" };
 
 export default async function MePage() {
   const user = await requireUser();
+  // Темы уведомлений одинаковые на всех устройствах человека — берём из любой его подписки.
+  const [sub] = await db.select({ topics: pushSubscriptions.topics }).from(pushSubscriptions).where(eq(pushSubscriptions.userId, user.id)).limit(1);
+  const topics = sub ? normalizeTopics(sub.topics) : DEFAULT_TOPICS;
   return (
     <>
       <PageHeader title="Профиль" subtitle={user.group.shortName} />
@@ -77,6 +86,8 @@ export default async function MePage() {
             </SubmitButton>
           </ActionForm>
         </Card>
+
+        <PushSwitch vapidPublicKey={env.push.publicKey} topics={topics} />
 
         <HwDoneSwitch value={user.showHwDone} />
 

@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
-import { and, eq, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { anonQuota, appErrors, attachments, authAttempts, cronRuns, deviceSessions } from "@/lib/db/schema";
+import { anonQuota, appErrors, attachments, authAttempts, cronRuns, deviceSessions, pushSubscriptions } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { storage } from "@/lib/storage";
 import { buildBackup } from "@/lib/backup";
 import { orphanCutoffs, planBackup, rotateBackups, summarizeCronRun } from "@/lib/ops/health";
+import { MAX_PUSH_FAILURES } from "@/lib/push/errors";
 import { todayIso } from "@/lib/tz";
 
 export const runtime = "nodejs";
@@ -98,6 +99,13 @@ export async function GET(req: Request) {
   // 4) Журнал ошибок приложения: старше 30 дней не нужен.
   await db.delete(appErrors).where(lt(appErrors.createdAt, new Date(Date.now() - 30 * 86_400_000)));
 
+  // 5) Подписки на пуши. Мёртвые (404/410) удаляет сама отправка; сюда попадают те, что стабильно отвечают ошибкой:
+  // push-сервис их не принимает, а строка мешает — при каждой новости мы честно стучимся в стену.
+  const deadPush = await db
+    .delete(pushSubscriptions)
+    .where(gte(pushSubscriptions.failCount, MAX_PUSH_FAILURES))
+    .returning({ id: pushSubscriptions.id });
+
   const summary = summarizeCronRun({ plan, backupError, failedScanDeletes, failedOrphanDeletes });
   const body = {
     ok: summary.ok,
@@ -107,6 +115,7 @@ export async function GET(req: Request) {
     backupSkipped: plan.run ? null : plan.reason,
     backupError,
     removedScans: oldScans.length,
+    removedPushSubscriptions: deadPush.length,
     removedOrphans: orphans.length,
     failedScanDeletes,
     failedOrphanDeletes,

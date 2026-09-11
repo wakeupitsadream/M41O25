@@ -14,6 +14,8 @@ const withSerwist = withSerwistInit({
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // web-push — обычный node-пакет (crypto, https, опциональные зависимости): пусть остаётся внешним, а не идёт в бандл.
+  serverExternalPackages: ["web-push"],
   images: { unoptimized: true },
   headers: async () => [
     {
