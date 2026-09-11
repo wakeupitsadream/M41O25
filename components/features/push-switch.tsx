@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { removePushSubscription, savePushSubscription, setPushTopics } from "@/app/(app)/me/actions";
 import { SwitchRow } from "@/components/ui/switch";
 import { useToast } from "@/components/ui/toast";
@@ -19,7 +19,7 @@ const HINTS: Record<State, string> = {
   unsupported: "Этот браузер не умеет уведомления.",
   install: "На iPhone уведомления работают только у установленного приложения: «Поделиться» → «На экран „Домой“», открой оттуда.",
   denied: "Уведомления запрещены. Включи их в настройках телефона: «Настройки» → «Уведомления» → Raspison.",
-  off: "Новости, анонимные вопросы и опросы будут приходить на телефон.",
+  off: "Домашка, новости, анонимные вопросы и опросы будут приходить на телефон.",
   on: "Приходят на это устройство.",
 };
 
@@ -40,6 +40,10 @@ const isStandalone = () =>
 /** Наши собственные понятные ошибки; всё остальное (DOMException браузера по-английски) человеку показывать нечего. */
 class PushError extends Error {}
 
+/** Список с одной переключённой темой; порядок всегда как в PUSH_TOPICS, повторов не бывает. */
+const withTopic = (list: readonly PushTopic[], topic: PushTopic, on: boolean): PushTopic[] =>
+  on ? PUSH_TOPICS.filter((t) => t === topic || list.includes(t)) : list.filter((t) => t !== topic);
+
 /**
  * Ни один шаг подписки не должен висеть бесконечно: и регистрация service worker, и обращение к службе
  * уведомлений Apple/Google уходят в сеть, а в универе она бывает никакая. Лучше честное «попробуй позже»,
@@ -53,6 +57,9 @@ export function PushSwitch({ vapidPublicKey, topics: initialTopics }: { vapidPub
   const [state, setState] = useState<State>("checking");
   const [busy, setBusy] = useState(false);
   const [topics, setTopics] = useState<PushTopic[]>(initialTopics);
+  // Зеркало списка тем: обработчику нужен актуальный список синхронно, сразу в тапе. Два быстрых тапа
+  // по разным темам случаются раньше, чем React перерисует строки, и снимок из замыкания второму уже врал бы.
+  const topicsRef = useRef<PushTopic[]>(initialTopics);
   const toast = useToast();
   // Строкой, а не массивом: у пропа-массива каждый рендер новая ссылка, и эффект уходил бы в круг.
   const topicsKey = initialTopics.join(",");
@@ -68,7 +75,10 @@ export function PushSwitch({ vapidPublicKey, topics: initialTopics }: { vapidPub
       if (found.subscription) {
         const keys = found.subscription.toJSON().keys;
         if (keys?.p256dh && keys.auth) {
-          void savePushSubscription({ endpoint: found.subscription.endpoint, p256dh: keys.p256dh, auth: keys.auth, topics: topicsKey.split(",") }).catch(() => {});
+          // Пустая строка от split даёт [""], а не пустой список, — а «тем нет» здесь значимо: так сервер
+          // узнаёт, что человек снял все галочки, и не подставит запас по умолчанию.
+          const known = topicsKey ? topicsKey.split(",") : [];
+          void savePushSubscription({ endpoint: found.subscription.endpoint, p256dh: keys.p256dh, auth: keys.auth, topics: known }).catch(() => {});
         }
       }
     })();
@@ -133,20 +143,31 @@ export function PushSwitch({ vapidPublicKey, topics: initialTopics }: { vapidPub
     }
   }, [toast]);
 
+  /** Переключить одну тему и там же получить актуальный список для отправки. */
+  const applyTopic = useCallback((topic: PushTopic, on: boolean) => {
+    const next = withTopic(topicsRef.current, topic, on);
+    topicsRef.current = next;
+    setTopics(next);
+    return next;
+  }, []);
+
   const changeTopics = useCallback(
-    async (next: PushTopic[]) => {
-      const before = topics;
-      setTopics(next);
-      const res = await setPushTopics(next).catch(() => null);
+    async (topic: PushTopic, on: boolean) => {
+      const res = await setPushTopics(applyTopic(topic, on)).catch(() => null);
       if (!res || !res.ok) {
-        setTopics(before);
+        // Откатываем ровно одну тему, а не весь снимок: пока этот запрос летел, соседнюю галочку могли
+        // успешно сохранить выключенной, и возврат снимка вернул бы её в UI включённой вопреки базе.
+        applyTopic(topic, !on);
         toast(res ? res.error : "Не сохранилось — нет сети");
       }
     },
-    [toast, topics],
+    [applyTopic, toast],
   );
 
   const locked = state === "checking" || state === "unconfigured" || state === "unsupported" || state === "install" || state === "denied";
+  // Подписка жива, но все темы сняты — тумблер честно включён, а вот «приходят на это устройство» было бы враньём:
+  // не придёт ничего. Сам тумблер не выключаем, иначе одна снятая галочка обратно потянула бы за собой подписку.
+  const allTopicsOff = state === "on" && topics.length === 0;
 
   return (
     <div className="space-y-2">
@@ -155,16 +176,17 @@ export function PushSwitch({ vapidPublicKey, topics: initialTopics }: { vapidPub
         disabled={locked || busy}
         onChange={(next) => void (next ? enable() : disable())}
         label="Уведомления"
-        hint={HINTS[state]}
+        hint={allTopicsOff ? "Все темы выключены — ничего не придёт." : HINTS[state]}
       />
       {state === "on" && (
         <div className="space-y-2 pl-3">
+          <div className="px-1 text-[12px] font-semibold uppercase tracking-wide text-dim">Что присылать</div>
           {PUSH_TOPICS.map((t) => (
             <SwitchRow
               key={t}
               checked={topics.includes(t)}
               disabled={busy}
-              onChange={(on) => void changeTopics(on ? PUSH_TOPICS.filter((x) => topics.includes(x) || x === t) : topics.filter((x) => x !== t))}
+              onChange={(on) => void changeTopics(t, on)}
               label={TOPIC_LABELS[t]}
               className="bg-surface-2"
             />

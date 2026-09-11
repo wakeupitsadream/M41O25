@@ -2,10 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { and, count, desc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { activity, attachments, comments, homework, hwDone, hwEdits } from "@/lib/db/schema";
+import { activity, attachments, comments, homework, hwDone, hwEdits, subjects } from "@/lib/db/schema";
 import { actionUser, hasRole } from "@/lib/auth";
 import { assertRate } from "@/lib/rate-limit";
 import { storage } from "@/lib/storage";
@@ -13,6 +14,8 @@ import { startOfDayTz, todayIso } from "@/lib/tz";
 import { describeHwChanges, hwChangeKinds, type HwChangeKind } from "@/lib/hw/changes";
 import { dedupSince, findRecentDuplicate } from "@/lib/hw/draft";
 import { matchLesson, resolveLessonId } from "@/lib/hw/query";
+import { pushAuthorName } from "@/lib/push/format";
+import { notifyQuietly, pushConfigured } from "@/lib/push/send";
 import { fail, ok, type ActionResult } from "@/lib/utils";
 import { wrapAction } from "@/lib/actions";
 
@@ -53,6 +56,21 @@ const claimUploads = (tx: Pick<typeof db, "update">, ids: string[], userId: stri
         .set({ entityId })
         .where(and(inArray(attachments.id, ids), eq(attachments.uploadedBy, userId), isNull(attachments.entityId), eq(attachments.entityType, "homework")))
     : Promise.resolve();
+
+/**
+ * Предмет для заголовка пуша: короткое название, если оно есть. Пустое short_name (восстановленный дамп, правка
+ * базы руками) — это отсутствие короткого имени, а не название из пробелов, поэтому берём непустое через `||`.
+ * Упавший запрос — не повод не слать пуш, уйдёт без предмета.
+ */
+const subjectLabel = (subjectId: string): Promise<string | null> =>
+  db
+    .select({ name: subjects.name, shortName: subjects.shortName })
+    .from(subjects)
+    .where(eq(subjects.id, subjectId))
+    .then(
+      ([s]) => (s ? s.shortName?.trim() || s.name.trim() || null : null),
+      () => null,
+    );
 
 export async function createHomework(input: CreateHomeworkInput): Promise<ActionResult<{ id: string }>> {
   return wrapAction(async () => {
@@ -115,6 +133,18 @@ export async function createHomework(input: CreateHomeworkInput): Promise<Action
       return h;
     });
     bump(row.id);
+    // Пуш — только здесь, после настоящей вставки: повтор из офлайн-очереди уходит выше по `dup`, и разбудить
+    // группу второй раз той же записью (замороженная PWA дослала её через сутки) нельзя. Предмет дочитываем
+    // внутри after(): лишний запрос не должен удлинять ответ, а упавшая рассылка — отменять созданную запись.
+    after(async () => {
+      // Без ключей VAPID рассылать некому, а лишний SELECT по предметам уходил бы после каждой записи.
+      if (!pushConfigured()) return;
+      const subject = d.subjectId ? await subjectLabel(d.subjectId) : null;
+      await notifyQuietly(
+        { kind: "homework", id: row.id, author: pushAuthorName(user), subject, dueDate: d.dueDate, title: d.title || null, body: d.body },
+        { groupId: user.groupId, exceptUserId: user.id },
+      );
+    });
     return ok({ id: row.id });
   });
 }

@@ -415,7 +415,7 @@ export const pushSubscriptions = pgTable(
     p256dh: text("p256dh").notNull(),
     auth: text("auth").notNull(),
     userAgent: text("user_agent"),
-    topics: text("topics").array().notNull().default(sql`'{news,questions,polls}'::text[]`),
+    topics: text("topics").array().notNull().default(sql`'{homework,news,questions,polls}'::text[]`),
     lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
     failCount: integer("fail_count").notNull().default(0),
     lastError: text("last_error"),

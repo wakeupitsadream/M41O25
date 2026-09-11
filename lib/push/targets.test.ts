@@ -18,6 +18,11 @@ test("тема выключена — устройство пропускаем"
   deepStrictEqual(ids(pickTargets(subs, { topic: "polls", exceptUserId: null })), ["2"]);
 });
 
+test("домашка: уходит подписанным на неё, кроме того, кто её добавил", () => {
+  const subs = [sub("1", "max", ["homework", "news"]), sub("2", "anya", ["homework"]), sub("3", "oleg", ["news", "polls"])];
+  deepStrictEqual(ids(pickTargets(subs, { topic: "homework", exceptUserId: "max" })), ["2"]);
+});
+
 test("анонимный вопрос уходит всем, включая спросившего", () => {
   const subs = [sub("1", "max", ["questions"]), sub("2", "anya", ["questions"])];
   deepStrictEqual(ids(pickTargets(subs, { topic: "questions", exceptUserId: null })), ["1", "2"]);
@@ -43,6 +48,7 @@ test("ошибка web-push разбирается по statusCode, сетево
 
 test("темы из базы: чужое отбрасываем, порядок стабильный", () => {
   deepStrictEqual(normalizeTopics(["polls", "мусор", "news"]), ["news", "polls"]);
+  deepStrictEqual(normalizeTopics(["polls", "homework", "news"]), ["homework", "news", "polls"]);
   deepStrictEqual(normalizeTopics(null), []);
   deepStrictEqual(normalizeTopics([]), []);
 });

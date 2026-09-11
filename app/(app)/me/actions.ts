@@ -49,7 +49,11 @@ export async function savePushSubscription(input: PushSubscriptionInput): Promis
     const parsed = subscriptionSchema.safeParse(input);
     if (!parsed.success) return fail("Подписка не сохранилась: браузер прислал её в неожиданном виде");
     const d = parsed.data;
-    const topics = normalizeTopics(d.topics);
+    // «Поля нет» и «пустой список» — разные вещи, и схема их различает (topics необязательное).
+    // Нет поля — подписка приехала без настроек (старая сборка на телефоне), даём запас по умолчанию.
+    // Пустой список — человек сам снял все галочки, и подменять его на «присылать всё» нельзя:
+    // в Профиле ему написано «Все темы выключены — ничего не придёт».
+    const topics = d.topics === undefined ? DEFAULT_TOPICS : normalizeTopics(d.topics);
     const ua = (await headers()).get("user-agent")?.slice(0, 300) ?? null;
     await db
       .insert(pushSubscriptions)
@@ -59,7 +63,7 @@ export async function savePushSubscription(input: PushSubscriptionInput): Promis
         p256dh: d.p256dh,
         auth: d.auth,
         userAgent: ua,
-        topics: topics.length ? topics : DEFAULT_TOPICS,
+        topics,
       })
       .onConflictDoUpdate({
         target: pushSubscriptions.endpoint,
