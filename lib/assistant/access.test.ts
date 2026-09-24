@@ -57,8 +57,11 @@ test("extendPaidUntil: через границу года", () => {
   assert.equal(extendPaidUntil("2026-12-20", null, 30), "2027-01-19");
 });
 
-test("trialUntil: сегодня + дни триала", () => {
-  assert.equal(trialUntil(TODAY, 7), "2026-09-30");
-  assert.equal(trialUntil("2026-09-28", 7), "2026-10-05");
-  assert.equal(trialUntil(TODAY, 0), TODAY);
+test("trialUntil: сегодня — первый день, «7 дней» заканчиваются на седьмой календарный день", () => {
+  assert.equal(trialUntil(TODAY, 7), "2026-09-29");
+  assert.equal(trialUntil("2026-09-28", 7), "2026-10-04");
+  assert.equal(trialUntil(TODAY, 1), TODAY);
+  // Семь дней ровно: от сегодня до until включительно — 7 календарных дат.
+  const days = (a: string, b: string) => (Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86_400_000 + 1;
+  assert.equal(days(TODAY, trialUntil(TODAY, 7)), 7);
 });

@@ -17,8 +17,8 @@ test("withDefaults: пустой jsonb и null дают умолчания §1",
   assert.equal(DEFAULT_SETTINGS.enabled, false);
   assert.equal(DEFAULT_SETTINGS.priceRub, 200);
   assert.equal(DEFAULT_SETTINGS.dailyLimit, 15);
-  assert.equal(DEFAULT_SETTINGS.weeklyLimit, 50);
-  assert.equal(DEFAULT_SETTINGS.strongWeeklyLimit, 4);
+  assert.equal(DEFAULT_SETTINGS.weeklyLimit, 45);
+  assert.equal(DEFAULT_SETTINGS.strongWeeklyLimit, 3);
   assert.equal(DEFAULT_SETTINGS.trialDays, 7);
   assert.equal(DEFAULT_SETTINGS.paymentNote, "");
 });

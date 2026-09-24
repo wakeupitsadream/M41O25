@@ -15,6 +15,12 @@ const tabs = [
   { href: "/me", label: "Профиль", icon: UserRound, match: /^\/(me|admin)(\/|$)/, section: null },
 ] as const satisfies readonly { href: string; label: string; icon: unknown; match: RegExp; section: Section | null }[];
 
+/**
+ * Экран беседы с помощником (/group/assistant/<id>, включая /new): внизу там свой композер, и таб-бар перекрыл бы
+ * поле ввода. Единственное место, где таб-бар скрывается (docs/AI-CHAT.md §8); список бесед /group/assistant — с ним.
+ */
+const HIDDEN_ON = /^\/group\/assistant\/[^/]+$/;
+
 const readSeen = () => {
   const out: Partial<Record<Section, string | null>> = {};
   try {
@@ -51,6 +57,8 @@ export function TabBar({ latest = {}, feedSeenAt = null }: { latest?: SectionLat
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Точки непрочитанного читаются из localStorage после монтирования, иначе mismatch гидратации.
     setDots(unreadSections(JSON.parse(latestKey) as SectionLatest, readSeen(), feedSeenAt, active));
   }, [active, latestKey, feedSeenAt]);
+
+  if (HIDDEN_ON.test(pathname)) return null;
 
   const left = tabs.slice(0, 2);
   const right = tabs.slice(2);

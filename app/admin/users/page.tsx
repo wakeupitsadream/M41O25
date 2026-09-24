@@ -2,16 +2,30 @@ import Link from "next/link";
 import { asc, eq } from "drizzle-orm";
 import { ChevronRight, ClipboardList, Lock, UserPlus } from "lucide-react";
 import { db } from "@/lib/db";
-import { users } from "@/lib/db/schema";
+import { assistantAccess, users } from "@/lib/db/schema";
 import { requireRole } from "@/lib/auth";
 import { Avatar, Badge } from "@/components/ui/primitives";
+import { accessStatus } from "@/lib/assistant/access";
+import { accessBadge, type AccessBadge } from "@/lib/assistant/admin-labels";
+import { todayIso } from "@/lib/tz";
 import { cn } from "@/lib/utils";
 
 const ROLE: Record<string, string> = { admin: "админ", moderator: "староста", student: "" };
 
 export default async function AdminUsers() {
   const admin = await requireRole("admin");
-  const list = await db.select().from(users).where(eq(users.groupId, admin.groupId)).orderBy(asc(users.status), asc(users.fullName));
+  // Доступ к помощнику — одним запросом на всю группу (join по users.group_id), а не по запросу на строку списка.
+  const [list, accessRows] = await Promise.all([
+    db.select().from(users).where(eq(users.groupId, admin.groupId)).orderBy(asc(users.status), asc(users.fullName)),
+    db
+      .select({ userId: assistantAccess.userId, trialUntil: assistantAccess.trialUntil, paidUntil: assistantAccess.paidUntil })
+      .from(assistantAccess)
+      .innerJoin(users, eq(users.id, assistantAccess.userId))
+      .where(eq(users.groupId, admin.groupId)),
+  ]);
+  const today = todayIso();
+  const aiBadges = new Map(accessRows.map((r) => [r.userId, accessBadge(accessStatus(today, r), today)]));
+  const aiBadge = (u: (typeof list)[number]) => (u.status === "active" ? (aiBadges.get(u.id) ?? null) : null);
   const active = list.filter((u) => u.status === "active");
   const removed = list.filter((u) => u.status === "removed");
 
@@ -49,6 +63,7 @@ export default async function AdminUsers() {
                   </span>
                 )}
               </span>
+              <AiBadge badge={aiBadge(u)} />
               {u.status === "removed" ? <Badge tone="danger">удалён</Badge> : ROLE[u.role] ? <Badge tone="accent">{ROLE[u.role]}</Badge> : null}
               {u.pinHash && <Lock className="size-4 text-dim" />}
               <ChevronRight className="size-4 text-dim" />
@@ -58,4 +73,13 @@ export default async function AdminUsers() {
       </ul>
     </div>
   );
+}
+
+/** Бейдж не переносится и не сжимается: при длинном имени обрезается имя (truncate), а не «ИИ до 24.10» в две строки. */
+function AiBadge({ badge }: { badge: AccessBadge | null }) {
+  return badge ? (
+    <Badge tone={badge.tone} className="shrink-0 whitespace-nowrap">
+      {badge.text}
+    </Badge>
+  ) : null;
 }

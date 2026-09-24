@@ -11,8 +11,8 @@ const MONDAY = "2026-09-21";
 test("limitsView: остатки из счётчиков и лимиты из настроек", () => {
   const v = limitsView(DEFAULT_SETTINGS, { day: 9, weekTotal: 31, strongWeek: 3 }, TODAY, MONDAY);
   assert.deepEqual(v.day, { used: 9, limit: 15 });
-  assert.deepEqual(v.week, { used: 31, limit: 50 });
-  assert.deepEqual(v.strong, { used: 3, limit: 4 });
+  assert.deepEqual(v.week, { used: 31, limit: 45 });
+  assert.deepEqual(v.strong, { used: 3, limit: 3 });
 });
 
 test("limitsView: сбросы — завтра в полночь и следующий понедельник", () => {

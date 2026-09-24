@@ -1,6 +1,9 @@
 import Link from "next/link";
-import { Bell, Cake, CheckSquare, ChevronRight, Contact, Dices, MessageCircleQuestion, Newspaper, Vote } from "lucide-react";
+import { Bell, Cake, CheckSquare, ChevronRight, Contact, Dices, MessageCircleQuestion, Newspaper, Sparkles, Vote } from "lucide-react";
 import { requireUser } from "@/lib/auth";
+import { accessStatus } from "@/lib/assistant/access";
+import { accessHint } from "@/lib/assistant/client/format";
+import { getAccessRow, getSettings } from "@/lib/assistant/store";
 import { hubCounts, listBirthdays } from "@/lib/group/query";
 import { todayIso } from "@/lib/tz";
 import { PageHeader } from "@/components/ui/primitives";
@@ -12,7 +15,13 @@ export const dynamic = "force-dynamic";
 export default async function GroupPage() {
   const user = await requireUser();
   const today = todayIso();
-  const [counts, birthdays] = await Promise.all([hubCounts(user.groupId, user.id, user.feedSeenAt), listBirthdays(user.groupId, today)]);
+  // Помощник: выключенный админом — ни плитки, ни запроса. Для подсказки нужна только строка доступа, лимиты хабу не нужны.
+  const assistant = getSettings(user.group);
+  const [counts, birthdays, assistantRow] = await Promise.all([
+    hubCounts(user.groupId, user.id, user.feedSeenAt),
+    listBirthdays(user.groupId, today),
+    assistant.enabled ? getAccessRow(user.id) : null,
+  ]);
   const nextBd = birthdays[0];
   const bdHint = !nextBd ? "пока пусто" : nextBd.daysUntil === 0 ? `сегодня у ${firstName(nextBd.fullName)} 🎉` : `${firstName(nextBd.fullName)} · через ${nextBd.daysUntil} ${pluralRu(nextBd.daysUntil, "день", "дня", "дней")}`;
 
@@ -24,6 +33,9 @@ export default async function GroupPage() {
     { href: "/group/contacts", icon: Contact, label: "Контакты", hint: "преподаватели и деканат", badge: null },
     { href: "/group/birthdays", icon: Cake, label: "Дни рождения", hint: bdHint, badge: nextBd?.daysUntil === 0 ? "🎉" : null },
     { href: "/group/roulette", icon: Dices, label: "Кто отвечает", hint: "честный рандом на паре", badge: null },
+    ...(assistant.enabled
+      ? [{ href: "/group/assistant", icon: Sparkles, label: "Помощник", hint: accessHint({ access: accessStatus(today, assistantRow), settings: assistant }), badge: null }]
+      : []),
   ];
 
   return (

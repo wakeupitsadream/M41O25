@@ -1,13 +1,17 @@
 import { z } from "zod";
 import type { AssistantSettings, AssistantSettingsStored } from "./types";
 
-/** Умолчания из docs/AI-CHAT.md §1: выключен, 200 ₽/мес, 15 в день, 50 в неделю, 4 сильных, неделя триала. */
+/**
+ * Умолчания из docs/AI-CHAT.md §1: выключен, 200 ₽/мес, 15 в день, 45 в неделю, 3 сильных, неделя триала.
+ * Неделя 45 и 3 сильных — не круглые числа ради красоты: при 200 ₽ и 50/4 худший случай давал маржу 57 %, ниже
+ * требования владельца (≥ 60 %), а 45/3 дают 63 % с запасом. Инвариант закреплён тестом в estimate.test.ts.
+ */
 export const DEFAULT_SETTINGS: AssistantSettings = {
   enabled: false,
   priceRub: 200,
   dailyLimit: 15,
-  weeklyLimit: 50,
-  strongWeeklyLimit: 4,
+  weeklyLimit: 45,
+  strongWeeklyLimit: 3,
   trialDays: 7,
   paymentNote: "",
 };

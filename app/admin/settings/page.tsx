@@ -8,6 +8,9 @@ import { rotateInviteCode, updateGroupName, updateSlotTimes } from "@/app/admin/
 import { Card } from "@/components/ui/card";
 import { Field, Input, TimeInput } from "@/components/ui/input";
 import { ConfirmButton, SubmitButton } from "@/components/admin/forms";
+import { AssistantSettingsForm } from "@/components/admin/assistant-settings-form";
+import { env } from "@/lib/env";
+import { withDefaults } from "@/lib/assistant/settings";
 
 export default async function AdminSettings() {
   const admin = await requireRole("admin");
@@ -71,6 +74,16 @@ export default async function AdminSettings() {
             Сохранить
           </SubmitButton>
         </ActionForm>
+      </Card>
+
+      <Card>
+        <AssistantSettingsForm
+          values={withDefaults(group.assistantSettings)}
+          configured={env.assistant.configured}
+          models={{ model: env.assistant.model, strongModel: env.assistant.strongModel }}
+          rate={env.assistant.usdRub}
+          markup={env.assistant.polzaMarkup}
+        />
       </Card>
     </div>
   );

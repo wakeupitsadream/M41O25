@@ -9,6 +9,10 @@ import { UserForm } from "@/components/admin/user-form";
 import { ConfirmButton } from "@/components/admin/forms";
 import { Card } from "@/components/ui/card";
 import { Avatar } from "@/components/ui/primitives";
+import { AssistantAccessCard } from "@/components/admin/assistant-access-card";
+import { accessStatus, extendPaidUntil } from "@/lib/assistant/access";
+import { getAccessRow, getSettings } from "@/lib/assistant/store";
+import { todayIso } from "@/lib/tz";
 
 export default async function EditUserPage({ params }: { params: Promise<{ id: string }> }) {
   const admin = await requireRole("admin");
@@ -16,7 +20,12 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
   if (!id) notFound();
   const [u] = await db.select().from(users).where(and(eq(users.id, id), eq(users.groupId, admin.groupId)));
   if (!u) notFound();
-  const [{ sessions }] = await db.select({ sessions: count() }).from(deviceSessions).where(and(eq(deviceSessions.userId, id), isNull(deviceSessions.revokedAt)));
+  const [[{ sessions }], access] = await Promise.all([
+    db.select({ sessions: count() }).from(deviceSessions).where(and(eq(deviceSessions.userId, id), isNull(deviceSessions.revokedAt))),
+    getAccessRow(id),
+  ]);
+  const today = todayIso();
+  const assistant = getSettings(admin.group);
   const isSelf = u.id === admin.id;
   const locked = Boolean(u.pinLockedUntil && u.pinLockedUntil > new Date());
 
@@ -41,6 +50,17 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
           submitLabel="Сохранить"
         />
       </Card>
+
+      <AssistantAccessCard
+        userId={u.id}
+        fullName={u.fullName}
+        status={accessStatus(today, access)}
+        paidUntil={access?.paidUntil ?? null}
+        nextPaidUntil={extendPaidUntil(today, access?.paidUntil ?? null, 30)}
+        priceRub={assistant.priceRub}
+        enabled={assistant.enabled}
+        today={today}
+      />
 
       <Card className="space-y-2">
         <div className="font-display text-[16px] font-bold">Доступ</div>

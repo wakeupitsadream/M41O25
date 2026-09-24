@@ -7,7 +7,12 @@ import { storage } from "@/lib/storage";
 import { db } from "@/lib/db";
 import { groups, subjects, users, weeks } from "@/lib/db/schema";
 import { requireRole } from "@/lib/auth";
-import { mondayIso, addDaysIso } from "@/lib/tz";
+import { mondayIso, addDaysIso, todayIso } from "@/lib/tz";
+import { env } from "@/lib/env";
+import { withDefaults } from "@/lib/assistant/settings";
+import { monthSummary } from "@/lib/assistant/finance";
+import { monthFinance, monthStartIso } from "@/lib/assistant/finance-query";
+import { AssistantMonthCard } from "@/components/admin/assistant-month-card";
 import { fmtRangeShort } from "@/lib/schedule/time";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/primitives";
@@ -23,7 +28,14 @@ export default async function AdminHome() {
   const nextMonday = addDaysIso(thisMonday, 7);
   const current = recent.find((w) => w.startsOn === thisMonday);
   const next = recent.find((w) => w.startsOn === nextMonday);
-  const [polza, backup, diag] = user.role === "admin" ? await Promise.all([polzaBalance(), lastBackup(), diagnostics()]) : [null, null, null];
+  const today = todayIso();
+  const monthStart = monthStartIso(today);
+  // Карточка помощника — не повод ронять обзор: при ошибке базы её просто не будет, как нет данных у Polza/бэкапа.
+  const [polza, backup, diag, assistantMonth] =
+    user.role === "admin"
+      ? await Promise.all([polzaBalance(), lastBackup(), diagnostics(), monthFinance(user.groupId, monthStart, today).catch(() => null)])
+      : [null, null, null, null];
+  const assistant = withDefaults(group?.assistantSettings);
 
   return (
     <div className="space-y-4">
@@ -79,6 +91,8 @@ export default async function AdminHome() {
         </div>
       )}
 
+      {user.role === "admin" && assistantMonth && <AssistantMonthCard summary={monthSummary(assistantMonth)} monthStart={monthStart} enabled={assistant.enabled} />}
+
       {user.role === "admin" && diag && (
         <Card className="space-y-2">
           <div className="flex items-center gap-2 text-muted">
@@ -109,7 +123,12 @@ export default async function AdminHome() {
               ok={polza?.balance !== null && polza?.balance !== undefined && polza.balance >= 20}
               text={polza?.balance !== null && polza?.balance !== undefined ? `Polza: ${polza.balance.toFixed(0)} ₽${polza.balance < 20 ? " — пополни" : ""}` : `Polza: ${polza?.error ?? "нет данных"}`}
             />
-            {diag.models && ("missing" in diag.models ? <DiagRow ok={diag.models.missing.length === 0} text={diag.models.missing.length ? `Моделей нет в каталоге Polza: ${diag.models.missing.join(", ")}` : "Модели OCR есть в каталоге Polza"} /> : <DiagRow ok={false} text={`Каталог Polza: ${diag.models.error}`} />)}
+            {diag.models && ("missing" in diag.models ? <DiagRow ok={diag.models.missing.length === 0} text={diag.models.missing.length ? `Моделей нет в каталоге Polza: ${diag.models.missing.join(", ")}` : "Модели OCR и помощника есть в каталоге Polza"} /> : <DiagRow ok={false} text={`Каталог Polza: ${diag.models.error}`} />)}
+            <DiagRow
+              ok
+              text={`Помощник ${assistant.enabled ? "включён" : "выключен"} · модель ${env.assistant.model}, сильная ${env.assistant.strongModel}${env.polza.mock ? " · тестовые ответы (OCR_MOCK=1)" : ""}`}
+            />
+            {assistant.enabled && !env.assistant.configured && <DiagRow ok={false} text="Помощник включён, но ключа Polza нет — студенты увидят плитку, а ответа не получат" />}
             <DiagRow ok={diag.missingEnv.length === 0} text={diag.missingEnv.length ? `Не заданы: ${diag.missingEnv.join(", ")}` : "Все переменные окружения на месте"} />
             <DiagRow ok={diag.healthcheck} text={diag.healthcheck ? "Сторож cron (HEALTHCHECK_URL) подключён" : "HEALTHCHECK_URL не задан — о пропавшем cron никто не узнает"} />
           </ul>

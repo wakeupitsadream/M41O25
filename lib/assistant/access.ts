@@ -38,7 +38,11 @@ export function extendPaidUntil(today: string, current: string | null, days: num
   return addDaysIso(base, days);
 }
 
-/** Конец триала: сегодня + days, включительно — та же формула, что у «+30 дней» от сегодня. */
+/**
+ * Последний день триала: сегодняшний день считается первым, поэтому «7 дней» — это сегодня + 6, до вечера
+ * седьмого дня. Оплата считается иначе (extendPaidUntil: от 24.09 до 24.10) — это привычный месячный цикл
+ * «до того же числа», и так его и объясняют в беседе группы; триал же обещан как «неделя».
+ */
 export function trialUntil(today: string, days: number): string {
-  return addDaysIso(today, days);
+  return addDaysIso(today, Math.max(0, days - 1));
 }
