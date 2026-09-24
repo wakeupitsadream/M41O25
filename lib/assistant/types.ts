@@ -27,6 +27,12 @@ export type LimitsView = {
   day: { used: number; limit: number };
   week: { used: number; limit: number };
   strong: { used: number; limit: number };
+  /**
+   * Ресурс за скользящие 30 дней — копейки себестоимости ответов (cost_kopecks). Это и есть гарантия маржи: счётчики
+   * сообщений её дать не могут, вопрос с PDF и «привет» стоят по-разному в десятки раз (docs/AI-CHAT.md §1).
+   * null — потолка нет (цена 0: владелец сам решил не зарабатывать).
+   */
+  budget: { used: number; limit: number } | null;
   resetsDay: string;
   resetsWeek: string;
 };

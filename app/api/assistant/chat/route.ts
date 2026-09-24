@@ -9,7 +9,7 @@ import { logAppError } from "@/lib/errors";
 import { storage } from "@/lib/storage";
 import { mondayIso, todayIso } from "@/lib/tz";
 import { accessStatus, isAccessActive } from "@/lib/assistant/access";
-import { canSend, limitsView } from "@/lib/assistant/limits";
+import { budgetKopecks, canSend, limitsView } from "@/lib/assistant/limits";
 import { runChat, summarizeHistory, type RunChatResult } from "@/lib/assistant/model";
 import { costKopecks } from "@/lib/assistant/pricing";
 import { claimAssistantUploads, getAccessRow, getLimitCounts, getSettings, loadChatAttachments, releaseQuota, reserveQuota, toChatMessage } from "@/lib/assistant/store";
@@ -119,9 +119,15 @@ export async function POST(req: Request) {
     const counts = await getLimitCounts(user.id, today, monday);
     const before = limitsView(
       settings,
-      { day: Math.max(0, reserved.count - 1), weekTotal: Math.max(0, counts.weekTotal - 1), strongWeek: Math.max(0, counts.strongWeek - (strong ? 1 : 0)) },
+      {
+        day: Math.max(0, reserved.count - 1),
+        weekTotal: Math.max(0, counts.weekTotal - 1),
+        strongWeek: Math.max(0, counts.strongWeek - (strong ? 1 : 0)),
+        costKopecks30d: counts.costKopecks30d,
+      },
       today,
       monday,
+      budgetKopecks(settings, access),
     );
     const check = canSend(before, strong);
     if (!check.ok) {
@@ -149,7 +155,7 @@ export async function POST(req: Request) {
     });
 
     const history = conversation ? await loadHistory(conversation, ids.messageId, user.id) : [];
-    return streamAnswer({ req, user, settings, today, monday, strong, text, files, history, conversation, ids, started, release });
+    return streamAnswer({ req, user, settings, budgetLimit: budgetKopecks(settings, access), today, monday, strong, text, files, history, conversation, ids, started, release });
   } catch (e) {
     await release();
     if (e instanceof AttachmentsTaken) return json({ error: "Файлы уже отправлены — прикрепи их заново" }, 400);
@@ -189,6 +195,8 @@ type StreamInput = {
   req: Request;
   user: SessionUser;
   settings: AssistantSettings;
+  /** Потолок ресурса на момент запроса — для лимитов в событии done (доступ за время ответа не меняется). */
+  budgetLimit: number | null;
   today: string;
   monday: string;
   strong: boolean;
@@ -323,7 +331,7 @@ async function answer(s: StreamInput, send: (e: ChatEvent) => void, signal: Abor
   if (result.status === "error" && !sawDelta) await s.release();
 
   if (result.status === "done") {
-    const limits = limitsView(s.settings, await getLimitCounts(user.id, today, monday), today, monday);
+    const limits = limitsView(s.settings, await getLimitCounts(user.id, today, monday), today, monday, s.budgetLimit);
     send({ t: "done", messageId: assistantMessageId, limits, usage: result.usage });
     return s.conversation && result.dropped.length ? { conversation: s.conversation, dropped: result.dropped, assistantMessageId } : null;
   }

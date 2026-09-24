@@ -7,6 +7,7 @@ const LIMITS: LimitsView = {
   day: { used: 1, limit: 15 },
   week: { used: 1, limit: 50 },
   strong: { used: 0, limit: 4 },
+  budget: { used: 0, limit: 8000 },
   resetsDay: "2026-09-25",
   resetsWeek: "2026-09-28",
 };

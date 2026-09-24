@@ -1,11 +1,11 @@
 import "server-only";
-import { and, eq, gte, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, gte, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { assistantAccess, assistantQuota, attachments, type AssistantAccessRow, type AssistantMessage, type Group } from "@/lib/db/schema";
+import { assistantAccess, assistantMessages, assistantQuota, attachments, type AssistantAccessRow, type AssistantMessage, type Group } from "@/lib/db/schema";
 import type { SessionUser } from "@/lib/auth";
 import { mondayIso, todayIso } from "@/lib/tz";
 import { accessStatus, isAccessActive } from "./access";
-import { limitsView, type LimitCounts } from "./limits";
+import { BUDGET_WINDOW_DAYS, budgetKopecks, canSend, limitsView, type LimitCounts } from "./limits";
 import { withDefaults } from "./settings";
 import type { AssistantSettings, AssistantState, ChatAttachment, ChatMessage } from "./types";
 
@@ -28,15 +28,24 @@ export async function getAccessRow(userId: string): Promise<AssistantAccessRow |
  * считал квоту и лимиты по одному и тому же дню.
  */
 export async function getLimitCounts(userId: string, today: string, monday: string): Promise<LimitCounts> {
-  const [row] = await db
-    .select({
-      day: sql<number>`coalesce(sum(case when ${assistantQuota.day} = ${today}::date then ${assistantQuota.count} else 0 end), 0)`.mapWith(Number),
-      weekTotal: sql<number>`coalesce(sum(${assistantQuota.count}), 0)`.mapWith(Number),
-      strongWeek: sql<number>`coalesce(sum(${assistantQuota.strongCount}), 0)`.mapWith(Number),
-    })
-    .from(assistantQuota)
-    .where(and(eq(assistantQuota.userId, userId), gte(assistantQuota.day, monday)));
-  return { day: row?.day ?? 0, weekTotal: row?.weekTotal ?? 0, strongWeek: row?.strongWeek ?? 0 };
+  const since = new Date(Date.now() - BUDGET_WINDOW_DAYS * 86_400_000);
+  const [[row], [cost]] = await Promise.all([
+    db
+      .select({
+        day: sql<number>`coalesce(sum(case when ${assistantQuota.day} = ${today}::date then ${assistantQuota.count} else 0 end), 0)`.mapWith(Number),
+        weekTotal: sql<number>`coalesce(sum(${assistantQuota.count}), 0)`.mapWith(Number),
+        strongWeek: sql<number>`coalesce(sum(${assistantQuota.strongCount}), 0)`.mapWith(Number),
+      })
+      .from(assistantQuota)
+      .where(and(eq(assistantQuota.userId, userId), gte(assistantQuota.day, monday))),
+    // Скользящее окно, а не календарный месяц: у каждого свой «+30 дней», и календарный сброс 1-го числа позволил бы
+    // выбрать ресурс дважды на стыке месяцев. Индекс (user_id, created_at) есть.
+    db
+      .select({ kopecks: sql<number>`coalesce(sum(${assistantMessages.costKopecks}), 0)`.mapWith(Number) })
+      .from(assistantMessages)
+      .where(and(eq(assistantMessages.userId, userId), gt(assistantMessages.createdAt, since))),
+  ]);
+  return { day: row?.day ?? 0, weekTotal: row?.weekTotal ?? 0, strongWeek: row?.strongWeek ?? 0, costKopecks30d: cost?.kopecks ?? 0 };
 }
 
 /**
@@ -76,13 +85,14 @@ export async function buildState(user: SessionUser): Promise<AssistantState> {
   const monday = mondayIso();
   const [row, counts] = await Promise.all([getAccessRow(user.id), getLimitCounts(user.id, today, monday)]);
   const access = accessStatus(today, row);
-  const limits = limitsView(settings, counts, today, monday);
+  const limits = limitsView(settings, counts, today, monday, budgetKopecks(settings, access));
   return {
     enabled: settings.enabled,
     access,
     limits,
     settings: { priceRub: settings.priceRub, paymentNote: settings.paymentNote, trialDays: settings.trialDays },
-    strongAvailable: isAccessActive(access) && limits.strong.used < limits.strong.limit,
+    // Ровно та же проверка, что сделает стрим-роут: чип «Сильный» не должен обещать то, от чего сервер откажет.
+    strongAvailable: isAccessActive(access) && canSend(limits, true).ok,
   };
 }
 
