@@ -50,6 +50,13 @@
       "when": 1789117519343,
       "tag": "0006_push_homework_topic",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1790226443513,
+      "tag": "0007_assistant",
+      "breakpoints": true
     }
   ]
 }

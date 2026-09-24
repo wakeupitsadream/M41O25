@@ -20,6 +20,7 @@ import { generateInviteSuffix } from "../lib/utils";
 const ORDER = [
   "groups", "users", "semesters", "subjects", "weeks", "lessons", "schedule_imports", "homework", "hw_edits", "hw_done",
   "comments", "attachments", "news", "tasks", "task_checks", "polls", "poll_options", "poll_votes", "contacts", "anon_questions", "reactions", "activity",
+  "assistant_access", "assistant_payments", "assistant_conversations", "assistant_messages",
 ];
 
 const camelToSnake = (s: string) => s.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`);
@@ -48,7 +49,7 @@ async function main() {
   try {
     await client.query("begin");
     if (truncate) {
-      await client.query(`truncate ${[...ORDER].reverse().map((t) => `"${t}"`).join(", ")}, "device_sessions", "auth_attempts", "anon_quota" cascade`);
+      await client.query(`truncate ${[...ORDER].reverse().map((t) => `"${t}"`).join(", ")}, "device_sessions", "auth_attempts", "anon_quota", "assistant_quota" cascade`);
       console.log("[restore] таблицы очищены");
     }
     for (const table of ORDER) {

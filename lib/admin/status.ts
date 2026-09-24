@@ -36,7 +36,7 @@ export async function lastBackup(): Promise<string | null> {
   }
 }
 
-/** Есть ли заданные модели в каталоге Polza (GET /models). null — каталог недоступен или ключа нет. */
+/** Есть ли заданные модели (OCR и помощник) в каталоге Polza (GET /models). null — каталог недоступен или ключа нет. */
 export async function polzaModels(): Promise<{ missing: string[] } | { error: string } | null> {
   if (env.polza.mock || !env.polza.apiKey) return null;
   try {
@@ -46,7 +46,8 @@ export async function polzaModels(): Promise<{ missing: string[] } | { error: st
     const list = Array.isArray(json) ? json : json.data ?? [];
     const ids = new Set(list.map((m) => m.id).filter(Boolean));
     if (ids.size === 0) return { error: "каталог пустой или другой формат" };
-    return { missing: [env.polza.model, env.polza.strongModel].filter((m) => !ids.has(m)) };
+    const wanted = [...new Set([env.polza.model, env.polza.strongModel, env.assistant.model, env.assistant.strongModel])];
+    return { missing: wanted.filter((m) => !ids.has(m)) };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "недоступно" };
   }

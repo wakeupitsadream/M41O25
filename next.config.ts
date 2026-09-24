@@ -15,7 +15,9 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
   // web-push — обычный node-пакет (crypto, https, опциональные зависимости): пусть остаётся внешним, а не идёт в бандл.
-  serverExternalPackages: ["web-push"],
+  // unpdf, mammoth, jszip — извлечение текста из вложений помощника (lib/assistant/extract.ts): тяжёлые, с динамическими
+  // require и worker-ами, в бандле ломаются или раздувают функцию.
+  serverExternalPackages: ["web-push", "unpdf", "mammoth", "jszip"],
   images: { unoptimized: true },
   headers: async () => [
     {

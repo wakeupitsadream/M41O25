@@ -2,14 +2,15 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { and, count, eq, gt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { attachments } from "@/lib/db/schema";
+import { attachments, type AttachmentEntity } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/auth";
 import { ALLOWED_MIME, MAX_UPLOAD_BYTES, storage } from "@/lib/storage";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const ENTITY = new Set(["homework", "news", "task", "scan"]);
+// "assistant" доступен и студентам: это их личные файлы для чата, отдаёт их только автору (app/api/files/[id]).
+const ENTITY = new Set<string>(["homework", "news", "task", "scan", "assistant"] satisfies AttachmentEntity[]);
 
 /** Загрузка одного файла (multipart). Возвращает id вложения; привязка к сущности — при создании записи. */
 export async function POST(req: Request) {
@@ -57,7 +58,7 @@ export async function POST(req: Request) {
     .insert(attachments)
     .values({
       groupId: user.groupId,
-      entityType: entityType as "homework" | "news" | "task" | "scan",
+      entityType: entityType as AttachmentEntity,
       fileKey: key,
       fileName: file.name.slice(0, 200) || `file.${ext}`,
       mime: file.type,

@@ -27,6 +27,11 @@ const TABLES = {
   anon_questions: schema.anonQuestions,
   reactions: schema.reactions,
   activity: schema.activity,
+  // Помощник: доступ, платежи (из них выручка), беседы и сообщения. assistant_quota не бэкапим, как anon_quota — счётчики за две недели.
+  assistant_access: schema.assistantAccess,
+  assistant_payments: schema.assistantPayments,
+  assistant_conversations: schema.assistantConversations,
+  assistant_messages: schema.assistantMessages,
 } as const;
 
 /**

@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { and, eq, gte, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { anonQuota, appErrors, attachments, authAttempts, cronRuns, deviceSessions, pushSubscriptions } from "@/lib/db/schema";
+import { anonQuota, appErrors, assistantQuota, attachments, authAttempts, cronRuns, deviceSessions, pushSubscriptions } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { storage } from "@/lib/storage";
 import { buildBackup } from "@/lib/backup";
 import { orphanCutoffs, planBackup, rotateBackups, summarizeCronRun } from "@/lib/ops/health";
 import { MAX_PUSH_FAILURES } from "@/lib/push/errors";
-import { todayIso } from "@/lib/tz";
+import { addDaysIso, todayIso } from "@/lib/tz";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -71,11 +71,15 @@ export async function GET(req: Request) {
   // 3) Гигиена: квоты анонимных вопросов за прошлые дни (сужает окно деанонимизации), попытки входа, мёртвые сессии, сироты-вложения.
   const today = todayIso();
   await db.delete(anonQuota).where(lt(anonQuota.day, today));
+  // Квоты помощника: неделя считается по строкам с day >= понедельника, так что старше 14 дней они никому не нужны.
+  const staleQuota = await db.delete(assistantQuota).where(lt(assistantQuota.day, addDaysIso(today, -14))).returning({ day: assistantQuota.day });
   await db.delete(authAttempts).where(lt(authAttempts.createdAt, new Date(Date.now() - 24 * 3600_000)));
   await db.delete(deviceSessions).where(or(lt(deviceSessions.createdAt, new Date(Date.now() - 366 * 86_400_000)), sql`${deviceSessions.revokedAt} < now() - interval '7 days'`));
   // Сканы чистит шаг 2 (свои 30 дней). У домашки окно длиннее: пока запись лежит в офлайн-очереди, её вложения
   // ничейные — привязывает их только успешная отправка (claimUploads). Окно = срок жизни очереди плюс сутки,
   // считает orphanCutoffs; правите его — проверьте QUEUE_TTL_MS, иначе «отправлю вместе с фото» окажется враньём.
+  // Вложения помощника ('assistant') идут по общей ветке в сутки: файл привязывается к сообщению при отправке в той же
+  // транзакции, а ничейный через сутки — это брошенный композер, не очередь (docs/AI-CHAT.md §5).
   const cut = orphanCutoffs(Date.now());
   const orphans = await db
     .select()
@@ -116,6 +120,7 @@ export async function GET(req: Request) {
     backupError,
     removedScans: oldScans.length,
     removedPushSubscriptions: deadPush.length,
+    removedAssistantQuota: staleQuota.length,
     removedOrphans: orphans.length,
     failedScanDeletes,
     failedOrphanDeletes,

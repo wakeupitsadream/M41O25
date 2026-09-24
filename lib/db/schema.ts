@@ -1,4 +1,5 @@
 import { relations, sql } from "drizzle-orm";
+import type { AssistantSettingsStored, AssistantUsage, ChatMessageStatus, ChatRole } from "@/lib/assistant/types";
 import {
   boolean,
   date,
@@ -32,7 +33,7 @@ export const lessonKindEnum = pgEnum("lesson_kind", [
   "other",
 ]);
 export const importStatusEnum = pgEnum("import_status", ["uploaded", "recognized", "failed", "applied"]);
-export const attachmentEntityEnum = pgEnum("attachment_entity", ["homework", "news", "task", "scan"]);
+export const attachmentEntityEnum = pgEnum("attachment_entity", ["homework", "news", "task", "scan", "assistant"]);
 export const contactKindEnum = pgEnum("contact_kind", ["teacher", "dean", "other"]);
 export const reactionEntityEnum = pgEnum("reaction_entity", ["homework", "news", "task"]);
 
@@ -44,6 +45,11 @@ export const groups = pgTable("groups", {
   shortName: text("short_name").notNull(),
   inviteCode: text("invite_code").notNull().unique(),
   slotTimes: jsonb("slot_times").$type<SlotTime[]>().notNull(),
+  /**
+   * Настройки помощника по учёбе (docs/AI-CHAT.md §3). Частичный объект: у групп, заведённых до 0007, тут '{}',
+   * а новое поле настроек не требует миграции — умолчания подставляет withDefaults (lib/assistant/settings.ts).
+   */
+  assistantSettings: jsonb("assistant_settings").$type<AssistantSettingsStored>().notNull().default(sql`'{}'::jsonb`),
   createdAt: createdAt(),
 });
 
@@ -451,6 +457,108 @@ export const activity = pgTable(
   (t) => [index("activity_group_created_idx").on(t.groupId, t.createdAt)],
 );
 
+/* ─── Помощник по учёбе (docs/AI-CHAT.md) ──────────────────────────────────── */
+
+/**
+ * Доступ к помощнику: одна строка на человека. Нет строки — человек ещё не начинал (состояние none);
+ * обе даты в прошлом или пустые — было и закончилось (expired). Строку никогда не удаляем: именно её наличие
+ * не даёт стартовать триал второй раз. Толкование дат — lib/assistant/access.ts.
+ */
+export const assistantAccess = pgTable("assistant_access", {
+  userId: uuid("user_id").primaryKey().references(() => users.id),
+  trialUntil: date("trial_until"),
+  paidUntil: date("paid_until"),
+  note: text("note"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: uuid("updated_by").references(() => users.id),
+});
+
+/** Каждое «+30 дней» в админке — платёж; из этой таблицы считается выручка за месяц. Рубли целыми, numeric в проекте не используем. */
+export const assistantPayments = pgTable(
+  "assistant_payments",
+  {
+    id: id(),
+    groupId: uuid("group_id").notNull().references(() => groups.id),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    amountRub: integer("amount_rub").notNull(),
+    days: integer("days").notNull(),
+    createdBy: uuid("created_by").notNull().references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [index("assistant_payments_group_created_idx").on(t.groupId, t.createdAt)],
+);
+
+/**
+ * Беседа с помощником. summary — сжатый хвост истории, summarized_through — id последнего сообщения, вошедшего
+ * в него (без FK: сообщение может быть удалено каскадом раньше, чем перепишется summary). Беседы не удаляются,
+ * а архивируются, поэтому вложения сообщений не остаются без хозяина.
+ */
+export const assistantConversations = pgTable(
+  "assistant_conversations",
+  {
+    id: id(),
+    groupId: uuid("group_id").notNull().references(() => groups.id),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    title: text("title"),
+    summary: text("summary"),
+    summarizedThrough: uuid("summarized_through"),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    archivedAt: timestamp("archived_at", { withTimezone: true }),
+  },
+  (t) => [index("assistant_conversations_user_updated_idx").on(t.userId, t.updatedAt)],
+);
+
+/**
+ * Сообщения беседы. attachment_ids дублирует attachments.entity_id намеренно: показать чат — один запрос без join,
+ * а entity_id нужен чистильщику сирот и проверке доступа к файлу. day — сутки группы (todayIso), по нему считается
+ * статистика; деньги — копейки целым числом.
+ */
+export const assistantMessages = pgTable(
+  "assistant_messages",
+  {
+    id: id(),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => assistantConversations.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull().references(() => users.id),
+    role: text("role").$type<ChatRole>().notNull(),
+    content: text("content").notNull(),
+    attachmentIds: jsonb("attachment_ids").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+    strong: boolean("strong").notNull().default(false),
+    model: text("model"),
+    usage: jsonb("usage").$type<AssistantUsage>(),
+    costKopecks: integer("cost_kopecks"),
+    status: text("status").$type<ChatMessageStatus>().notNull().default("done"),
+    error: text("error"),
+    durationMs: integer("duration_ms"),
+    toolCalls: integer("tool_calls").notNull().default(0),
+    day: date("day").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index("assistant_messages_conversation_created_idx").on(t.conversationId, t.createdAt),
+    index("assistant_messages_user_day_idx").on(t.userId, t.day),
+    index("assistant_messages_user_created_idx").on(t.userId, t.createdAt),
+  ],
+);
+
+/**
+ * Счётчики лимитов по календарным суткам группы: атомарный upsert как anon_quota, неделя — сумма строк с day >= понедельника.
+ * Отдельно от assistant_messages, чтобы резервировать лимит одним запросом до обращения к модели. Не бэкапится, cron
+ * удаляет строки старше 14 дней.
+ */
+export const assistantQuota = pgTable(
+  "assistant_quota",
+  {
+    userId: uuid("user_id").notNull().references(() => users.id),
+    day: date("day").notNull(),
+    count: integer("count").notNull().default(0),
+    strongCount: integer("strong_count").notNull().default(0),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.day] })],
+);
+
 export const usersRelations = relations(users, ({ one }) => ({
   group: one(groups, { fields: [users.groupId], references: [groups.id] }),
 }));
@@ -509,6 +617,14 @@ export const newsRelations = relations(news, ({ one }) => ({
   author: one(users, { fields: [news.authorId], references: [users.id] }),
 }));
 
+export const assistantConversationsRelations = relations(assistantConversations, ({ many }) => ({
+  messages: many(assistantMessages),
+}));
+
+export const assistantMessagesRelations = relations(assistantMessages, ({ one }) => ({
+  conversation: one(assistantConversations, { fields: [assistantMessages.conversationId], references: [assistantConversations.id] }),
+}));
+
 export type Group = typeof groups.$inferSelect;
 export type User = typeof users.$inferSelect;
 export type Semester = typeof semesters.$inferSelect;
@@ -519,6 +635,10 @@ export type Homework = typeof homework.$inferSelect;
 export type LessonKind = (typeof lessonKindEnum.enumValues)[number];
 export type Role = (typeof roleEnum.enumValues)[number];
 export type PushSubscriptionRow = typeof pushSubscriptions.$inferSelect;
+export type AttachmentEntity = (typeof attachmentEntityEnum.enumValues)[number];
+export type AssistantAccessRow = typeof assistantAccess.$inferSelect;
+export type AssistantConversation = typeof assistantConversations.$inferSelect;
+export type AssistantMessage = typeof assistantMessages.$inferSelect;
 
 /** Ошибки серверного рендера и роутов (instrumentation.ts → onRequestError): у Vercel Hobby логи живут около часа. */
 export const appErrors = pgTable(

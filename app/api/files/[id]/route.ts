@@ -12,6 +12,7 @@ export const runtime = "nodejs";
 /**
  * Прокси-отдача файла: клиент видит только наш домен, R2/Cloudflare остаётся за сервером.
  * Без cookie файл отдаётся по подписанному токену ?t= (внешний браузер из установленного PWA); сканы — только админу с cookie.
+ * Вложения помощника — личные: только автору со своей сессии или админу, по токену без cookie не отдаются вовсе.
  */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const id = asUuid((await params).id);
@@ -25,6 +26,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     .where(user ? and(eq(attachments.id, id), eq(attachments.groupId, user.groupId)) : eq(attachments.id, id));
   if (!att) return NextResponse.json({ error: "not found" }, { status: 404 });
   if (att.entityType === "scan" && user?.role !== "admin") return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  // Одногруппник, узнавший uuid, не должен открыть чужое фото из чата; подписанная ссылка без cookie для этого типа тоже
+  // не годится — по ней чужой чат открылся бы в любом браузере.
+  if (att.entityType === "assistant" && (!user || (att.uploadedBy !== user.id && user.role !== "admin"))) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 
   const obj = await storage.get(att.fileKey);
   if (!obj) return NextResponse.json({ error: "file missing" }, { status: 404 });
