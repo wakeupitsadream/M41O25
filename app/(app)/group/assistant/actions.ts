@@ -1,16 +1,17 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/lib/db";
-import { assistantAccess, assistantConversations, assistantMessages, type AssistantConversation } from "@/lib/db/schema";
+import { assistantAccess, assistantConversations } from "@/lib/db/schema";
 import { actionUser } from "@/lib/auth";
 import { wrapAction } from "@/lib/actions";
 import { todayIso } from "@/lib/tz";
 import { asUuid, fail, ok, type ActionResult } from "@/lib/utils";
 import { accessStatus, trialUntil } from "@/lib/assistant/access";
-import { buildState, getAccessRow, getSettings, loadChatAttachments, toChatMessage } from "@/lib/assistant/store";
+import { buildState, getAccessRow, getSettings } from "@/lib/assistant/store";
+import { listConversationsFor, loadConversationFor } from "@/lib/assistant/conversations";
 import type { AssistantState, ChatMessage, ConversationInfo, ConversationListItem } from "@/lib/assistant/types";
 
 /**
@@ -19,23 +20,12 @@ import type { AssistantState, ChatMessage, ConversationInfo, ConversationListIte
  */
 
 const SECTION = "/group/assistant";
-const MAX_CONVERSATIONS = 50;
-const PREVIEW_CHARS = 120;
 const TITLE_MAX = 80;
-const UNTITLED = "Без названия";
 
 const titleSchema = z.string().trim().min(1, "Название пустое").max(TITLE_MAX, `Название — не длиннее ${TITLE_MAX} символов`);
 
 const own = (conversationId: string, user: { id: string; groupId: string }) =>
   and(eq(assistantConversations.id, conversationId), eq(assistantConversations.userId, user.id), eq(assistantConversations.groupId, user.groupId));
-
-const toInfo = (c: AssistantConversation): ConversationInfo => ({
-  id: c.id,
-  title: c.title?.trim() || UNTITLED,
-  createdAt: c.createdAt.toISOString(),
-  updatedAt: c.updatedAt.toISOString(),
-  archivedAt: c.archivedAt?.toISOString() ?? null,
-});
 
 /**
  * Старт пробного периода — явной кнопкой, чтобы человек знал, что отсчёт пошёл. Только из состояния none:
@@ -64,46 +54,21 @@ export async function startTrial(): Promise<ActionResult<{ until: string }>> {
   });
 }
 
-/** Неархивные беседы, свежие сверху, ≤ 50; preview — последнее сообщение любой роли одной строкой. */
+/** Неархивные беседы, свежие сверху, ≤ 50 (lib/assistant/conversations.ts — единственное место выборки). */
 export async function listConversations(): Promise<ActionResult<{ items: ConversationListItem[] }>> {
   return wrapAction(async () => {
     const user = await actionUser();
-    // Коррелированный подзапрос вместо join с group by: бесед ≤ 50, а сообщений у каждой — сотни.
-    // Таблица снаружи — квалифицированно (${table}."id"): голую колонку Drizzle печатает как "id", и внутри подзапроса
-    // она разрешилась бы в m.id — превью всегда пустое.
-    const preview = sql<string | null>`(
-      select left(regexp_replace(m.content, '[[:space:]]+', ' ', 'g'), ${PREVIEW_CHARS})
-      from assistant_messages m
-      where m.conversation_id = ${assistantConversations}."id"
-      order by m.created_at desc
-      limit 1
-    )`;
-    const rows = await db
-      .select({ id: assistantConversations.id, title: assistantConversations.title, updatedAt: assistantConversations.updatedAt, preview })
-      .from(assistantConversations)
-      .where(and(eq(assistantConversations.userId, user.id), eq(assistantConversations.groupId, user.groupId), isNull(assistantConversations.archivedAt)))
-      .orderBy(desc(assistantConversations.updatedAt))
-      .limit(MAX_CONVERSATIONS);
-    return ok({
-      items: rows.map((r) => ({ id: r.id, title: r.title?.trim() || UNTITLED, updatedAt: r.updatedAt.toISOString(), preview: r.preview?.trim() ?? "" })),
-    });
+    return ok({ items: await listConversationsFor(user) });
   });
 }
 
-/** Беседа с сообщениями по порядку created_at. Архивная тоже открывается — это своя история, а не удалённая. */
+/** Беседа с сообщениями. Архивная тоже открывается — это своя история, а не удалённая. */
 export async function getConversation(id: string): Promise<ActionResult<{ conversation: ConversationInfo; messages: ChatMessage[] }>> {
   return wrapAction(async () => {
     const user = await actionUser();
     const cid = asUuid(id);
-    if (!cid) return fail("Беседа не найдена");
-    const [c] = await db.select().from(assistantConversations).where(own(cid, user));
-    if (!c) return fail("Беседа не найдена");
-    const rows = await db.select().from(assistantMessages).where(eq(assistantMessages.conversationId, c.id)).orderBy(asc(assistantMessages.createdAt));
-    const atts = await loadChatAttachments(
-      rows.flatMap((r) => r.attachmentIds),
-      user.id,
-    );
-    return ok({ conversation: toInfo(c), messages: rows.map((r) => toChatMessage(r, atts)) });
+    const found = cid ? await loadConversationFor(cid, user) : null;
+    return found ? ok(found) : fail("Беседа не найдена");
   });
 }
 

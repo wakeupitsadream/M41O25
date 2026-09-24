@@ -21,6 +21,11 @@ type Props = {
   files: Uploaded[];
   setFiles: Dispatch<SetStateAction<Uploaded[]>>;
   streaming: boolean;
+  /**
+   * Сервер подтвердил вопрос (событие start). До этого «Стоп» ничего не отменил бы: вопрос, возможно, уже в базе
+   * и модель ответит до конца, — поэтому вместо «Стоп» крутится «отправляю».
+   */
+  stoppable: boolean;
   onSend: () => void;
   onStop: () => void;
 };
@@ -29,7 +34,7 @@ type Props = {
  * Поле ввода чата: авто-рост textarea, вложения чипами, отправка / «Стоп». Cmd/Ctrl+Enter отправляет,
  * обычный Enter — перенос строки (на телефоне это единственная клавиша переноса).
  */
-export function Composer({ text, onText, files, setFiles, streaming, onSend, onStop }: Props) {
+export function Composer({ text, onText, files, setFiles, streaming, stoppable, onSend, onStop }: Props) {
   const area = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(0);
@@ -139,7 +144,11 @@ export function Composer({ text, onText, files, setFiles, streaming, onSend, onS
           enterKeyHint="enter"
           className="min-h-10 flex-1 rounded-[1.25rem] px-4 py-2 leading-6"
         />
-        {streaming ? (
+        {streaming && !stoppable ? (
+          <span role="status" aria-label="Отправляю…" className="grid size-10 shrink-0 place-items-center rounded-full bg-surface-2 text-muted">
+            <Loader2 className="size-4 animate-spin" />
+          </span>
+        ) : streaming ? (
           <button
             type="button"
             aria-label="Остановить ответ"

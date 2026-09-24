@@ -74,7 +74,11 @@ export type ChatEvent =
   | { t: "delta"; text: string }
   | { t: "tool"; name: string }
   | { t: "done"; messageId: string; limits: LimitsView; usage: AssistantUsage | null }
-  | { t: "error"; message: string };
+  /**
+   * limits — остатки после ошибки: квота могла вернуться (ни слова от модели) или остаться списанной (ответ оборвался
+   * на полуслове), и без них чип «Сильный» показывал бы лишнее. Нет — база в этот момент недоступна, старые остатки в силе.
+   */
+  | { t: "error"; message: string; limits?: LimitsView };
 
 export const TOOL_NAMES = [
   "get_schedule",

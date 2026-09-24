@@ -1,3 +1,4 @@
+import type { LimitReason } from "../limits";
 import type { AccessStatus, AssistantUsage, ChatEvent, LimitsView } from "../types";
 
 /*
@@ -7,18 +8,36 @@ import type { AccessStatus, AssistantUsage, ChatEvent, LimitsView } from "../typ
  */
 
 /**
- * Событие стрима, как его видит клиент. Отличие от ChatEvent одно: limits в done может не прийти или прийти
- * битым — ответ от этого не перестаёт быть сохранённым, поэтому такой done не выбрасываем, а оставляем старые остатки.
+ * Событие стрима, как его видит клиент. Отличие от ChatEvent в limits: в done они могут не прийти или прийти
+ * битыми — ответ от этого не перестаёт быть сохранённым, поэтому такой done не выбрасываем, а оставляем старые
+ * остатки. В error сервер присылает limits, когда квота уже списана (ответ оборвался после первого слова), —
+ * иначе чип «Сильный» показывал бы лишний остаток до следующего done.
  */
-export type StreamEvent = Exclude<ChatEvent, { t: "done" }> | { t: "done"; messageId: string; limits: LimitsView | null; usage: AssistantUsage | null };
+export type StreamEvent =
+  | Exclude<ChatEvent, { t: "done" } | { t: "error" }>
+  | { t: "done"; messageId: string; limits: LimitsView | null; usage: AssistantUsage | null }
+  | { t: "error"; message: string; limits: LimitsView | null };
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const isStr = (v: unknown): v is string => typeof v === "string";
 const isCount = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
 const isUsed = (v: unknown): v is { used: number; limit: number } => isObj(v) && isCount(v.used) && isCount(v.limit);
 
-export function isLimitsView(v: unknown): v is LimitsView {
-  return isObj(v) && isUsed(v.day) && isUsed(v.week) && isUsed(v.strong) && isStr(v.resetsDay) && isStr(v.resetsWeek);
+/**
+ * Остатки из ответа сервера или null, если они битые. budget мог не прийти вовсе (сервер старше клиента или
+ * наоборот) — это «потолка нет», а не повод выбросить остальные счётчики.
+ */
+export function toLimitsView(v: unknown): LimitsView | null {
+  if (!isObj(v) || !isUsed(v.day) || !isUsed(v.week) || !isUsed(v.strong) || !isStr(v.resetsDay) || !isStr(v.resetsWeek)) return null;
+  if (v.budget !== undefined && v.budget !== null && !isUsed(v.budget)) return null;
+  return {
+    day: { used: v.day.used, limit: v.day.limit },
+    week: { used: v.week.used, limit: v.week.limit },
+    strong: { used: v.strong.used, limit: v.strong.limit },
+    budget: isUsed(v.budget) ? { used: v.budget.used, limit: v.budget.limit } : null,
+    resetsDay: v.resetsDay,
+    resetsWeek: v.resetsWeek,
+  };
 }
 
 export function isAccessStatus(v: unknown): v is AccessStatus {
@@ -53,10 +72,10 @@ export function parseChatEvent(line: string): StreamEvent | null {
     case "tool":
       return isStr(v.name) ? { t: "tool", name: v.name } : null;
     case "done":
-      return isStr(v.messageId) ? { t: "done", messageId: v.messageId, limits: isLimitsView(v.limits) ? v.limits : null, usage: isUsage(v.usage) ? v.usage : null } : null;
+      return isStr(v.messageId) ? { t: "done", messageId: v.messageId, limits: toLimitsView(v.limits), usage: isUsage(v.usage) ? v.usage : null } : null;
     case "error":
       // Ошибку показываем всегда, даже без текста: молча потерять конец ответа хуже, чем показать общую фразу.
-      return { t: "error", message: isStr(v.message) && v.message.trim() ? v.message.trim() : FALLBACK_ERROR };
+      return { t: "error", message: isStr(v.message) && v.message.trim() ? v.message.trim() : FALLBACK_ERROR, limits: toLimitsView(v.limits) };
     default:
       return null;
   }
@@ -118,8 +137,11 @@ export async function readChatStream(body: ReadableStream<Uint8Array>, onEvent: 
 /** Почему сервер не принял сообщение — по коду ответа из §7. */
 export type ChatFailure =
   | { kind: "auth" }
-  | { kind: "blocked"; status: 402 | 403 | 429; message: string; access: AccessStatus | null; limits: LimitsView | null }
+  | { kind: "blocked"; status: 402 | 403 | 429; message: string; access: AccessStatus | null; limits: LimitsView | null; reason: LimitReason | null }
   | { kind: "server"; message: string };
+
+const LIMIT_REASONS: readonly LimitReason[] = ["day", "week", "strong", "budget"];
+const isLimitReason = (v: unknown): v is LimitReason => LIMIT_REASONS.includes(v as LimitReason);
 
 const BLOCKED_TEXT = {
   402: "Доступ к помощнику закончился — продлить можно в разделе «Помощник»",
@@ -141,7 +163,9 @@ export function describeFailure(status: number, body: unknown): ChatFailure {
       status,
       message: error ?? BLOCKED_TEXT[status],
       access: isObj(body) && isAccessStatus(body.access) ? body.access : null,
-      limits: isObj(body) && isLimitsView(body.limits) ? body.limits : null,
+      limits: isObj(body) ? toLimitsView(body.limits) : null,
+      // Причину сервер может и не прислать — тогда её вычислит экран по limits (blockReason в ./limits).
+      reason: isObj(body) && isLimitReason(body.reason) ? body.reason : null,
     };
   }
   if (status === 400 && error) return { kind: "server", message: error };

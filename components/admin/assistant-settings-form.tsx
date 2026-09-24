@@ -6,8 +6,8 @@ import { ActionForm } from "@/components/ui/action-form";
 import { Field, Input, Textarea } from "@/components/ui/input";
 import { SwitchRow } from "@/components/ui/switch";
 import { SubmitButton } from "@/components/admin/forms";
-import { worstCaseEstimate, type EstimateModels, type WorstCaseEstimate } from "@/lib/assistant/estimate";
-import { MARGIN_OK_PCT } from "@/lib/assistant/finance";
+import { budgetEstimate, type BudgetEstimate, type EstimateModels } from "@/lib/assistant/estimate";
+import { HISTORY_TOKENS } from "@/lib/assistant/context";
 import { PAYMENT_NOTE_MAX } from "@/lib/assistant/settings";
 import type { AssistantSettings } from "@/lib/assistant/types";
 import { cn, pluralRu } from "@/lib/utils";
@@ -27,6 +27,8 @@ const toNum = (s: string) => {
 const NB = " ";
 
 const rub = (kopecks: number) => (kopecks / 100).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+/** Ресурс — обычно круглые рубли (40 % от 200): «80», а не «80,00». */
+const rubShort = (kopecks: number) => (kopecks / 100).toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 
 /**
  * Карточка «Помощник по учёбе» в настройках (docs/AI-CHAT.md §9). Клиентская, потому что тумблер — кнопка, а не
@@ -76,7 +78,7 @@ export function AssistantSettingsForm({
   const strong = toNum(nums.strongWeeklyLimit);
   const input = price !== null && daily !== null && weekly !== null && strong !== null ? { price, daily, weekly, strong } : null;
   const estimate = input
-    ? worstCaseEstimate({ priceRub: input.price, dailyLimit: input.daily, weeklyLimit: input.weekly, strongWeeklyLimit: input.strong }, models, rate, markup)
+    ? budgetEstimate({ priceRub: input.price, dailyLimit: input.daily, weeklyLimit: input.weekly, strongWeeklyLimit: input.strong }, models, rate, markup)
     : null;
 
   return (
@@ -108,7 +110,7 @@ export function AssistantSettingsForm({
       <Field label="Реквизиты для перевода" hint="Покажем студентам в «Как оплатить»: номер по СБП, банк, имя.">
         <Textarea name="paymentNote" defaultValue={values.paymentNote} maxLength={PAYMENT_NOTE_MAX} placeholder="СБП +7 900 000-00-00, Т-Банк, Иван И." rows={3} />
       </Field>
-      <EstimateLine estimate={estimate} input={input} models={models} rate={rate} markup={markup} />
+      <EstimateLine estimate={estimate} models={models} rate={rate} markup={markup} />
       <SubmitButton className="w-full" variant="secondary">
         Сохранить
       </SubmitButton>
@@ -117,56 +119,48 @@ export function AssistantSettingsForm({
 }
 
 /**
- * Справка «худший случай»: один человек выбирает все лимиты каждую неделю. Не прогноз выручки группы — ориентир,
- * хватает ли цены на самого активного (цель владельца — маржа ≥ 60 % до налога, §1).
+ * Справка под формой. Маржу держит ресурс — потолок себестоимости человека за 30 дней (lib/assistant/limits.ts),
+ * а не лимиты сообщений: вопрос с PDF и «привет» стоят по-разному в десятки раз. Здесь — сколько это вопросов,
+ * по честной цене вопроса с поиском по данным группы (два запроса к модели, lib/assistant/estimate.ts).
  */
-function EstimateLine({
-  estimate,
-  input,
-  models,
-  rate,
-  markup,
-}: {
-  estimate: WorstCaseEstimate | null;
-  input: { price: number; daily: number; weekly: number; strong: number } | null;
-  models: EstimateModels;
-  rate: number;
-  markup: number;
-}) {
-  if (!estimate || !input) return <p className="rounded-md bg-surface-2 px-3 py-2 text-[13px] text-dim">Оценка себестоимости появится, когда цена и лимиты — числа.</p>;
+function EstimateLine({ estimate, models, rate, markup }: { estimate: BudgetEstimate | null; models: EstimateModels; rate: number; markup: number }) {
+  if (!estimate) return <p className="rounded-md bg-surface-2 px-3 py-2 text-[13px] text-dim">Оценка себестоимости появится, когда цена и лимиты — числа.</p>;
   const short = (m: string) => m.split("/").at(-1) ?? m;
   const markupPct = Math.round((markup - 1) * 100);
   const basis =
-    `Худший случай — человек выбирает все лимиты: ${estimate.messages} ${pluralRu(estimate.messages, "сообщение", "сообщения", "сообщений")}, ` +
-    `из них ${estimate.strongMessages} ${pluralRu(estimate.strongMessages, "сильное", "сильных", "сильных")}. ` +
-    `Ответ ≈${NB}${rub(estimate.perMessage.normal)}${NB}₽ (${short(models.model)}), сильный ≈${NB}${rub(estimate.perMessage.strong)}${NB}₽ (${short(models.strongModel)}); ` +
-    `курс ${rate}${NB}₽/$, наценка Polza ${markupPct}${NB}%.`;
+    `Вопрос с поиском ≈${NB}${rub(estimate.perMessage.normal)}${NB}₽ (${short(models.model)}), сильный ≈${NB}${rub(estimate.perMessage.strong)}${NB}₽ (${short(models.strongModel)}): ` +
+    `два запроса к модели с промптом, историей до ${HISTORY_TOKENS} токенов и результатом инструмента; курс ${rate}${NB}₽/$, наценка Polza ${markupPct}${NB}%. ` +
+    `Лимиты пропускают до ${estimate.limitMessages} ${pluralRu(estimate.limitMessages, "сообщения", "сообщений", "сообщений")} за 30 дней, из них ${estimate.limitStrong} ${pluralRu(estimate.limitStrong, "сильное", "сильных", "сильных")}.`;
   return (
     <div className="space-y-1 rounded-md bg-surface-2 px-3 py-2 text-[13px] leading-snug text-muted">
-      <p>
-        При цене {input.price}
-        {NB}₽ и лимитах {input.daily}/день · {input.weekly}/нед, сильных {input.strong}/нед себестоимость в худшем случае ≈{NB}
-        <span className="font-semibold text-fg tnum">
-          {rub(estimate.costKopecks)}
-          {NB}₽
-        </span>{" "}
-        за 30 дней
-        {estimate.marginPct === null ? (
-          <>
-            {NB}— <span className={cn("font-semibold", TONE_TEXT[estimate.tone])}>помощник бесплатный</span>, весь расход на тебе.
-          </>
-        ) : (
-          <>
-            , маржа ≈{NB}
-            <span className={cn("font-semibold tnum", TONE_TEXT[estimate.tone])}>
-              {estimate.marginPct}
-              {NB}%
-            </span>
-            {estimate.marginPct < MARGIN_OK_PCT ? `${NB}— ниже цели ${MARGIN_OK_PCT}${NB}%.` : "."}
-          </>
-        )}
-      </p>
+      {estimate.budgetKopecks === null || estimate.questions === null || estimate.strongQuestions === null ? (
+        <p>
+          <span className={cn("font-semibold", TONE_TEXT.warn)}>Помощник бесплатный</span> — ресурса нет, весь расход на тебе: при полном выборе лимитов до ≈{NB}
+          <span className="font-semibold text-fg tnum">
+            {rub(estimate.worstCaseKopecks)}
+            {NB}₽
+          </span>{" "}
+          за 30 дней с человека.
+        </p>
+      ) : (
+        <p>
+          Маржа не ниже{" "}
+          <span className={cn("font-semibold tnum", TONE_TEXT.ok)}>
+            {estimate.marginFloorPct}
+            {NB}%
+          </span>{" "}
+          гарантирована ресурсом: на человека не больше{" "}
+          <span className="font-semibold text-fg tnum">
+            {rubShort(estimate.budgetKopecks)}
+            {NB}₽
+          </span>{" "}
+          себестоимости за 30 дней (на пробной неделе — пропорционально её дням). Это примерно{" "}
+          <span className="font-semibold text-fg tnum">{estimate.questions}</span> {pluralRu(estimate.questions, "вопрос", "вопроса", "вопросов")} с поиском по данным группы или{" "}
+          <span className="font-semibold text-fg tnum">{estimate.strongQuestions}</span> {pluralRu(estimate.strongQuestions, "сильный", "сильных", "сильных")}.
+        </p>
+      )}
       <p className="text-[12px] text-dim">{basis}</p>
     </div>
   );
 }
+

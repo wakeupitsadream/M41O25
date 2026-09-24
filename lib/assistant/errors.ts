@@ -26,6 +26,7 @@ export class ChatTimeoutError extends Error {
 }
 
 const OVERLOADED = "Помощник перегружен, повтори через минуту";
+const NO_BALANCE = "У помощника закончился баланс — админ уже знает";
 const ADMIN_KNOWS = "Помощник сейчас недоступен — админ уже знает";
 
 /** Тексты describeProviderError писались для OCR: подставляем переменные помощника и убираем «заполни вручную». */
@@ -43,11 +44,14 @@ export function describeChatError(e: unknown, model: string): ChatErrorInfo {
     const status = e.status;
     const msg = e.message ?? "";
     const detail = forAssistant(describeProviderError(e, model));
-    if (status === 402 || /insufficient|balance|funds|недостаточно|quota/i.test(msg)) {
-      return { message: "У помощника закончился баланс — админ уже знает", detail, notifyAdmin: true };
-    }
+    if (status === 402) return { message: NO_BALANCE, detail, notifyAdmin: true };
+    // 429 — до регулярки про баланс: у Google перегрузка звучит как «Resource has been exhausted (e.g. check quota)»,
+    // и слово «quota» отправляло бы админа пополнять баланс, на котором деньги есть. describeProviderError из OCR
+    // проверяет регулярку раньше статуса, поэтому detail для 429 свой.
+    if (status === 429) return { message: OVERLOADED, detail: `Провайдер отвечает «слишком много запросов» (HTTP 429) для ${model}: ${msg.slice(0, 200)}`, notifyAdmin: false };
+    if (/insufficient|balance|funds|недостаточно|quota/i.test(msg)) return { message: NO_BALANCE, detail, notifyAdmin: true };
     if (status === 401 || status === 403 || status === 404) return { message: ADMIN_KNOWS, detail, notifyAdmin: true };
-    if (status === 429 || status >= 500) return { message: OVERLOADED, detail, notifyAdmin: false };
+    if (status >= 500) return { message: OVERLOADED, detail, notifyAdmin: false };
     if (status === 400 || status === 413) {
       if (/context|too long|too many tokens|maximum.*tokens|token limit|413|payload/i.test(msg) || status === 413) {
         return { message: "Слишком длинно для помощника — начни новый чат или пришли меньше файлов", detail, notifyAdmin: false };

@@ -1,39 +1,114 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { clipXml, columnIndex, fitSections, sharedStrings, sheetOrder, sheetText, slideText, slidesText, workbookSheets, workbookText } from "./extract-xml";
+import { fitRaw } from "./extract-fit";
+import { cellStyles, columnIndex, readPptx, readXlsx, sharedStrings, sheetOrder, sheetText, slideText } from "./extract-xml";
+import { memorySource } from "./extract-zip";
 
-const NS = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"';
-const slide = (...paragraphs: string[]) =>
-  `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld ${NS}><p:cSld><p:spTree><p:sp><p:txBody><a:bodyPr/>${paragraphs.join("")}</p:txBody></p:sp></p:spTree></p:cSld></p:sld>`;
+const NS = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+const slide = (...shapes: string[]) =>
+  `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><p:sld ${NS}><p:cSld><p:spTree>${shapes.join("")}</p:spTree></p:cSld></p:sld>`;
+const shape = (...paragraphs: string[]) => `<p:sp><p:txBody><a:bodyPr/>${paragraphs.join("")}</p:txBody></p:sp>`;
 const para = (...runs: string[]) => `<a:p>${runs.map((r) => (r === "<br>" ? "<a:br/>" : `<a:r><a:rPr lang="ru-RU"/><a:t>${r}</a:t></a:r>`)).join("")}</a:p>`;
+const table = (rows: string[][]) =>
+  `<p:graphicFrame><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><a:tbl><a:tblGrid/>${rows
+    .map((r) => `<a:tr h="1">${r.map((c) => `<a:tc><a:txBody><a:bodyPr/>${c ? para(c) : "<a:p><a:endParaRPr/></a:p>"}</a:txBody></a:tc>`).join("")}</a:tr>`)
+    .join("")}</a:tbl></a:graphicData></a:graphic></p:graphicFrame>`;
+const smartArt = (rid: string) =>
+  `<p:graphicFrame><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/diagram"><dgm:relIds xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram" r:dm="${rid}" r:lo="rId3" r:qs="rId4" r:cs="rId5"/></a:graphicData></a:graphic></p:graphicFrame>`;
 
 test("slideText: абзацы построчно, прогоны склеиваются с пробелами как есть, a:br — перевод строки", () => {
-  const xml = slide(para("Тема: ", "Эластичность"), para(), para("Спрос ", "<br>", "Предложение"), para("P &amp; Q &lt; 10"));
+  const xml = slide(shape(para("Тема: ", "Эластичность"), para(), para("Спрос ", "<br>", "Предложение"), para("P &amp; Q &lt; 10")));
   assert.equal(slideText(xml), "Тема: Эластичность\nСпрос\nПредложение\nP & Q < 10");
 });
 
-test("slidesText: по номеру файла (slide10 после slide2), метка — порядковый номер, пустой слайд пропущен", () => {
-  const files = {
-    "ppt/slides/slide10.xml": slide(para("Десятый")),
-    "ppt/slides/slide2.xml": slide(para("Второй")),
-    "ppt/slides/slide1.xml": slide(para("Первый")),
-    "ppt/slides/slide3.xml": slide(),
-    "ppt/slides/_rels/slide1.xml.rels": "<Relationships/>",
-    "ppt/notesSlides/notesSlide1.xml": slide(para("Заметки докладчика")),
-  };
-  assert.deepEqual(slidesText(files), [
-    { label: "Слайд 1", text: "Первый" },
-    { label: "Слайд 2", text: "Второй" },
-    { label: "Слайд 4", text: "Десятый" },
-  ]);
+test("slideText: таблица — строки через « | », пустые ячейки сохраняются; поле (номер слайда) — тоже текст", () => {
+  const xml = slide(
+    table([
+      ["Дата", "Тема", "Балл"],
+      ["01.10", "", "5"],
+      ["08.10", "Инфляция", ""],
+      ["", "", ""],
+    ]),
+    shape(`<a:p><a:fld id="{1}" type="slidenum"><a:t>7</a:t></a:fld></a:p>`),
+  );
+  assert.equal(slideText(xml), "Дата | Тема | Балл\n01.10 |  | 5\n08.10 | Инфляция | \n7");
 });
 
-test("slideText: таблица на слайде — каждая ячейка своей строкой, поле (номер слайда) тоже текст", () => {
+test("slideText: mc:Fallback пропускается — текст не задваивается", () => {
   const xml = slide(
-    `<a:tbl><a:tr><a:tc><a:txBody>${para("Год")}</a:txBody></a:tc><a:tc><a:txBody>${para("ВВП")}</a:txBody></a:tc></a:tr></a:tbl>`,
-    `<a:p><a:fld id="{1}" type="slidenum"><a:t>7</a:t></a:fld></a:p>`,
+    `<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice Requires="a14">${shape(para("Формула"))}</mc:Choice><mc:Fallback>${shape(para("Формула"))}</mc:Fallback></mc:AlternateContent>`,
   );
-  assert.equal(slideText(xml), "Год\nВВП\n7");
+  assert.equal(slideText(xml), "Формула");
+});
+
+test("readPptx: по номеру файла (slide10 после slide2), метка — порядковый номер, пустой слайд пропущен, но посчитан", async () => {
+  const files = {
+    "ppt/slides/slide10.xml": slide(shape(para("Десятый"))),
+    "ppt/slides/slide2.xml": slide(shape(para("Второй"))),
+    "ppt/slides/slide1.xml": slide(shape(para("Первый"))),
+    "ppt/slides/slide3.xml": slide(),
+    "ppt/slides/_rels/slide1.xml.rels": "<Relationships/>",
+    "ppt/notesSlides/notesSlide1.xml": slide(shape(para("Заметки докладчика"))),
+  };
+  const raw = await readPptx(memorySource(files), 30_000);
+  assert.equal(raw.kind, "sections");
+  if (raw.kind !== "sections") return;
+  assert.deepEqual(
+    raw.sections.map((s) => [s.label, s.text]),
+    [
+      ["Слайд 1", "Первый"],
+      ["Слайд 2", "Второй"],
+      ["Слайд 4", "Десятый"],
+    ],
+  );
+  assert.equal(raw.total, 4);
+  assert.equal(raw.read, 4);
+  assert.deepEqual(fitRaw(raw, 30_000).truncated, false);
+});
+
+const DIAGRAM_DATA = `<?xml version="1.0"?><dgm:dataModel xmlns:dgm="http://schemas.openxmlformats.org/drawingml/2006/diagram" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><dgm:ptLst>
+<dgm:pt modelId="{0}" type="doc"><dgm:prSet/><dgm:spPr/><dgm:t><a:bodyPr/><a:p><a:endParaRPr lang="ru-RU"/></a:p></dgm:t></dgm:pt>
+<dgm:pt modelId="{1}"><dgm:prSet phldrT="[Текст]"/><dgm:spPr/><dgm:t><a:bodyPr/><a:p><a:r><a:t>Планирование</a:t></a:r></a:p></dgm:t></dgm:pt>
+<dgm:pt modelId="{2}"><dgm:prSet/><dgm:spPr/><dgm:t><a:bodyPr/><a:p><a:r><a:t>Исполнение</a:t></a:r></a:p></dgm:t></dgm:pt>
+<dgm:pt modelId="{3}" type="parTrans"><dgm:prSet/><dgm:spPr/><dgm:t><a:bodyPr/><a:p><a:endParaRPr/></a:p></dgm:t></dgm:pt>
+</dgm:ptLst></dgm:dataModel>`;
+
+test("readPptx: SmartArt — текст из ppt/diagrams/dataN.xml через slideN.xml.rels; без данных — пометка «схема не прочитана»", async () => {
+  const rels = `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData" Target="../diagrams/data1.xml"/>
+<Relationship Id="rId9" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/diagramData" Target="../diagrams/data9.xml"/>
+</Relationships>`;
+  const files = {
+    "ppt/slides/slide1.xml": slide(shape(para("Этапы процесса")), smartArt("rId2")),
+    "ppt/slides/_rels/slide1.xml.rels": rels,
+    "ppt/diagrams/data1.xml": DIAGRAM_DATA,
+    // Второй слайд — одна схема, чьих данных в архиве нет.
+    "ppt/slides/slide2.xml": slide(smartArt("rId9")),
+    "ppt/slides/_rels/slide2.xml.rels": rels,
+    "ppt/slides/slide3.xml": slide(
+      `<p:graphicFrame><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/chart"><c:chart xmlns:c="http://schemas.openxmlformats.org/drawingml/2006/chart" r:id="rId2"/></a:graphicData></a:graphic></p:graphicFrame>`,
+    ),
+  };
+  const raw = await readPptx(memorySource(files), 30_000);
+  assert.equal(raw.kind, "sections");
+  if (raw.kind !== "sections") return;
+  assert.deepEqual(
+    raw.sections.map((s) => s.text),
+    ["Этапы процесса\nПланирование\nИсполнение", "[на слайде 2 схема — её текст не прочитан]", "[на слайде 3 диаграмма — её данные не прочитаны]"],
+  );
+});
+
+test("readPptx: останавливается по бюджету, остальные слайды — в «показаны первые N из M»", async () => {
+  const files: Record<string, string> = {};
+  for (let i = 1; i <= 50; i++) files[`ppt/slides/slide${i}.xml`] = slide(shape(para(`Слайд номер ${i} `.repeat(30))));
+  const raw = await readPptx(memorySource(files), 2000);
+  assert.equal(raw.kind, "sections");
+  if (raw.kind !== "sections") return;
+  assert.ok(raw.read < 10, `прочитано ${raw.read} слайдов`);
+  assert.equal(raw.total, 50);
+  const r = fitRaw(raw, 2000);
+  assert.equal(r.truncated, true);
+  assert.match(r.note ?? "", /^документ обрезан, показаны первые \d из 50 слайдов$/);
 });
 
 const SST = `<?xml version="1.0"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" count="4" uniqueCount="4">
@@ -84,7 +159,23 @@ test("sheetText: далёкая колонка не даёт тысячи таб
   assert.ok(line.split("\t").length <= 32);
 });
 
-const WORKBOOK = `<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>
+const STYLES = `<?xml version="1.0"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+<numFmts count="2"><numFmt numFmtId="164" formatCode="dd/mm/yyyy;@"/><numFmt numFmtId="165" formatCode="[$-F400]h:mm:ss\\ AM/PM"/></numFmts>
+<cellStyleXfs count="1"><xf numFmtId="14"/></cellStyleXfs>
+<cellXfs count="7"><xf numFmtId="0"/><xf numFmtId="14" applyNumberFormat="1"/><xf numFmtId="20"/><xf numFmtId="9"/><xf numFmtId="164"/><xf numFmtId="10"/><xf numFmtId="165"/></cellXfs>
+</styleSheet>`;
+
+test("sheetText: даты, время и проценты по стилю ячейки; плавающий шум округлён", () => {
+  const xml = sheet(
+    `<row r="1"><c r="A1" s="1"><v>46289</v></c><c r="B1" s="2"><v>0.375</v></c><c r="C1"><v>0.30000000000000004</v></c><c r="D1" s="3"><v>0.85</v></c></row>` +
+      `<row r="2"><c r="A2" s="4"><v>45567</v></c><c r="B2" s="5"><v>0.12345</v></c><c r="C2" s="6"><v>0.5625</v></c><c r="D2" s="0"><v>20231234567</v></c></row>`,
+  );
+  assert.equal(sheetText(xml, [], cellStyles(STYLES)), ["24.09.2026\t9:00\t0.3\t85 %", "02.10.2024\t12.35 %\t13:30:00\t20231234567"].join("\n"));
+  // Та же книга в системе 1904 (старые файлы с Mac): день 0 — 01.01.1904.
+  assert.equal(sheetText(sheet(`<row r="1"><c r="A1" s="1"><v>44827</v></c></row>`), [], cellStyles(STYLES), true), "24.09.2026");
+});
+
+const WORKBOOK = `<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><workbookPr date1904="1"/><sheets>
 <sheet name="Оценки" sheetId="1" r:id="rId2"/><sheet name="Служебный" sheetId="2" state="hidden" r:id="rId3"/><sheet name="Посещаемость" sheetId="3" r:id="rId1"/>
 </sheets></workbook>`;
 const RELS = `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
@@ -93,109 +184,87 @@ const RELS = `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlf
 <Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>
 </Relationships>`;
 
-test("workbookSheets: порядок вкладок, файл через rels (относительный и абсолютный Target), скрытые пропущены", () => {
-  assert.deepEqual(workbookSheets(WORKBOOK, RELS), [
-    { name: "Оценки", path: "xl/worksheets/sheet1.xml" },
-    { name: "Посещаемость", path: "xl/worksheets/sheet3.xml" },
+test("sheetOrder: порядок вкладок, файл через rels (относительный и абсолютный Target), скрытые и отсутствующие пропущены", () => {
+  const sheets = [
+    { name: "Оценки", rid: "rId2", hidden: false },
+    { name: "Служебный", rid: "rId3", hidden: true },
+    { name: "Посещаемость", rid: "rId1", hidden: false },
+  ];
+  const rels = new Map([
+    ["rId1", "xl/worksheets/sheet3.xml"],
+    ["rId2", "xl/worksheets/sheet1.xml"],
+    ["rId3", "xl/worksheets/sheet2.xml"],
+  ]);
+  assert.deepEqual(sheetOrder(sheets, rels, ["xl/worksheets/sheet3.xml", "xl/worksheets/sheet1.xml", "xl/worksheets/sheet2.xml"]), [
+    { label: "Лист 1: Оценки", path: "xl/worksheets/sheet1.xml" },
+    { label: "Лист 2: Посещаемость", path: "xl/worksheets/sheet3.xml" },
   ]);
   // Без rels — i-я вкладка = sheet{i+1}.xml.
   assert.deepEqual(
-    workbookSheets(WORKBOOK, undefined).map((s) => s.path),
+    sheetOrder(sheets, new Map(), ["xl/worksheets/sheet1.xml", "xl/worksheets/sheet3.xml"]).map((s) => s.path),
     ["xl/worksheets/sheet1.xml", "xl/worksheets/sheet3.xml"],
   );
+  // Без workbook.xml — по номерам файлов.
+  assert.deepEqual(sheetOrder([], new Map(), ["xl/worksheets/sheet2.xml", "xl/worksheets/sheet1.xml", "xl/styles.xml"]), [
+    { label: "Лист 1", path: "xl/worksheets/sheet1.xml" },
+    { label: "Лист 2", path: "xl/worksheets/sheet2.xml" },
+  ]);
 });
 
-test("workbookText: метки с именами листов, пустой лист пропущен; без workbook.xml — по номерам файлов", () => {
+test("readXlsx: метки с именами листов, date1904 из workbook.xml, стили; скрытый лист не читается", async () => {
   const files = {
     "xl/workbook.xml": WORKBOOK,
     "xl/_rels/workbook.xml.rels": RELS,
     "xl/sharedStrings.xml": SST,
-    "xl/worksheets/sheet1.xml": sheet(`<row r="1"><c r="A1" t="s"><v>2</v></c><c r="B1"><v>5</v></c></row>`),
+    "xl/styles.xml": STYLES,
+    "xl/worksheets/sheet1.xml": sheet(`<row r="1"><c r="A1" t="s"><v>2</v></c><c r="B1" s="1"><v>44827</v></c></row>`),
     "xl/worksheets/sheet2.xml": sheet(`<row r="1"><c r="A1"><v>секрет</v></c></row>`),
-    "xl/worksheets/sheet3.xml": sheet(""),
+    "xl/worksheets/sheet3.xml": sheet(`<row r="1"><c r="A1" t="s"><v>3</v></c></row>`),
   };
-  assert.deepEqual(workbookText(files), [{ label: "Лист 1: Оценки", text: "Иванов И.\t5" }]);
+  const r = fitRaw(await readXlsx(memorySource(files), 30_000), 30_000);
+  assert.deepEqual(r, { text: "— Лист 1: Оценки —\nИванов И.\t24.09.2026\n\n— Лист 2: Посещаемость —\nПетров", truncated: false });
+});
 
-  const bare = {
-    "xl/worksheets/sheet10.xml": sheet(`<row r="1"><c r="A1"><v>10</v></c></row>`),
-    "xl/worksheets/sheet2.xml": sheet(`<row r="1"><c r="A1"><v>2</v></c></row>`),
+test("readXlsx: пустые листы просмотрены, но не делают документ «обрезанным»", async () => {
+  const files = {
+    "xl/workbook.xml": `<workbook xmlns:r="r"><sheets><sheet name="Оценки" r:id="rId1"/><sheet name="Лист2" r:id="rId2"/><sheet name="Лист3" r:id="rId3"/></sheets></workbook>`,
+    "xl/_rels/workbook.xml.rels": `<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Target="worksheets/sheet2.xml"/><Relationship Id="rId3" Target="worksheets/sheet3.xml"/></Relationships>`,
+    "xl/worksheets/sheet1.xml": sheet(`<row r="1"><c r="A1" t="inlineStr"><is><t>Иванов</t></is></c><c r="B1"><v>5</v></c></row>`),
+    "xl/worksheets/sheet2.xml": sheet(""),
+    "xl/worksheets/sheet3.xml": sheet(`<row r="3" spans="1:3"/>`),
   };
-  assert.deepEqual(workbookText(bare), [
-    { label: "Лист 1", text: "2" },
-    { label: "Лист 2", text: "10" },
-  ]);
+  const r = fitRaw(await readXlsx(memorySource(files), 30_000), 30_000);
+  assert.deepEqual(r, { text: "— Лист 1: Оценки —\nИванов\t5", truncated: false });
 });
 
-test("clipXml: обрезка по последнему закрытому элементу, парсер принимает незакрытый хвост", () => {
-  const rows = Array.from({ length: 50 }, (_, i) => `<row r="${i + 1}"><c r="A${i + 1}"><v>${i + 1}</v></c></row>`).join("");
-  const xml = sheet(rows);
-  const clipped = clipXml(xml, 400, "row");
-  assert.ok(clipped.length <= 400);
-  assert.ok(clipped.endsWith("</row>"));
-  const lines = sheetText(clipped, []).split("\n");
-  assert.ok(lines.length > 3 && lines.length < 50);
-  assert.deepEqual(lines.slice(0, 3), ["1", "2", "3"]);
-  assert.equal(clipXml(xml, xml.length, "row"), xml);
-  assert.equal(clipXml("<a><b>очень длинный текст без закрытых row</b></a>", 10, "row"), "");
+test("readXlsx: книга без данных — пометка, а не пустой текст", async () => {
+  const r = fitRaw(await readXlsx(memorySource({ "xl/worksheets/sheet1.xml": sheet("") }), 30_000), 30_000);
+  assert.deepEqual(r, { text: "", truncated: false, note: "в таблице нет данных — пришли фото или другой файл" });
 });
 
-test("parseXml: DOCTYPE с сущностями вырезается, текст не раздувается", () => {
-  const evil = `<!DOCTYPE x [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;&a;">]>` + slide(para("&b;"), para("норм"));
-  const text = slideText(evil);
-  assert.ok(text.includes("норм"));
-  assert.ok(!text.includes("aaaaaaaaaa"));
+test("readXlsx: большой лист останавливается по бюджету, следующие листы не читаются", async () => {
+  const rows = Array.from({ length: 5000 }, (_, i) => `<row r="${i + 1}"><c r="A${i + 1}" t="inlineStr"><is><t>Строка ${i + 1}</t></is></c></row>`).join("");
+  const files = {
+    "xl/worksheets/sheet1.xml": sheet(rows),
+    "xl/worksheets/sheet2.xml": sheet(rows),
+  };
+  const raw = await readXlsx(memorySource(files), 1000);
+  assert.equal(raw.kind, "sections");
+  if (raw.kind !== "sections") return;
+  assert.equal(raw.read, 1);
+  assert.ok(raw.sections[0].text.length < 1100);
+  const r = fitRaw(raw, 1000);
+  assert.equal(r.note, "документ обрезан, показаны первые 1 из 2 листов");
 });
 
-test("fitSections: всё влезает — без пометки; заголовки разделов через тире", () => {
-  const r = fitSections(
-    [
-      { label: "Слайд 1", text: "А" },
-      { label: "Слайд 2", text: "Б" },
-    ],
+test("бюджет посреди огромной ячейки или абзаца слайда: накопленное отдаётся, разбор останавливается", async () => {
+  const cell = await readXlsx(
+    memorySource({ "xl/worksheets/sheet1.xml": sheet(`<row r="1"><c r="A1" t="inlineStr"><is><t>${"я".repeat(100_000)}</t></is></c></row><row r="2"><c r="A2"><v>2</v></c></row>`) }),
     1000,
-    "slides",
   );
-  assert.deepEqual(r, { text: "— Слайд 1 —\nА\n\n— Слайд 2 —\nБ", truncated: false });
-  // Одна страница PDF — без заголовка «Страница 1».
-  assert.deepEqual(fitSections([{ label: "Страница 1", text: "текст" }], 1000, "pages"), { text: "текст", truncated: false });
-});
-
-test("fitSections: обрезка по разделам с пометкой «показаны первые N из M» в родительном падеже", () => {
-  const pages = Array.from({ length: 21 }, (_, i) => ({ label: `Страница ${i + 1}`, text: "слово ".repeat(100).trim() }));
-  const r = fitSections(pages, 2000, "pages");
-  assert.equal(r.truncated, true);
-  assert.ok(r.text.length <= 2000);
-  const shown = (r.text.match(/— Страница \d+ —/g) ?? []).length;
-  assert.equal(r.note, `документ обрезан, показаны первые ${shown} из 21 страницы`);
-  assert.ok(shown >= 3 && shown < 21);
-
-  const sheets = Array.from({ length: 5 }, (_, i) => ({ label: `Лист ${i + 1}`, text: "x".repeat(900) }));
-  assert.equal(fitSections(sheets, 1000, "sheets").note, "документ обрезан, показаны первые 1 из 5 листов");
-});
-
-test("fitSections: огромный первый раздел — показывается его начало", () => {
-  const r = fitSections([{ label: "Лист 1", text: "строка\n".repeat(10_000) }], 500, "sheets");
-  assert.equal(r.truncated, true);
-  assert.ok(r.text.startsWith("— Лист 1 —\nстрока"));
-  assert.ok(r.text.length <= 500);
-  assert.equal(r.note, "документ обрезан, показано только начало");
-});
-
-test("fitSections: прочитано меньше разделов, чем в документе (PDF бросили на полпути) — пометка с общим числом", () => {
-  const r = fitSections([{ label: "Страница 1", text: "а" }], 1000, "pages", 40);
-  assert.equal(r.truncated, true);
-  assert.equal(r.text, "— Страница 1 —\nа");
-  assert.equal(r.note, "документ обрезан, показаны первые 1 из 40 страниц");
-});
-
-test("sheetOrder: только листы, которые есть в архиве; метки по порядку вкладок", () => {
-  const files = { "xl/workbook.xml": WORKBOOK, "xl/_rels/workbook.xml.rels": RELS };
-  assert.deepEqual(sheetOrder(files, ["xl/worksheets/sheet3.xml", "xl/worksheets/sheet1.xml"]), [
-    { label: "Лист 1: Оценки", path: "xl/worksheets/sheet1.xml" },
-    { label: "Лист 2: Посещаемость", path: "xl/worksheets/sheet3.xml" },
-  ]);
-  assert.deepEqual(sheetOrder({}, ["xl/worksheets/sheet2.xml", "xl/worksheets/sheet1.xml", "xl/styles.xml"]), [
-    { label: "Лист 1", path: "xl/worksheets/sheet1.xml" },
-    { label: "Лист 2", path: "xl/worksheets/sheet2.xml" },
-  ]);
+  assert.equal(cell.kind, "sections");
+  if (cell.kind === "sections") assert.ok(cell.sections[0].text.startsWith("яяя") && cell.sections[0].text.length < 70_000);
+  const slideRaw = await readPptx(memorySource({ "ppt/slides/slide1.xml": slide(shape(para("слово ".repeat(100_000)))) }), 1000);
+  assert.equal(slideRaw.kind, "sections");
+  if (slideRaw.kind === "sections") assert.ok(slideRaw.sections[0].text.startsWith("слово слово") && slideRaw.sections[0].text.length < 70_000);
 });

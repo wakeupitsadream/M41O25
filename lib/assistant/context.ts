@@ -112,8 +112,12 @@ export function buildContext(c: ContextInput): string {
 
 // ---------- История ----------
 
-/** Бюджет истории в токенах (docs/AI-CHAT.md §6); оценка по длине, как estimateTokens. */
-export const HISTORY_TOKENS = 6000;
+/**
+ * Бюджет истории в токенах (docs/AI-CHAT.md §6); оценка по длине, как estimateTokens. История уходит в каждый круг
+ * модели заново, поэтому это главная переменная цены сообщения (lib/assistant/estimate.ts): 4000 вместо 6000 — это
+ * примерно на пятую часть больше вопросов в тот же ресурс, а старшее не теряется, оно уходит в summary.
+ */
+export const HISTORY_TOKENS = 4000;
 
 /** Сообщение истории текстом: вложения не пересылаются повторно, модели достаточно знать, что они были. */
 export function historyText(m: Pick<ChatMessage, "content" | "attachments">): string {

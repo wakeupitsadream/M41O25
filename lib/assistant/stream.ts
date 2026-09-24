@@ -85,6 +85,14 @@ export function parseToolArguments(raw: string): Record<string, unknown> | null 
   }
 }
 
+/**
+ * Аргументы вызова для истории assistant.tool_calls следующего круга. Битый JSON (ответ обрезан по max_tokens
+ * посреди аргументов, стрим встал на полуслове) провайдер не примет: прослойки в формат Gemini и Claude разбирают
+ * arguments в объект и отвечают 400 на весь круг. В историю — "{}", а что аргументы были битые, модель узнает
+ * из ответа инструмента (runTool получает исходную строку и отвечает ошибкой аргументов).
+ */
+export const historyArguments = (raw: string): string => (raw.trim() === "" || parseToolArguments(raw) === null ? "{}" : raw);
+
 // ---------- NDJSON событий ----------
 
 /** Событие → одна строка NDJSON с переводом строки. JSON.stringify экранирует \n внутри текста, так что строка всегда одна. */

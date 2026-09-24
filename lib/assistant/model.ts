@@ -8,10 +8,10 @@ import { addDaysIso, todayIso } from "@/lib/tz";
 import { clipText, ddmm } from "./compact";
 import { buildContext, fitHistory, historyText } from "./context";
 import { ChatTimeoutError, describeChatError } from "./errors";
-import { extractDocuments, type ExtractResult } from "./extract";
+import { DOC_TEXT_LIMIT, EXTRACT_MS, extractDocuments, type ExtractResult } from "./extract";
 import { estimateTokens } from "./pricing";
 import { summaryMessage, systemPrompt } from "./prompt";
-import { addUsage, createToolCallAccumulator, estimateRoundUsage, usageFromProvider, ZERO_USAGE, type AssembledToolCall } from "./stream";
+import { addUsage, createToolCallAccumulator, estimateRoundUsage, historyArguments, usageFromProvider, ZERO_USAGE, type AssembledToolCall } from "./stream";
 import { runTool, TOOL_DEFINITIONS, type ToolContext } from "./tools";
 import { loadContextInput } from "./tools-data";
 import type { AssistantUsage, ChatEvent, ChatMessage, ChatMessageStatus } from "./types";
@@ -51,6 +51,11 @@ export type RunChatResult = {
   errorMessage: string | null;
   /** Старший хвост истории, не вошедший в бюджет, — роут сожмёт его в summary после ответа. */
   dropped: ChatMessage[];
+  /**
+   * Запрос к модели хоть раз ушёл. false — студент ушёл раньше (пока собирался запрос): ничего не оплачено,
+   * и роут возвращает квоту даже у 'aborted'.
+   */
+  modelCalled: boolean;
 };
 
 export type Emit = (e: Extract<ChatEvent, { t: "delta" } | { t: "tool" }>) => void;
@@ -63,7 +68,11 @@ const MAX_TOOL_ROUNDS = 2;
 const MAX_CALLS_PER_ROUND = 6;
 /** Сколько ждём следующий чанк, прежде чем признать ответ зависшим (и таймаут SDK на заголовки). */
 const IDLE_MS = 55_000;
-/** Общий бюджет на все круги: роут живёт 120 с, после модели ещё сохранить ответ и отдать done. */
+/**
+ * Общий бюджет от начала runChat, включая извлечение документов (до EXTRACT_MS): роут живёт 120 с, после модели ещё
+ * сохранить ответ и отдать done. Раньше отсчёт шёл после сборки запроса, и 20 с документов плюс 100 с модели
+ * упирались ровно в maxDuration — функцию убивали бы до сохранения ответа.
+ */
 const TOTAL_MS = 100_000;
 
 // ---------- Сборка сообщений ----------
@@ -80,13 +89,17 @@ export function documentBlock(name: string, r: ExtractResult): string {
 
 type Built = { messages: Params[]; images: number; dropped: ChatMessage[]; docs: { name: string; result: ExtractResult }[]; contextTokens: number; historyCount: number };
 
-async function buildMessages(input: RunChatInput): Promise<Built> {
+async function buildMessages(input: RunChatInput, extractDeadline: number): Promise<Built> {
   const { kept, dropped } = fitHistory(input.history);
   const images = input.attachments.filter((a) => a.att.mime.startsWith("image/"));
   const files = input.attachments.filter((a) => !a.att.mime.startsWith("image/"));
   const [contextInput, extracted] = await Promise.all([
     loadContextInput(input.user),
-    extractDocuments(files.map((f) => ({ mime: f.att.mime, name: f.att.fileName, body: f.body }))),
+    extractDocuments(
+      files.map((f) => ({ mime: f.att.mime, name: f.att.fileName, body: f.body })),
+      DOC_TEXT_LIMIT,
+      extractDeadline,
+    ),
   ]);
   const context = buildContext(contextInput);
   const docs = files.map((f, i) => ({ name: f.att.fileName, result: extracted[i] }));
@@ -132,6 +145,11 @@ type Round =
  * Один вызов модели со стримом. Таймаут свой: SDK ограничивает только ожидание заголовков, а зависший посреди
  * ответа поток держал бы функцию до maxDuration. Сторож перезапускается на каждом чанке (IDLE_MS) и не выходит
  * за общий дедлайн запроса. Ошибки не бросаются — круг возвращает, что успел получить.
+ *
+ * Прерванный поток openai 7.x не отличает от законченного: на abort (и наш таймер, и уход клиента) for-await
+ * просто завершается без исключения (core/streaming.js: isAbortError → return). Поэтому после цикла смотрим сами:
+ * сигнал сработал, а finish_reason так и не пришёл — ответ оборван, и это не ok, а таймаут или уход клиента.
+ * Если finish_reason уже был, ответ целый (мог не дойти только чанк с usage) — это ok.
  */
 async function streamRound(
   client: OpenAI,
@@ -141,6 +159,9 @@ async function streamRound(
   round: number,
   onText: (s: string) => void,
 ): Promise<Round> {
+  // Слушатель abort на уже прерванном сигнале не срабатывает никогда: без этой проверки ушедший клиент не отменил
+  // бы запрос, и модель сгенерировала бы (и мы оплатили бы) ответ, который никто не увидит.
+  if (outer.aborted) return { ok: false, error: outer.reason, text: "", usage: null, started: false };
   const ctrl = new AbortController();
   let timedOut = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -180,9 +201,13 @@ async function streamRound(
         if (choice.finish_reason) finish = choice.finish_reason;
       }
     }
+    if (ctrl.signal.aborted && finish === null) {
+      // Уход клиента важнее таймера: если сработало и то и другое, отвечать уже некому.
+      return { ok: false, error: outer.aborted ? outer.reason : new ChatTimeoutError(), text, usage, started: true };
+    }
     return { ok: true, text, calls: acc.list(round), finish, usage, started: true };
   } catch (e) {
-    return { ok: false, error: timedOut ? new ChatTimeoutError() : e, text, usage, started };
+    return { ok: false, error: timedOut && !outer.aborted ? new ChatTimeoutError() : e, text, usage, started };
   } finally {
     clearTimeout(timer);
     outer.removeEventListener("abort", onAbort);
@@ -193,8 +218,9 @@ async function streamRound(
 
 /**
  * Ответ модели на сообщение студента. Никогда не бросает: любая беда — status 'error' с текстами для студента
- * и админа, обрыв клиента (signal) — 'aborted' с тем, что успело прийти. usage суммируется по кругам; круг,
- * оборвавшийся без usage, оценивается по длине, и это помечается в error — чтобы расход в админке не был нулём.
+ * и админа, обрыв клиента (signal) — 'aborted' с тем, что успело прийти, свой таймаут — 'error' с текстом про
+ * таймаут (и с тем, что успело прийти). usage суммируется по кругам; круг, оборвавшийся без usage, оценивается
+ * по длине, и это помечается в error — чтобы расход в админке не был нулём.
  */
 export async function runChat(input: RunChatInput, emit: Emit, signal: AbortSignal): Promise<RunChatResult> {
   const model = input.strong ? env.assistant.strongModel : env.assistant.model;
@@ -202,12 +228,13 @@ export async function runChat(input: RunChatInput, emit: Emit, signal: AbortSign
   const fail = (e: unknown, partial: Partial<RunChatResult> = {}): RunChatResult => {
     const info = describeChatError(e, model);
     if (info.notifyAdmin) void logAppError({ route: "/api/assistant/chat", message: info.detail, digest: null, kind: "assistant" });
-    return { content: "", usage: null, model, toolCalls: 0, dropped: [], ...partial, status: "error", error: info.detail, errorMessage: info.message };
+    return { content: "", usage: null, model, toolCalls: 0, dropped: [], modelCalled: false, ...partial, status: "error", error: info.detail, errorMessage: info.message };
   };
 
+  const started = Date.now();
   let built: Built;
   try {
-    built = await buildMessages(input);
+    built = await buildMessages(input, started + EXTRACT_MS);
   } catch (e) {
     console.error("[assistant/model] сборка запроса", e);
     return fail(e);
@@ -216,19 +243,26 @@ export async function runChat(input: RunChatInput, emit: Emit, signal: AbortSign
   if (!env.polza.apiKey) return fail(new Error("POLZA_API_KEY не задан — помощник не может ответить"), { dropped: built.dropped });
 
   const client = new OpenAI({ apiKey: env.polza.apiKey, baseURL: env.polza.baseUrl, timeout: IDLE_MS, maxRetries: 0 });
-  const deadline = Date.now() + TOTAL_MS;
+  const deadline = started + TOTAL_MS;
   const messages = [...built.messages];
   let content = "";
   let usage: AssistantUsage = ZERO_USAGE;
   let estimated = false;
   let toolCalls = 0;
   let lengthCut = false;
+  let unfinished = false;
+  let modelCalled = false;
 
-  const partial = () => ({ content, usage: usage.prompt || usage.completion ? usage : null, toolCalls, dropped: built.dropped });
+  const partial = () => ({ content, usage: usage.prompt || usage.completion ? usage : null, toolCalls, dropped: built.dropped, modelCalled });
+  const aborted = (): RunChatResult => ({ ...partial(), model, status: "aborted", error: estimated ? "клиент ушёл; usage оценён по длине" : "клиент ушёл", errorMessage: null });
 
   for (let round = 0; ; round++) {
+    // Клиент ушёл, пока собирался запрос (документы, контекст) или шли инструменты прошлого круга: новый круг
+    // не начинаем — его ответ никто не увидит, а оплатить его пришлось бы целиком.
+    if (signal.aborted) return aborted();
     const toolsAllowed = round < MAX_TOOL_ROUNDS;
     let firstPiece = true;
+    modelCalled = true;
     const r = await streamRound(
       client,
       {
@@ -265,13 +299,14 @@ export async function runChat(input: RunChatInput, emit: Emit, signal: AbortSign
     }
 
     if (!r.ok) {
-      if (signal.aborted) return { ...partial(), model, status: "aborted", error: estimated ? "клиент ушёл; usage оценён по длине" : "клиент ушёл", errorMessage: null };
+      if (signal.aborted) return aborted();
       return fail(r.error, partial());
     }
     if (r.finish === "length") lengthCut = true;
+    if (r.finish === null) unfinished = true;
 
     if (r.calls.length === 0 || !toolsAllowed) break;
-    if (signal.aborted) return { ...partial(), model, status: "aborted", error: "клиент ушёл", errorMessage: null };
+    if (signal.aborted) return aborted();
     // Времени на ещё один круг нет: с текстом — отдаём что есть, без текста — честный таймаут, а не «пустой ответ».
     if (Date.now() > deadline - 10_000) {
       if (!content.trim()) return fail(new ChatTimeoutError(), partial());
@@ -281,10 +316,12 @@ export async function runChat(input: RunChatInput, emit: Emit, signal: AbortSign
     messages.push({
       role: "assistant",
       content: r.text || null,
-      tool_calls: r.calls.map((c) => ({ id: c.id, type: "function" as const, function: { name: c.name, arguments: c.arguments || "{}" } })),
+      tool_calls: r.calls.map((c) => ({ id: c.id, type: "function" as const, function: { name: c.name, arguments: historyArguments(c.arguments) } })),
     });
     const announced = new Set<string>();
     for (const [i, call] of r.calls.entries()) {
+      // Инструмент — запрос к базе на пуле из трёх соединений: ушедшему клиенту его результат не нужен.
+      if (signal.aborted) return aborted();
       let result: string;
       if (i >= MAX_CALLS_PER_ROUND) result = JSON.stringify({ error: "Слишком много вызовов за раз — уточни, что нужно" });
       else {
@@ -292,6 +329,7 @@ export async function runChat(input: RunChatInput, emit: Emit, signal: AbortSign
           announced.add(call.name);
           emit({ t: "tool", name: call.name });
         }
+        // Сюда — исходная строка: битый JSON runTool превратит в ошибку «Аргументы — не JSON-объект» для модели.
         result = await runTool(call.name, call.arguments, ctx);
         toolCalls++;
       }
@@ -308,7 +346,11 @@ export async function runChat(input: RunChatInput, emit: Emit, signal: AbortSign
       errorMessage: "Помощник не ответил — переформулируй вопрос",
     };
   }
-  const notes = [estimated ? "usage не пришёл — оценён по длине" : null, lengthCut ? "ответ обрезан по max_tokens" : null].filter(Boolean);
+  const notes = [
+    estimated ? "usage не пришёл — оценён по длине" : null,
+    lengthCut ? "ответ обрезан по max_tokens" : null,
+    unfinished ? "поток закончился без finish_reason — ответ мог оборваться у провайдера" : null,
+  ].filter(Boolean);
   return { ...partial(), model, status: "done", error: notes.length ? notes.join("; ") : null, errorMessage: null };
 }
 
@@ -335,16 +377,20 @@ export function mockChunks(text: string): string[] {
  */
 async function runMock(input: RunChatInput, built: Built, ctx: ToolContext, emit: Emit, signal: AbortSignal): Promise<RunChatResult> {
   const base = { model: "mock", dropped: built.dropped };
+  // Как у настоящей модели: ушёл до первого запроса — ничего не «оплачено», и роут вернёт квоту.
+  if (signal.aborted) return { ...base, content: "", usage: null, toolCalls: 0, modelCalled: false, status: "aborted", error: "клиент ушёл", errorMessage: null };
   if (input.text.includes("[mock-error]")) {
-    return { ...base, content: "", usage: null, toolCalls: 0, status: "error", error: "mock: смоделированная ошибка провайдера", errorMessage: "Помощник перегружен, повтори через минуту" };
+    return { ...base, content: "", usage: null, toolCalls: 0, modelCalled: true, status: "error", error: "mock: смоделированная ошибка провайдера", errorMessage: "Помощник перегружен, повтори через минуту" };
   }
   const lines = ["**Тестовый ответ помощника** (OCR_MOCK=1, модель не вызывалась)."];
   let toolCalls = 0;
+  const usage: AssistantUsage = { prompt: 1200, completion: 80, cached: 0 };
   if (/расписан|пар/i.test(input.text)) {
     emit({ t: "tool", name: "get_schedule" });
     const today = todayIso();
     const json = await runTool("get_schedule", { from: today, to: addDaysIso(today, 1) }, ctx);
     toolCalls = 1;
+    if (signal.aborted) return { ...base, content: "", usage, toolCalls, modelCalled: true, status: "aborted", error: "клиент ушёл", errorMessage: null };
     type Day = { date: string; weekday: string; unpublished?: boolean; lessons?: string[] };
     const data = JSON.parse(json) as { days?: Day[]; error?: string };
     if (data.error) lines.push(`Инструмент вернул ошибку: ${data.error}`);
@@ -365,36 +411,57 @@ async function runMock(input: RunChatInput, built: Built, ctx: ToolContext, emit
     emit({ t: "delta", text: piece });
     await sleep(slow ? 400 : 15);
   }
-  const usage: AssistantUsage = { prompt: 1200, completion: 80, cached: 0 };
-  if (signal.aborted) return { ...base, content, usage, toolCalls, status: "aborted", error: "клиент ушёл", errorMessage: null };
-  return { ...base, content, usage, toolCalls, status: "done", error: null, errorMessage: null };
+  if (signal.aborted) return { ...base, content, usage, toolCalls, modelCalled: true, status: "aborted", error: "клиент ушёл", errorMessage: null };
+  return { ...base, content, usage, toolCalls, modelCalled: true, status: "done", error: null, errorMessage: null };
 }
 
 // ---------- Сжатие истории ----------
 
 const SUMMARY_MAX_TOKENS = 300;
 const SUMMARY_INPUT_CHARS = 24_000;
+const SUMMARY_MESSAGE_CHARS = 2000;
+const SUMMARY_TIMEOUT_MS = 30_000;
+
+const transcriptLine = (m: ChatMessage) => {
+  const text = historyText(m);
+  return text ? `${m.role === "user" ? "Студент" : "Помощник"}: ${clipText(text, SUMMARY_MESSAGE_CHARS)}` : "";
+};
+
+/**
+ * Сколько старших сообщений сжать за один вызов: столько, сколько целиком влезает во вход summary. Иначе граница
+ * summarized_through уехала бы за сообщения, которые clipText отрезал от транскрипта, и они пропали бы без следа.
+ * Хотя бы одно берём всегда (оно само обрежется до SUMMARY_MESSAGE_CHARS), остальное сожмёт следующий ответ.
+ */
+export function summaryBatch<T extends ChatMessage>(messages: readonly T[]): T[] {
+  let used = 0;
+  let n = 0;
+  for (const m of messages) {
+    const len = transcriptLine(m).length + 1;
+    if (n > 0 && used + len > SUMMARY_INPUT_CHARS) break;
+    used += len;
+    n++;
+  }
+  return messages.slice(0, n);
+}
 
 /**
  * Старший хвост беседы → краткое содержание (docs/AI-CHAT.md §6): отдельный дешёвый вызов после ответа, из after().
  * Прежнее summary входит в новое — так цепочка сжатий не теряет начало разговора. Бросает при ошибке провайдера:
- * вызывающий просто не сдвинет границу и попробует в следующий раз.
+ * вызывающий просто не сдвинет границу и попробует в следующий раз. Пустой ответ модели не бросает, а возвращает
+ * summary "" вместе с usage: вызов уже оплачен, и его цена должна попасть в расход.
  */
-export async function summarizeHistory(previous: string | null, messages: readonly ChatMessage[]): Promise<{ summary: string; usage: AssistantUsage | null; model: string }> {
-  const transcript = clipText(
-    messages
-      .map((m) => ({ who: m.role === "user" ? "Студент" : "Помощник", text: historyText(m) }))
-      .filter((m) => m.text)
-      .map((m) => `${m.who}: ${clipText(m.text, 2000)}`)
-      .join("\n"),
-    SUMMARY_INPUT_CHARS,
-  );
+export async function summarizeHistory(
+  previous: string | null,
+  messages: readonly ChatMessage[],
+  timeoutMs = SUMMARY_TIMEOUT_MS,
+): Promise<{ summary: string; usage: AssistantUsage | null; model: string }> {
+  const transcript = clipText(messages.map(transcriptLine).filter(Boolean).join("\n"), SUMMARY_INPUT_CHARS);
   if (env.polza.mock) {
     const stub = `[заглушка OCR_MOCK=1: сжато ${messages.length} сообщ.] ${clipText(transcript.replace(/\s+/g, " "), 300)}`;
     return { summary: clipText([previous, stub].filter(Boolean).join("\n"), 1500), usage: null, model: "mock" };
   }
   const model = env.assistant.model;
-  const client = new OpenAI({ apiKey: env.polza.apiKey, baseURL: env.polza.baseUrl, timeout: 30_000, maxRetries: 0 });
+  const client = new OpenAI({ apiKey: env.polza.apiKey, baseURL: env.polza.baseUrl, timeout: timeoutMs, maxRetries: 0 });
   const res = await client.chat.completions.create({
     model,
     max_tokens: SUMMARY_MAX_TOKENS,
@@ -408,7 +475,6 @@ export async function summarizeHistory(previous: string | null, messages: readon
       { role: "user", content: `${previous ? `Прежнее краткое содержание:\n${previous}\n\n` : ""}Сообщения:\n${transcript}` },
     ],
   });
-  const summary = res.choices[0]?.message?.content?.trim();
-  if (!summary) throw new Error("Пустое краткое содержание");
+  const summary = res.choices[0]?.message?.content?.trim() ?? "";
   return { summary: clipText(summary, 2000), usage: usageFromProvider(res.usage), model };
 }

@@ -71,12 +71,14 @@ export const MessageItem = memo(function MessageItem({ m, stage, canRetry, onRet
     );
   }
 
-  const note = statusNote(m);
+  // Пока ответ ждём с сервера, подпись «прервался» не показываем: он, скорее всего, ещё придёт целиком.
+  const note = stage?.kind === "awaiting" ? null : statusNote(m);
   const silent = !m.content && !stage && m.status === "done";
+  const label = stage?.kind === "tool" ? toolLabel(stage.name) : stage?.kind === "awaiting" ? "ответ ещё готовится…" : "думает…";
   return (
     <div className="pr-2 text-[15px] leading-relaxed">
       {m.content && <Markdown text={m.content} />}
-      {stage && <Thinking label={stage.kind === "tool" ? toolLabel(stage.name) : "думает…"} />}
+      {stage && <Thinking label={label} />}
       {silent && <p className="text-muted">Помощник ничего не ответил — спроси иначе</p>}
       {note && (
         <div className="mt-1 flex flex-wrap items-center gap-x-1 text-[13px] text-dim">

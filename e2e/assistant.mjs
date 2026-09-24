@@ -71,6 +71,8 @@ const strongAfter = await limit("Сильных");
 assert.equal(after.used, before.used + 2, `дневной счётчик: было ${before.used}, стало ${after.used}`);
 assert.ok(strongAfter.used >= 1, "сильный ответ не списался");
 assert.ok((await page.locator(`a[href^="/group/assistant/"]`).count()) >= 1, "беседа не появилась в списке");
+// Ресурс за 30 дней — то, что держит маржу: полоска видна, и два ответа его потратили.
+assert.ok((await page.locator("text=Ресурс · 30 дней").count()) >= 1, "нет полоски ресурса");
 await shot("84-assistant-limits");
 
 // 5. Админ: «+30 дней» → бейдж в списке людей и выручка месяца.

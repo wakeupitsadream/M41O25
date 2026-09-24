@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createEventParser, describeFailure, parseChatEvent, readChatStream, type StreamEvent } from "./stream";
+import { createEventParser, describeFailure, parseChatEvent, readChatStream, toLimitsView, type StreamEvent } from "./stream";
 import type { LimitsView } from "../types";
 
 const LIMITS: LimitsView = {
@@ -39,7 +39,19 @@ test("parseChatEvent: все пять событий протокола", () => 
   assert.deepEqual(parseChatEvent(JSON.stringify({ t: "tool", name: "get_schedule" })), { t: "tool", name: "get_schedule" });
   const usage = { prompt: 1200, completion: 80, cached: 0 };
   assert.deepEqual(parseChatEvent(JSON.stringify({ t: "done", messageId: RID, limits: LIMITS, usage })), { t: "done", messageId: RID, limits: LIMITS, usage });
-  assert.deepEqual(parseChatEvent(JSON.stringify({ t: "error", message: "Помощник перегружен" })), { t: "error", message: "Помощник перегружен" });
+  assert.deepEqual(parseChatEvent(JSON.stringify({ t: "error", message: "Помощник перегружен" })), { t: "error", message: "Помощник перегружен", limits: null });
+  // Квота списана (ответ оборвался после первого слова) — сервер присылает свежие остатки прямо в error.
+  assert.deepEqual(parseChatEvent(JSON.stringify({ t: "error", message: "Помощник перегружен", limits: LIMITS })), { t: "error", message: "Помощник перегружен", limits: LIMITS });
+});
+
+test("toLimitsView: budget необязателен, битый budget — битые остатки целиком", () => {
+  const old: Record<string, unknown> = { ...LIMITS };
+  delete old.budget;
+  assert.deepEqual(toLimitsView(old), { ...LIMITS, budget: null }, "сервер без ресурса — «потолка нет»");
+  assert.deepEqual(toLimitsView({ ...LIMITS, budget: null }), { ...LIMITS, budget: null });
+  assert.equal(toLimitsView({ ...LIMITS, budget: { used: "много" } }), null);
+  assert.equal(toLimitsView({ ...LIMITS, day: { used: -1, limit: 15 } }), null);
+  assert.deepEqual(toLimitsView({ ...LIMITS, extra: 1 }), LIMITS, "лишние поля не протекают в состояние");
 });
 
 test("parseChatEvent: битые и незнакомые строки не роняют разбор", () => {
@@ -94,7 +106,7 @@ test("readChatStream: последнее событие без завершаю�
   const events = await collect([enc.encode(line({ t: "delta", text: "x" })), enc.encode(JSON.stringify({ t: "error", message: "обрыв" }))]);
   assert.deepEqual(events, [
     { t: "delta", text: "x" },
-    { t: "error", message: "обрыв" },
+    { t: "error", message: "обрыв", limits: null },
   ]);
 });
 
@@ -130,6 +142,12 @@ test("describeFailure: коды из протокола §7", () => {
   const limit = describeFailure(429, { error: "Лимит на сегодня исчерпан — обновится в полночь", limits: LIMITS });
   assert.ok(limit.kind === "blocked" && limit.status === 429);
   assert.deepEqual(limit.kind === "blocked" && limit.limits, LIMITS);
+  assert.equal(limit.kind === "blocked" && limit.reason, null, "причину сервер не прислал — её вычислит экран");
+
+  const budget = describeFailure(429, { error: "Ресурс исчерпан", limits: LIMITS, reason: "budget" });
+  assert.equal(budget.kind === "blocked" && budget.reason, "budget");
+  const unknown = describeFailure(429, { error: "x", reason: "что-то новое" });
+  assert.equal(unknown.kind === "blocked" && unknown.reason, null, "незнакомая причина — как без причины");
 
   // Без тела (прокси отдал HTML) — своё объяснение, а не пустая карточка.
   const bare = describeFailure(429, null);

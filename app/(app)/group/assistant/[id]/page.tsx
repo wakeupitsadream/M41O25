@@ -29,5 +29,6 @@ export default async function AssistantChatPage({ params }: { params: Promise<{ 
   if (isNew && !isAccessActive(state.access)) redirect("/group/assistant");
   const initial: ChatInitial = found ?? { conversation: null, messages: [] };
 
-  return <ChatScreen key={id} initial={initial} assistant={state} />;
+  // userId — для черновика в localStorage: на общем устройстве следующий вошедший не получит чужой недописанный вопрос.
+  return <ChatScreen key={id} initial={initial} assistant={state} userId={user.id} />;
 }

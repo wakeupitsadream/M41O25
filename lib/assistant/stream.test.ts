@@ -6,6 +6,7 @@ import {
   decodeLines,
   encodeEvent,
   estimateRoundUsage,
+  historyArguments,
   parseToolArguments,
   usageFromProvider,
   IMAGE_TOKENS_ESTIMATE,
@@ -83,6 +84,14 @@ test("parseToolArguments: пусто — {}, битый JSON и не объек�
   assert.equal(parseToolArguments('{"from":'), null);
   assert.equal(parseToolArguments("[1,2]"), null);
   assert.equal(parseToolArguments("null"), null);
+});
+
+test("historyArguments: в историю tool_calls — только валидный JSON-объект, остальное — {}", () => {
+  // Обрезано по max_tokens посреди аргументов: прослойка в Gemini/Claude разобрала бы строку и ответила 400 на весь круг.
+  assert.equal(historyArguments('{"from":"2026-09-'), "{}");
+  assert.equal(historyArguments(""), "{}");
+  assert.equal(historyArguments("[1,2]"), "{}");
+  assert.equal(historyArguments('{"from":"2026-09-24","to":"2026-09-25"}'), '{"from":"2026-09-24","to":"2026-09-25"}');
 });
 
 test("NDJSON: событие — одна строка, перевод строки в тексте экранирован", () => {
