@@ -1,21 +1,18 @@
 "use client";
 
 import { useFormStatus } from "react-dom";
-import { useEffect, useState, useTransition } from "react";
+import { useTransition } from "react";
 import { Button, type ButtonProps } from "@/components/ui/button";
 import { useToast } from "@/components/ui/toast";
 
 /**
- * Кнопка отправки формы с индикатором ожидания server action.
- * До гидратации кнопка выключена: иначе форма уходит нативным POST, React потом «переигрывает» его,
- * и на медленном устройстве это зависает без редиректа. Наши пользователи всегда с JS, теряем только no-JS.
+ * Кнопка отправки формы с индикатором ожидания server action. Отправку до гидратации React 19 переигрывает сам
+ * (progressive enhancement форм с action); заглушка «кнопка выключена до монтирования» была обходом зависания
+ * навигации на Next 15 (docs/ROADMAP.md, «Проблема P0») и снята вместе со сторожем.
  */
 export function SubmitButton(props: ButtonProps) {
   const { pending } = useFormStatus();
-  const [ready, setReady] = useState(false);
-  // eslint-disable-next-line react-hooks/set-state-in-effect -- Кнопка включается только после гидратации, иначе тап до неё отправляет форму без обработчика.
-  useEffect(() => setReady(true), []);
-  return <Button type="submit" loading={pending} {...props} disabled={!ready || props.disabled} />;
+  return <Button type="submit" loading={pending} {...props} />;
 }
 
 /** Кнопка опасного действия с подтверждением через confirm(). */

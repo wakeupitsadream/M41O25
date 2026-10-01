@@ -1,16 +1,17 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useGuardedRouter } from "@/components/features/nav-guard";
+import { useRouter } from "next/navigation";
 import { Pin } from "lucide-react";
 import { createNews } from "@/app/(app)/group/actions";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea } from "@/components/ui/input";
 import { AttachmentUploader, type UploadedFile } from "@/components/hw/attachment-uploader";
+import { safeAction } from "@/lib/client/safe-action";
 import { cn } from "@/lib/utils";
 
 export function NewsForm() {
-  const router = useGuardedRouter();
+  const router = useRouter();
   const [pending, start] = useTransition();
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
@@ -36,7 +37,7 @@ export function NewsForm() {
       >
         <Pin className="size-4" />
         <span className="flex-1">Закрепить сверху</span>
-        <span className={cn("size-5 rounded-full border-2", pinned ? "border-accent bg-accent" : "border-border-strong")} />
+        <span className={cn("size-5 rounded-full border-2", pinned ? "border-accent bg-accent" : "border-muted/70")} />
       </button>
       {error && <div className="text-[13px] text-danger">{error}</div>}
       <Button
@@ -46,7 +47,9 @@ export function NewsForm() {
         disabled={!body.trim()}
         onClick={() =>
           start(async () => {
-            const res = await createNews({ title, body, pinned, attachmentIds: files.map((f) => f.id) });
+            // Без сети action падает исключением: safeAction покажет причину в строке ошибки, текст формы останется (ревью UI-01).
+            const res = await safeAction(() => createNews({ title, body, pinned, attachmentIds: files.map((f) => f.id) }), setError);
+            if (!res) return;
             if (!res.ok) return setError(res.error);
             router.replace("/group/news");
           })

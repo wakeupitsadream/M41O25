@@ -42,33 +42,39 @@ const toSemester = (s: SemesterRow): ScheduleSemester => ({
  * С `semesterId` — окно архивного семестра группы (для сетки прошлых семестров); чужой или неизвестный id → текущий.
  */
 export async function getSchedulePayload(groupId: string, userId: string | null = null, semesterId?: string | null): Promise<SchedulePayload> {
-  const [group] = await db.select({ shortName: groups.shortName, slotTimes: groups.slotTimes }).from(groups).where(eq(groups.id, groupId));
+  // Самый горячий запрос приложения (/s, /api/schedule, карточка дня, контекст помощника): два раунда к базе
+  // вместо пяти последовательных — группа и семестры независимы, недели/пары/ДЗ зависят только от окна дат.
   const today = todayIso();
-  const all = await listSemesters(groupId);
+  const [[group], all] = await Promise.all([
+    db.select({ shortName: groups.shortName, slotTimes: groups.slotTimes }).from(groups).where(eq(groups.id, groupId)),
+    listSemesters(groupId),
+  ]);
   const semester = (semesterId ? all.find((s) => s.id === semesterId) : null) ?? pickCurrentSemester(all, today);
 
   // Окно: семестр с запасом в неделю до и два месяца после (сессия), либо ±60 дней от сегодня.
   const from = semester ? addDaysIso(semester.startsOn, -7) : addDaysIso(today, -60);
   const to = semester ? addDaysIso(semester.endsOn, 60) : addDaysIso(today, 60);
 
-  const weekRows = await db
-    .select()
-    .from(weeks)
-    .where(and(eq(weeks.groupId, groupId), eq(weeks.status, "published"), gte(weeks.startsOn, from), lte(weeks.startsOn, to)))
-    .orderBy(asc(weeks.startsOn));
-
-  const lessonRows = weekRows.length
-    ? await db
-        .select({
-          lesson: lessons,
-          subjectShort: subjects.shortName,
-          subjectColor: subjects.color,
-        })
-        .from(lessons)
-        .leftJoin(subjects, eq(subjects.id, lessons.subjectId))
-        .where(and(eq(lessons.groupId, groupId), gte(lessons.date, from), lte(lessons.date, addDaysIso(to, 7))))
-        .orderBy(asc(lessons.date), asc(lessons.slot), desc(lessons.createdAt))
-    : [];
+  const [weekRows, lessonRows, homeworkList] = await Promise.all([
+    db
+      .select()
+      .from(weeks)
+      .where(and(eq(weeks.groupId, groupId), eq(weeks.status, "published"), gte(weeks.startsOn, from), lte(weeks.startsOn, to)))
+      .orderBy(asc(weeks.startsOn)),
+    db
+      .select({
+        lesson: lessons,
+        subjectShort: subjects.shortName,
+        subjectColor: subjects.color,
+      })
+      .from(lessons)
+      .leftJoin(subjects, eq(subjects.id, lessons.subjectId))
+      .where(and(eq(lessons.groupId, groupId), gte(lessons.date, from), lte(lessons.date, addDaysIso(to, 7))))
+      .orderBy(asc(lessons.date), asc(lessons.slot), desc(lessons.createdAt)),
+    // ДЗ едет в том же ответе: экран дня работает офлайн, а лишний запрос на каждый заход в расписание не нужен.
+    // Окно шире назад на месяц: архивные записи ещё видны на прошедших днях.
+    listHomeworkForSchedule(groupId, userId, addDaysIso(today, -30), addDaysIso(to, 7)),
+  ]);
 
   const byWeek = new Map<string, ScheduleWeek>();
   for (const w of weekRows) {
@@ -95,10 +101,6 @@ export async function getSchedulePayload(groupId: string, userId: string | null 
       modifiedAfterPublish: lesson.modifiedAfterPublish,
     });
   }
-
-  // ДЗ едет в том же ответе: экран дня работает офлайн, а лишний запрос на каждый заход в расписание не нужен.
-  // Окно шире назад на месяц: архивные записи ещё видны на прошедших днях.
-  const homeworkList = await listHomeworkForSchedule(groupId, userId, addDaysIso(today, -30), addDaysIso(to, 7));
 
   return {
     group: { shortName: group?.shortName ?? "", slotTimes: group?.slotTimes ?? [] },

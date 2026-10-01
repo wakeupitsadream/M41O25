@@ -10,7 +10,7 @@ export type UploadedFile = { id: string; name: string; mime: string; size: numbe
 
 const ACCEPT = "image/jpeg,image/png,image/webp,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt";
 
-/** Загрузка вложений: фото сжимаются на клиенте до ~1.5 МБ (лимит тела запроса на Vercel — 4.5 МБ). */
+/** Загрузка вложений: фото сжимаются на клиенте до ~0.7 МБ, сканы — до ~3.6 МБ (лимит тела запроса на Vercel — 4.5 МБ). */
 const MAX_BYTES = 4 * 1024 * 1024;
 
 export function AttachmentUploader({
@@ -50,7 +50,10 @@ export function AttachmentUploader({
         if (file.type.startsWith("image/") && file.type !== "image/gif") {
           const { default: compress } = await import("browser-image-compression");
           // Скан со всеми группами: столбец нашей группы узкий, при 2200 px буквы становятся нечитаемыми. Держимся под лимитом тела 4 МБ.
-          const preset = entityType === "scan" ? { maxSizeMB: 3.6, maxWidthOrHeight: 3600, initialQuality: 0.92 } : { maxSizeMB: 1.5, maxWidthOrHeight: 2200, initialQuality: 0.85 };
+          // Остальные фото (доска, страница учебника) смотрят в плитке 160 px и в лайтбоксе на экране 390 px: 1600 px по длинной
+          // стороне читаются с запасом, а объём против 2200 px / 1.5 МБ падает примерно вдвое. Миниатюр у нас нет, и сетка 2×2
+          // в ленте грузит именно эти файлы — полумера до отдельных миниатюр (ревью PERF-02).
+          const preset = entityType === "scan" ? { maxSizeMB: 3.6, maxWidthOrHeight: 3600, initialQuality: 0.92 } : { maxSizeMB: 0.7, maxWidthOrHeight: 1600, initialQuality: 0.85 };
           const blob = await compress(file, { ...preset, useWebWorker: true, fileType: "image/jpeg" });
           file = new File([blob], file.name.replace(/\.(heic|heif|png|webp)$/i, ".jpg"), { type: "image/jpeg" });
         }
@@ -85,22 +88,21 @@ export function AttachmentUploader({
         {value.map((f) => (
           <div key={f.id} className="relative">
             {f.mime.startsWith("image/") ? (
-              // eslint-disable-next-line @next/next/no-img-element
               <img src={f.url} alt={f.name} className="size-20 rounded-md object-cover hairline" />
             ) : (
               <div className="flex h-20 w-32 flex-col justify-between rounded-md bg-surface-2 p-2 hairline">
                 <FileText className="size-5 text-muted" />
                 <div className="truncate text-[11px] font-medium">{f.name}</div>
-                <div className="text-[10px] text-dim">{fmtBytes(f.size)}</div>
+                <div className="text-[11px] text-muted">{fmtBytes(f.size)}</div>
               </div>
             )}
             <button
               type="button"
               aria-label="Убрать"
               onClick={() => onChange(value.filter((x) => x.id !== f.id))}
-              className="absolute -right-1.5 -top-1.5 grid size-6 place-items-center rounded-full bg-fg text-bg"
+              className="absolute -right-2 -top-2 grid size-8 place-items-center rounded-full bg-fg text-bg"
             >
-              <X className="size-3.5" strokeWidth={3} />
+              <X className="size-4" strokeWidth={3} />
             </button>
           </div>
         ))}
@@ -117,7 +119,7 @@ export function AttachmentUploader({
       </div>
       <input ref={inputRef} type="file" accept={accept} multiple className="hidden" onChange={(e) => void upload(e.target.files).then(() => (e.target.value = ""))} />
       {error && <div className="text-[13px] text-danger">{error}</div>}
-      <div className="text-[11px] text-dim">Фото, PDF, Word, Excel — до 4 МБ каждый. Большие методички лучше ссылкой в тексте.</div>
+      <div className="text-[11px] text-dim">Фото, PDF, Word, Excel, PowerPoint, txt — до 4 МБ каждый. Большие методички лучше ссылкой в тексте.</div>
     </div>
   );
 }

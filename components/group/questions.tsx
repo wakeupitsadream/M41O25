@@ -1,6 +1,6 @@
 "use client";
 
-import { useGuardedRouter } from "@/components/features/nav-guard";
+import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { CornerDownRight, Send, ShieldCheck, Trash2 } from "lucide-react";
 import { motion } from "motion/react";
@@ -10,6 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
 import { Avatar, EmptyState } from "@/components/ui/primitives";
 import { Linkify } from "@/components/ui/linkify";
+import { useToast } from "@/components/ui/toast";
+import { safeAction } from "@/lib/client/safe-action";
 import { displayName } from "@/lib/utils";
 
 type Item = Awaited<ReturnType<typeof listQuestions>>[number];
@@ -17,7 +19,8 @@ type Item = Awaited<ReturnType<typeof listQuestions>>[number];
 const fmtHour = (iso: string) => new Intl.DateTimeFormat("ru-RU", { timeZone: process.env.NEXT_PUBLIC_APP_TZ ?? "Asia/Yekaterinburg", day: "numeric", month: "short" }).format(new Date(iso)).replace(".", "");
 
 export function QuestionsClient({ items, canAnswer, isAdmin }: { items: Item[]; canAnswer: boolean; isAdmin: boolean }) {
-  const router = useGuardedRouter();
+  const router = useRouter();
+  const toast = useToast();
   const [pending, start] = useTransition();
   const [text, setText] = useState("");
   const [answerFor, setAnswerFor] = useState<string | null>(null);
@@ -28,7 +31,13 @@ export function QuestionsClient({ items, canAnswer, isAdmin }: { items: Item[]; 
   const run = (fn: () => Promise<{ ok: boolean; error?: string }>, after?: () => void) =>
     start(async () => {
       setError(null);
-      const res = await fn();
+      // Без сети action падает исключением, а не ActionResult (ревью UI-01). Тост вдобавок к строке ошибки: ответ пишут
+      // глубоко в списке, а строка живёт в карточке вопроса сверху — оттуда её не видно.
+      const res = await safeAction(fn, (m) => {
+        setError(m);
+        toast(m);
+      });
+      if (!res) return;
       if (!res.ok) return setError(res.error ?? "Ошибка");
       after?.();
       router.refresh();
@@ -95,7 +104,7 @@ export function QuestionsClient({ items, canAnswer, isAdmin }: { items: Item[]; 
                   </div>
                 </div>
               ) : (
-                <button type="button" className="mt-3 text-[13px] font-semibold text-accent" onClick={() => setAnswerFor(q.id)}>
+                <button type="button" className="mt-1 inline-flex min-h-10 items-center text-[13px] font-semibold text-accent" onClick={() => setAnswerFor(q.id)}>
                   Ответить
                 </button>
               )

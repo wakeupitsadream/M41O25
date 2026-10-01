@@ -4,7 +4,9 @@ import { and, count, eq, gt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { attachments, type AttachmentEntity } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/auth";
+import { env } from "@/lib/env";
 import { ALLOWED_MIME, MAX_UPLOAD_BYTES, storage } from "@/lib/storage";
+import { todayIso } from "@/lib/tz";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -25,7 +27,7 @@ export async function POST(req: Request) {
   if (entityType === "scan" && user.role !== "admin") return NextResponse.json({ error: "Только админ" }, { status: 403 });
   if (entityType === "scan" && !file.type.startsWith("image/")) return NextResponse.json({ error: "Скан должен быть фото или картинкой (JPEG/PNG). PDF пересними или сконвертируй" }, { status: 415 });
   if ((entityType === "news" || entityType === "task") && user.role === "student") return NextResponse.json({ error: "Вложения к новостям и задачам добавляет староста" }, { status: 403 });
-  if (storage.kind === "local" && process.env.VERCEL) return NextResponse.json({ error: "Файлы пока отключены: администратор не подключил хранилище (R2)" }, { status: 503 });
+  if (storage.kind === "local" && env.onVercel) return NextResponse.json({ error: "Файлы пока отключены: администратор не подключил хранилище (R2)" }, { status: 503 });
 
   // Квота для студентов: не больше 30 файлов в час и 40 МБ в сутки — от залива хранилища «сиротами».
   if (user.role === "student") {
@@ -45,7 +47,8 @@ export async function POST(req: Request) {
   if (!ext) return NextResponse.json({ error: "Такой формат не поддерживается (фото, PDF, Word, Excel, PowerPoint, txt)" }, { status: 415 });
 
   const buf = Buffer.from(await file.arrayBuffer());
-  const month = new Date().toISOString().slice(0, 7);
+  // Префикс месяца — по календарю группы, как всё остальное (правило «Время» в CLAUDE.md), а не по UTC.
+  const month = todayIso().slice(0, 7);
   const key = `${user.groupId}/${entityType}/${month}/${randomUUID()}.${ext}`;
   try {
     await storage.put(key, buf, file.type);

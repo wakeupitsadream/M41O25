@@ -1,10 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { CloudUpload, Loader2 } from "lucide-react";
 import { createHomework } from "@/app/(app)/hw/actions";
-import { useGuardedRouter } from "@/components/features/nav-guard";
 import { useToast } from "@/components/ui/toast";
 import {
   isOfflineError,
@@ -36,7 +35,7 @@ const online = () => (typeof navigator === "undefined" ? true : navigator.onLine
  * Где плашка стоит на экране, решает колонка верхних плашек в app/(app)/layout.tsx — здесь ни fixed, ни отступов.
  */
 export function HwOutbox({ meId }: { meId: string }) {
-  const router = useGuardedRouter();
+  const router = useRouter();
   const pathname = usePathname();
   const toast = useToast();
   const [mine, setMine] = useState<QueuedHw[]>([]);

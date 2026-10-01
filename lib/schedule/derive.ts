@@ -18,7 +18,9 @@ export type NowState =
 
 /** Что сейчас происходит по расписанию дня. */
 export function nowState(dayLessons: ScheduleLesson[], minutes: number): NowState {
-  const active = dayLessons.filter((l) => !l.isCancelled);
+  // Пары приходят в порядке слотов (lessonsOn). Если админ руками перенёс пару со слотом 2 на время раньше слота 1,
+  // не меняя номера, обход по слотам показал бы «до первой пары», пока та уже идёт — поэтому идём по времени начала.
+  const active = dayLessons.filter((l) => !l.isCancelled).sort((a, b) => toMinutes(a.startsAt) - toMinutes(b.startsAt));
   if (active.length === 0) return { kind: "none" };
   const total = active.length;
   for (let i = 0; i < active.length; i++) {

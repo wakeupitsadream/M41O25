@@ -10,6 +10,9 @@ updates:
         update-types: ["minor", "patch"]
     # Мажорные обновления каркаса — только в отдельной сессии с полным прогоном (сборка, e2e, офлайн).
     ignore:
+      # Типы Node держим на версии рантайма (engines >=22, CI и Vercel на 22/24), а не на свежем мажоре.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
       - dependency-name: "next"
         update-types: ["version-update:semver-major"]
       - dependency-name: "react"

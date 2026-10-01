@@ -3,12 +3,13 @@
 import { useState, useTransition } from "react";
 import { Copy, Sparkles } from "lucide-react";
 import { startTrial } from "@/app/(app)/group/assistant/actions";
-import { useGuardedRouter } from "@/components/features/nav-guard";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Sheet } from "@/components/ui/sheet";
 import { useToast } from "@/components/ui/toast";
 import { daysWord, ddmm } from "@/lib/assistant/client/format";
 import type { AssistantState } from "@/lib/assistant/types";
+import { safeAction } from "@/lib/client/safe-action";
 
 /** «Как оплатить»: цена, реквизиты из админки и честно — доступ включает человек, а не автомат. */
 function PaymentSheet({ open, onClose, priceRub, paymentNote }: { open: boolean; onClose: () => void; priceRub: number; paymentNote: string }) {
@@ -25,7 +26,7 @@ function PaymentSheet({ open, onClose, priceRub, paymentNote }: { open: boolean;
     <Sheet open={open} onClose={onClose} title="Как оплатить">
       <div className="space-y-4 pb-2">
         <div className="font-display text-[26px] font-bold leading-none">
-          {priceRub} ₽ <span className="text-[15px] font-medium text-muted">за 30 дней</span>
+          {priceRub}&nbsp;₽ <span className="text-[15px] font-medium text-muted">за 30 дней</span>
         </div>
         {paymentNote ? (
           <div className="rounded-md bg-surface-2 p-4 hairline">
@@ -49,9 +50,11 @@ function PaymentSheet({ open, onClose, priceRub, paymentNote }: { open: boolean;
 /**
  * Карточка доступа по AccessStatus (docs/AI-CHAT.md §2): none — крупная кнопка триала (отсчёт идёт с нажатия,
  * чтобы человек знал, когда он начался), trial/paid — «до …», expired — цена и «Как оплатить».
+ * Цена везде «за 30 дней», не «в месяц»: продление — ровно +30 дней (extendPaidUntil), а в деньгах любое
+ * расхождение читается как подвох. Пробел перед ₽ неразрывный, чтобы сумма не рвалась на две строки.
  */
 export function StatusCard({ state }: { state: AssistantState }) {
-  const router = useGuardedRouter();
+  const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [payOpen, setPayOpen] = useState(false);
@@ -61,7 +64,9 @@ export function StatusCard({ state }: { state: AssistantState }) {
   const begin = () =>
     start(async () => {
       setError(null);
-      const res = await startTrial();
+      // Без сети action падает исключением, а не ActionResult: safeAction покажет причину в строке ошибки (ревью UI-01).
+      const res = await safeAction(startTrial, setError);
+      if (!res) return;
       if (!res.ok) return setError(res.error);
       router.refresh();
     });
@@ -79,12 +84,12 @@ export function StatusCard({ state }: { state: AssistantState }) {
             <Button size="lg" className="mt-4 w-full" loading={pending} onClick={begin}>
               Попробовать {settings.trialDays} {daysWord(settings.trialDays)} бесплатно
             </Button>
-            <p className="mt-2 text-center text-[12px] text-dim">Отсчёт пойдёт с нажатия. Потом — {settings.priceRub} ₽ в месяц</p>
+            <p className="mt-2 text-center text-[12px] text-dim">Отсчёт пойдёт с нажатия. Потом — {settings.priceRub}&nbsp;₽ за 30 дней</p>
           </>
         ) : (
           <>
             <div className="mt-4 font-display text-[22px] font-bold">
-              {settings.priceRub} ₽ <span className="text-[15px] font-medium text-muted">в месяц</span>
+              {settings.priceRub}&nbsp;₽ <span className="text-[15px] font-medium text-muted">за 30 дней</span>
             </div>
             <Button size="lg" className="mt-3 w-full" onClick={() => setPayOpen(true)}>
               Как оплатить
@@ -102,7 +107,7 @@ export function StatusCard({ state }: { state: AssistantState }) {
       <div className="rounded-lg bg-surface p-5 hairline">
         <div className="text-[13px] text-muted">{access.since ? `Доступ закончился ${ddmm(access.since)}` : "Доступ закончился"}</div>
         <div className="mt-1 font-display text-[22px] font-bold">
-          {settings.priceRub} ₽ <span className="text-[15px] font-medium text-muted">в месяц</span>
+          {settings.priceRub}&nbsp;₽ <span className="text-[15px] font-medium text-muted">за 30 дней</span>
         </div>
         <p className="mt-1 text-[13px] leading-snug text-muted">Переводом, доступ включает админ. Старые беседы остаются — их можно читать.</p>
         <Button size="lg" className="mt-4 w-full" onClick={() => setPayOpen(true)}>
@@ -119,7 +124,7 @@ export function StatusCard({ state }: { state: AssistantState }) {
       <div className="min-w-0 flex-1">
         <div className="text-[13px] text-muted">{trial ? (settings.trialDays === 7 ? "Пробная неделя" : "Пробный период") : "Доступ оплачен"}</div>
         <div className="mt-0.5 font-display text-[18px] font-bold tnum">до {ddmm(access.until)}</div>
-        {trial && <div className="mt-0.5 text-[12px] text-dim">Дальше — {settings.priceRub} ₽ в месяц</div>}
+        {trial && <div className="mt-0.5 text-[12px] text-dim">Дальше — {settings.priceRub}&nbsp;₽ за 30 дней</div>}
       </div>
       <Button variant="secondary" size="sm" className="h-10" onClick={() => setPayOpen(true)}>
         {trial ? "Как оплатить" : "Продлить"}

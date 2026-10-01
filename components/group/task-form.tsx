@@ -1,15 +1,16 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useGuardedRouter } from "@/components/features/nav-guard";
+import { useRouter } from "next/navigation";
 import { ListChecks } from "lucide-react";
 import { createTask } from "@/app/(app)/group/actions";
 import { Button } from "@/components/ui/button";
 import { DateInput, Field, Input, Textarea } from "@/components/ui/input";
+import { safeAction } from "@/lib/client/safe-action";
 import { cn } from "@/lib/utils";
 
 export function TaskForm() {
-  const router = useGuardedRouter();
+  const router = useRouter();
   const [pending, start] = useTransition();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -38,7 +39,7 @@ export function TaskForm() {
           Чек-лист «кто сдал»
           <span className="block text-[12px] opacity-70">Отмечает только админ — так данные не разъезжаются</span>
         </span>
-        <span className={cn("size-5 rounded-full border-2", trackChecks ? "border-accent bg-accent" : "border-border-strong")} />
+        <span className={cn("size-5 rounded-full border-2", trackChecks ? "border-accent bg-accent" : "border-muted/70")} />
       </button>
       {error && <div className="text-[13px] text-danger">{error}</div>}
       <Button
@@ -48,7 +49,9 @@ export function TaskForm() {
         disabled={title.trim().length < 2}
         onClick={() =>
           start(async () => {
-            const res = await createTask({ title, description, dueDate, trackChecks });
+            // Без сети action падает исключением: safeAction покажет причину в строке ошибки, набранное останется (ревью UI-01).
+            const res = await safeAction(() => createTask({ title, description, dueDate, trackChecks }), setError);
+            if (!res) return;
             if (!res.ok) return setError(res.error);
             router.replace(`/group/tasks/${res.data!.id}`);
           })

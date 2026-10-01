@@ -1,5 +1,4 @@
 import "server-only";
-import webpush from "web-push";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { pushSubscriptions, users } from "@/lib/db/schema";
@@ -15,19 +14,35 @@ import { pickTargets, type PushTarget } from "@/lib/push/targets";
 
 export const pushConfigured = () => env.push.configured;
 
-let vapidReady: boolean | null = null;
+type WebPush = typeof import("web-push");
 
-function ensureVapid(): boolean {
-  if (vapidReady !== null) return vapidReady;
-  if (!env.push.configured) return (vapidReady = false);
-  try {
-    webpush.setVapidDetails(env.push.subject, env.push.publicKey, env.push.privateKey);
-    vapidReady = true;
-  } catch (e) {
-    console.error("[push] некорректные ключи VAPID:", shortError(e));
-    vapidReady = false;
-  }
-  return vapidReady;
+/**
+ * Сокет-таймаут одного запроса к push-сервису. У web-push по умолчанию таймаута нет: зависший APNs/FCM держал бы
+ * функцию живой до платформенного лимита, а инстанс — бодрствующим. Один пуш — одно соединение, и 10 секунд
+ * молчания от сервиса с запасом хватает, чтобы считать его недоступным (classifyPushError → temporary).
+ */
+const REQUEST_TIMEOUT_MS = 10_000;
+
+let loading: Promise<WebPush | null> | null = null;
+
+/**
+ * web-push подключается при первой рассылке, а не при старте функции: пакет (asn1, jws, http_ece) тянется в серверный
+ * граф каждой страницы через серверные действия, а нужен только внутри after(). Ключи VAPID ставим тут же, один раз:
+ * результат кешируется вместе с модулем. Ключей нет или они кривые → null, и рассылка молча пропускается.
+ */
+function loadWebPush(): Promise<WebPush | null> {
+  loading ??= (async () => {
+    if (!env.push.configured) return null;
+    try {
+      const webpush = (await import("web-push")).default;
+      webpush.setVapidDetails(env.push.subject, env.push.publicKey, env.push.privateKey);
+      return webpush;
+    } catch (e) {
+      console.error("[push] web-push не поднялся (ключи VAPID?):", shortError(e));
+      return null;
+    }
+  })();
+  return loading;
 }
 
 export type NotifyResult = { sent: number; gone: number; failed: number; skipped?: string };
@@ -38,7 +53,8 @@ export type NotifyResult = { sent: number; gone: number; failed: number; skipped
  */
 export async function notifyGroup(event: PushEvent, opts: { groupId: string; exceptUserId?: string | null }): Promise<NotifyResult> {
   const empty: NotifyResult = { sent: 0, gone: 0, failed: 0 };
-  if (!ensureVapid()) return { ...empty, skipped: "VAPID не настроен" };
+  const webpush = await loadWebPush();
+  if (!webpush) return { ...empty, skipped: "VAPID не настроен" };
 
   let targets: PushTarget[];
   try {
@@ -73,6 +89,7 @@ export async function notifyGroup(event: PushEvent, opts: { groupId: string; exc
       webpush.sendNotification({ endpoint: t.endpoint, keys: { p256dh: t.p256dh, auth: t.auth } }, payload, {
         TTL: 24 * 3600,
         urgency: "normal",
+        timeout: REQUEST_TIMEOUT_MS,
       }),
     ),
   );

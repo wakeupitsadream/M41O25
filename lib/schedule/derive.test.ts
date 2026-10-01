@@ -37,6 +37,21 @@ test("nowState: отменённые пары не считаются", () => {
   assert.equal(s.kind, "none");
 });
 
+test("nowState: пара со слотом 2 перенесена раньше слота 1 — «идёт» та, что по времени", () => {
+  // lessonsOn сортирует по слотам; время переставлено руками: слот 1 — в 10:10, слот 2 — в 08:30.
+  const swapped = [lesson("10:10", "11:40", { slot: 1 }), lesson("08:30", "10:00", { slot: 2 })];
+  const s = nowState(swapped, min(9, 0));
+  assert.equal(s.kind, "during");
+  if (s.kind === "during") {
+    assert.equal(s.current.startsAt, "08:30");
+    assert.equal(s.index, 0);
+    assert.equal(s.total, 2);
+  }
+  const b = nowState(swapped, min(10, 5));
+  assert.equal(b.kind, "break");
+  if (b.kind === "break") assert.equal(b.next.startsAt, "10:10");
+});
+
 // Семестры: осень с сессией 12.01–25.01, каникулы до 09.02, весна.
 const autumn: ScheduleSemester = { id: "a", title: "Осень", startsOn: "2026-09-01", endsOn: "2027-01-25", sessionStartsOn: "2027-01-12" };
 const spring: ScheduleSemester = { id: "s", title: "Весна", startsOn: "2027-02-09", endsOn: "2027-06-30", sessionStartsOn: null };

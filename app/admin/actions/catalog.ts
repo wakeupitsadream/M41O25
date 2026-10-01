@@ -7,12 +7,12 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { groups, semesters, subjects, type SlotTime } from "@/lib/db/schema";
 import { actionUser } from "@/lib/auth";
-import { generateInviteSuffix, ok, type ActionResult } from "@/lib/utils";
+import { asUuid, fail, generateInviteSuffix, ok, type ActionResult } from "@/lib/utils";
+import { wrapAction, wrapForm } from "@/lib/actions";
+import { isoDate } from "@/lib/validation";
 import { invitePrefix } from "@/lib/invite";
 import type { FormState } from "@/lib/form";
 import { MAX_ALIASES, MAX_ALIAS_LENGTH } from "@/lib/ocr/match";
-
-const iso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 // ---------- Предметы ----------
 
@@ -39,59 +39,69 @@ const parseAliases = (raw: string | undefined) =>
   [...new Set((raw ?? "").split(/[\n,;]+/).map((a) => a.trim().slice(0, MAX_ALIAS_LENGTH)).filter(Boolean))].slice(0, MAX_ALIASES);
 
 export async function createSubject(_prev: FormState, formData: FormData): Promise<FormState> {
-  const admin = await actionUser("admin");
-  const parsed = subjectSchema.safeParse(readSubject(formData));
-  if (!parsed.success) return { error: "Проверь поля: название от 2 символов, цвет в формате #RRGGBB" };
-  const d = parsed.data;
-  await db.insert(subjects).values({
-    groupId: admin.groupId,
-    name: d.name,
-    shortName: d.shortName || null,
-    color: d.color || null,
-    defaultTeacher: d.defaultTeacher || null,
-    defaultRoom: d.defaultRoom || null,
+  return wrapForm(async () => {
+    const admin = await actionUser("admin");
+    const parsed = subjectSchema.safeParse(readSubject(formData));
+    if (!parsed.success) return { error: "Проверь поля: название от 2 символов, цвет в формате #RRGGBB" };
+    const d = parsed.data;
+    await db.insert(subjects).values({
+      groupId: admin.groupId,
+      name: d.name,
+      shortName: d.shortName || null,
+      color: d.color || null,
+      defaultTeacher: d.defaultTeacher || null,
+      defaultRoom: d.defaultRoom || null,
+    });
+    revalidatePath("/admin/subjects");
+    revalidatePath("/s", "layout");
+    return { success: "Предмет добавлен" };
   });
-  revalidatePath("/admin/subjects");
-  revalidatePath("/s", "layout");
-  return { success: "Предмет добавлен" };
 }
 
 export async function updateSubject(id: string, _prev: FormState, formData: FormData): Promise<FormState> {
-  const admin = await actionUser("admin");
-  const parsed = subjectSchema.safeParse(readSubject(formData));
-  if (!parsed.success) return { error: "Проверь поля: название от 2 символов, цвет в формате #RRGGBB" };
-  const d = parsed.data;
-  const [current] = await db.select({ aliases: subjects.aliases }).from(subjects).where(and(eq(subjects.id, id), eq(subjects.groupId, admin.groupId)));
-  // Распознавание скана дописывает алиасы в обход формы. Если админ не трогал поле, страница могла быть открыта
-  // до автообучения — тогда сохранение карточки затёрло бы выученные написания, поэтому колонку не трогаем.
-  const base = formData.get("aliasesBase");
-  const fromForm = parseAliases(d.aliases);
-  const unchanged = typeof base === "string" && parseAliases(base).join("\n") === fromForm.join("\n");
-  const aliases = unchanged ? (current?.aliases ?? fromForm) : fromForm;
-  await db
-    .update(subjects)
-    .set({ name: d.name, shortName: d.shortName || null, color: d.color || null, defaultTeacher: d.defaultTeacher || null, defaultRoom: d.defaultRoom || null, aliases })
-    .where(and(eq(subjects.id, id), eq(subjects.groupId, admin.groupId)));
-  revalidatePath("/admin/subjects");
-  revalidatePath("/s", "layout");
-  redirect("/admin/subjects");
+  return wrapForm(async () => {
+    const sid = asUuid(id);
+    if (!sid) return { error: "Не найдено" };
+    const admin = await actionUser("admin");
+    const parsed = subjectSchema.safeParse(readSubject(formData));
+    if (!parsed.success) return { error: "Проверь поля: название от 2 символов, цвет в формате #RRGGBB" };
+    const d = parsed.data;
+    const [current] = await db.select({ aliases: subjects.aliases }).from(subjects).where(and(eq(subjects.id, sid), eq(subjects.groupId, admin.groupId)));
+    // Распознавание скана дописывает алиасы в обход формы. Если админ не трогал поле, страница могла быть открыта
+    // до автообучения — тогда сохранение карточки затёрло бы выученные написания, поэтому колонку не трогаем.
+    const base = formData.get("aliasesBase");
+    const fromForm = parseAliases(d.aliases);
+    const unchanged = typeof base === "string" && parseAliases(base).join("\n") === fromForm.join("\n");
+    const aliases = unchanged ? (current?.aliases ?? fromForm) : fromForm;
+    await db
+      .update(subjects)
+      .set({ name: d.name, shortName: d.shortName || null, color: d.color || null, defaultTeacher: d.defaultTeacher || null, defaultRoom: d.defaultRoom || null, aliases })
+      .where(and(eq(subjects.id, sid), eq(subjects.groupId, admin.groupId)));
+    revalidatePath("/admin/subjects");
+    revalidatePath("/s", "layout");
+    redirect("/admin/subjects");
+  });
 }
 
 export async function toggleSubjectArchived(id: string): Promise<ActionResult> {
-  const admin = await actionUser("admin");
-  const [s] = await db.select().from(subjects).where(and(eq(subjects.id, id), eq(subjects.groupId, admin.groupId)));
-  if (s) await db.update(subjects).set({ archived: !s.archived }).where(eq(subjects.id, id));
-  revalidatePath("/admin/subjects");
-  return ok();
+  return wrapAction(async () => {
+    const admin = await actionUser("admin");
+    const sid = asUuid(id);
+    if (!sid) return fail("Предмет не найден");
+    const [s] = await db.select().from(subjects).where(and(eq(subjects.id, sid), eq(subjects.groupId, admin.groupId)));
+    if (s) await db.update(subjects).set({ archived: !s.archived }).where(eq(subjects.id, sid));
+    revalidatePath("/admin/subjects");
+    return ok();
+  });
 }
 
 // ---------- Семестры ----------
 
 const semesterSchema = z.object({
   title: z.string().trim().min(2).max(60),
-  startsOn: iso,
-  endsOn: iso,
-  sessionStartsOn: iso.optional().or(z.literal("")),
+  startsOn: isoDate,
+  endsOn: isoDate,
+  sessionStartsOn: isoDate.optional().or(z.literal("")),
 });
 
 const readSemester = (fd: FormData) => ({
@@ -102,87 +112,103 @@ const readSemester = (fd: FormData) => ({
 });
 
 export async function createSemester(_prev: FormState, formData: FormData): Promise<FormState> {
-  const admin = await actionUser("admin");
-  const parsed = semesterSchema.safeParse(readSemester(formData));
-  if (!parsed.success) return { error: "Проверь поля: название от 2 символов и обе даты" };
-  const d = parsed.data;
-  if (d.endsOn <= d.startsOn) return { error: "Конец семестра должен быть позже начала" };
-  // «Конец» — последний день семестра вместе с сессией, поэтому «Сессия с» должна лежать внутри него,
-  // иначе экран расписания никогда не покажет фазу «Сессия» (lib/schedule/derive.ts, semesterPhase).
-  if (d.sessionStartsOn && (d.sessionStartsOn < d.startsOn || d.sessionStartsOn > d.endsOn))
-    return { error: "«Сессия с» должна быть внутри семестра: между началом и концом" };
-  await db.insert(semesters).values({
-    groupId: admin.groupId,
-    title: d.title,
-    startsOn: d.startsOn,
-    endsOn: d.endsOn,
-    sessionStartsOn: d.sessionStartsOn || null,
+  return wrapForm(async () => {
+    const admin = await actionUser("admin");
+    const parsed = semesterSchema.safeParse(readSemester(formData));
+    if (!parsed.success) return { error: "Проверь поля: название от 2 символов и обе даты" };
+    const d = parsed.data;
+    if (d.endsOn <= d.startsOn) return { error: "Конец семестра должен быть позже начала" };
+    // «Конец» — последний день семестра вместе с сессией, поэтому «Сессия с» должна лежать внутри него,
+    // иначе экран расписания никогда не покажет фазу «Сессия» (lib/schedule/derive.ts, semesterPhase).
+    if (d.sessionStartsOn && (d.sessionStartsOn < d.startsOn || d.sessionStartsOn > d.endsOn))
+      return { error: "«Сессия с» должна быть внутри семестра: между началом и концом" };
+    await db.insert(semesters).values({
+      groupId: admin.groupId,
+      title: d.title,
+      startsOn: d.startsOn,
+      endsOn: d.endsOn,
+      sessionStartsOn: d.sessionStartsOn || null,
+    });
+    revalidatePath("/admin/semesters");
+    revalidatePath("/s", "layout");
+    return { success: "Семестр создан" };
   });
-  revalidatePath("/admin/semesters");
-  revalidatePath("/s", "layout");
-  return { success: "Семестр создан" };
 }
 
 export async function updateSemester(id: string, _prev: FormState, formData: FormData): Promise<FormState> {
-  const admin = await actionUser("admin");
-  const parsed = semesterSchema.safeParse(readSemester(formData));
-  if (!parsed.success) return { error: "Проверь поля: название от 2 символов и обе даты" };
-  const d = parsed.data;
-  if (d.endsOn <= d.startsOn) return { error: "Конец семестра должен быть позже начала" };
-  // «Конец» — последний день семестра вместе с сессией, поэтому «Сессия с» должна лежать внутри него,
-  // иначе экран расписания никогда не покажет фазу «Сессия» (lib/schedule/derive.ts, semesterPhase).
-  if (d.sessionStartsOn && (d.sessionStartsOn < d.startsOn || d.sessionStartsOn > d.endsOn))
-    return { error: "«Сессия с» должна быть внутри семестра: между началом и концом" };
-  await db
-    .update(semesters)
-    .set({ title: d.title, startsOn: d.startsOn, endsOn: d.endsOn, sessionStartsOn: d.sessionStartsOn || null })
-    .where(and(eq(semesters.id, id), eq(semesters.groupId, admin.groupId)));
-  revalidatePath("/admin/semesters");
-  revalidatePath("/s", "layout");
-  return { success: "Сохранено" };
+  return wrapForm(async () => {
+    const sid = asUuid(id);
+    if (!sid) return { error: "Не найдено" };
+    const admin = await actionUser("admin");
+    const parsed = semesterSchema.safeParse(readSemester(formData));
+    if (!parsed.success) return { error: "Проверь поля: название от 2 символов и обе даты" };
+    const d = parsed.data;
+    if (d.endsOn <= d.startsOn) return { error: "Конец семестра должен быть позже начала" };
+    // «Конец» — последний день семестра вместе с сессией, поэтому «Сессия с» должна лежать внутри него,
+    // иначе экран расписания никогда не покажет фазу «Сессия» (lib/schedule/derive.ts, semesterPhase).
+    if (d.sessionStartsOn && (d.sessionStartsOn < d.startsOn || d.sessionStartsOn > d.endsOn))
+      return { error: "«Сессия с» должна быть внутри семестра: между началом и концом" };
+    await db
+      .update(semesters)
+      .set({ title: d.title, startsOn: d.startsOn, endsOn: d.endsOn, sessionStartsOn: d.sessionStartsOn || null })
+      .where(and(eq(semesters.id, sid), eq(semesters.groupId, admin.groupId)));
+    revalidatePath("/admin/semesters");
+    revalidatePath("/s", "layout");
+    return { success: "Сохранено" };
+  });
 }
 
 export async function deleteSemester(id: string): Promise<ActionResult> {
-  const admin = await actionUser("admin");
-  await db.delete(semesters).where(and(eq(semesters.id, id), eq(semesters.groupId, admin.groupId)));
-  revalidatePath("/admin/semesters");
-  revalidatePath("/s", "layout");
-  return ok();
+  return wrapAction(async () => {
+    const admin = await actionUser("admin");
+    const sid = asUuid(id);
+    if (!sid) return fail("Семестр не найден");
+    await db.delete(semesters).where(and(eq(semesters.id, sid), eq(semesters.groupId, admin.groupId)));
+    revalidatePath("/admin/semesters");
+    revalidatePath("/s", "layout");
+    return ok();
+  });
 }
 
 // ---------- Настройки группы ----------
 
 export async function rotateInviteCode(): Promise<ActionResult<{ code: string }>> {
-  const admin = await actionUser("admin");
-  const code = `${invitePrefix(admin.group.shortName)}-${generateInviteSuffix()}`;
-  await db.update(groups).set({ inviteCode: code }).where(eq(groups.id, admin.groupId));
-  revalidatePath("/admin/settings");
-  revalidatePath("/admin");
-  return ok({ code });
+  return wrapAction(async () => {
+    const admin = await actionUser("admin");
+    const code = `${invitePrefix(admin.group.shortName)}-${generateInviteSuffix()}`;
+    await db.update(groups).set({ inviteCode: code }).where(eq(groups.id, admin.groupId));
+    revalidatePath("/admin/settings");
+    revalidatePath("/admin");
+    return ok({ code });
+  });
 }
 
 export async function updateSlotTimes(_prev: FormState, formData: FormData): Promise<FormState> {
-  const admin = await actionUser("admin");
-  const rows: SlotTime[] = [];
-  for (let slot = 1; slot <= 8; slot++) {
-    const start = String(formData.get(`start${slot}`) ?? "").trim();
-    const end = String(formData.get(`end${slot}`) ?? "").trim();
-    if (/^\d{2}:\d{2}$/.test(start) && /^\d{2}:\d{2}$/.test(end)) rows.push({ slot, start, end });
-  }
-  if (rows.length === 0) return { error: "Нужна хотя бы одна пара с началом и концом в формате ЧЧ:ММ" };
-  if (rows.some((r) => r.end <= r.start)) return { error: "Конец пары должен быть позже её начала" };
-  await db.update(groups).set({ slotTimes: rows }).where(eq(groups.id, admin.groupId));
-  revalidatePath("/admin/settings");
-  revalidatePath("/s", "layout");
-  return { success: "Время пар сохранено" };
+  return wrapForm(async () => {
+    const admin = await actionUser("admin");
+    const rows: SlotTime[] = [];
+    for (let slot = 1; slot <= 8; slot++) {
+      const start = String(formData.get(`start${slot}`) ?? "").trim();
+      const end = String(formData.get(`end${slot}`) ?? "").trim();
+      if (/^\d{2}:\d{2}$/.test(start) && /^\d{2}:\d{2}$/.test(end)) rows.push({ slot, start, end });
+    }
+    if (rows.length === 0) return { error: "Нужна хотя бы одна пара с началом и концом в формате ЧЧ:ММ" };
+    if (rows.some((r) => r.end <= r.start)) return { error: "Конец пары должен быть позже её начала" };
+    await db.update(groups).set({ slotTimes: rows }).where(eq(groups.id, admin.groupId));
+    revalidatePath("/admin/settings");
+    revalidatePath("/s", "layout");
+    return { success: "Время пар сохранено" };
+  });
 }
 
 export async function updateGroupName(_prev: FormState, formData: FormData): Promise<FormState> {
-  const admin = await actionUser("admin");
-  const name = String(formData.get("name") ?? "").trim();
-  const shortName = String(formData.get("shortName") ?? "").trim();
-  if (shortName.length < 2) return { error: "Слишком короткий шифр группы" };
-  await db.update(groups).set({ name: name || `Группа ${shortName}`, shortName }).where(eq(groups.id, admin.groupId));
-  revalidatePath("/admin/settings");
-  return { success: "Сохранено" };
+  return wrapForm(async () => {
+    const admin = await actionUser("admin");
+    const name = String(formData.get("name") ?? "").trim();
+    const shortName = String(formData.get("shortName") ?? "").trim();
+    if (shortName.length < 2) return { error: "Слишком короткий шифр группы" };
+    await db.update(groups).set({ name: name || `Группа ${shortName}`, shortName }).where(eq(groups.id, admin.groupId));
+    revalidatePath("/admin/settings");
+    return { success: "Сохранено" };
+  });
 }

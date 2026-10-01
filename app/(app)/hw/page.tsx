@@ -9,7 +9,7 @@ import { dueHeading } from "@/lib/hw/format";
 import { todayIso } from "@/lib/tz";
 import { EmptyState, PageHeader } from "@/components/ui/primitives";
 import { HwCard } from "@/components/hw/hw-card";
-import { asUuid, cn } from "@/lib/utils";
+import { asUuid, cn, pluralRu } from "@/lib/utils";
 
 export const metadata = { title: "Домашка" };
 export const dynamic = "force-dynamic";
@@ -47,27 +47,27 @@ export default async function HomeworkPage({ searchParams }: { searchParams: Pro
     <>
       <PageHeader
         title={archive ? "Архив" : "Домашка"}
-        subtitle={archive ? "дедлайн прошёл" : `${visible.length ? `${visible.length} актуальных` : "всё сдано"}`}
+        subtitle={archive ? "дедлайн прошёл" : visible.length ? `${visible.length} ${pluralRu(visible.length, "актуальная", "актуальных", "актуальных")}` : "всё сдано"}
         right={
+          // Пилюля с подписью, а не одна иконка: hover-подсказок на телефоне нет, и архив иначе никто не находит.
           <Link
             href={href({ archive: !archive })}
-            className={cn("grid size-10 place-items-center rounded-full hairline active:scale-95", archive ? "bg-fg text-bg" : "bg-surface-2 text-fg")}
-            aria-label={archive ? "К актуальным" : "Архив"}
+            className={cn("flex min-h-10 items-center gap-1.5 rounded-full px-3.5 text-[14px] font-semibold hairline active:scale-95", archive ? "bg-fg text-bg" : "bg-surface-2 text-fg")}
           >
-            <Archive className="size-[18px]" />
+            <Archive className="size-4" /> {archive ? "Актуальные" : "Архив"}
           </Link>
         }
       />
 
       <div className="mb-4 flex gap-2 overflow-x-auto px-5 scrollbar-none">
-        <Link href={href({ subject: null })} className={cn("shrink-0 rounded-full px-3.5 py-2 text-[13px] font-semibold", !subjectId ? "bg-fg text-bg" : "bg-surface-2 text-muted hairline")}>
+        <Link href={href({ subject: null })} className={cn("inline-flex min-h-10 shrink-0 items-center rounded-full px-3.5 text-[13px] font-semibold", !subjectId ? "bg-fg text-bg" : "bg-surface-2 text-muted hairline")}>
           Все
         </Link>
         {subjectList.map((s) => (
           <Link
             key={s.id}
             href={href({ subject: s.id === subjectId ? null : s.id })}
-            className={cn("shrink-0 rounded-full px-3.5 py-2 text-[13px] font-semibold transition", s.id === subjectId ? "text-bg" : "bg-surface-2 text-muted hairline")}
+            className={cn("inline-flex min-h-10 shrink-0 items-center rounded-full px-3.5 text-[13px] font-semibold transition", s.id === subjectId ? "text-bg" : "bg-surface-2 text-muted hairline")}
             style={s.id === subjectId ? { background: s.color ?? "#F4F4F6" } : undefined}
           >
             {s.shortName ?? s.name}

@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { fileHref } from "@/lib/files/token";
 import { and, asc, count, desc, eq, gt, inArray, isNull, lte, max, ne, or, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
@@ -196,7 +197,8 @@ export type PollItem = Awaited<ReturnType<typeof listPolls>>[number];
 
 export const listContacts = (groupId: string) => db.select().from(contacts).where(eq(contacts.groupId, groupId)).orderBy(asc(contacts.kind), asc(contacts.position), asc(contacts.name));
 
-export async function listBirthdays(groupId: string, todayIso: string) {
+/** cache(): лэйаут и страница хаба читают дни рождения в одном запросе — второй поход в базу не нужен. */
+export const listBirthdays = cache(async (groupId: string, todayIso: string) => {
   const rows = await db
     .select({ ...person, birthday: users.birthday })
     .from(users)
@@ -215,7 +217,7 @@ export async function listBirthdays(groupId: string, todayIso: string) {
       return { ...u, birthday: u.birthday as string, daysUntil, monthDay: `${String(d).padStart(2, "0")}.${String(m).padStart(2, "0")}` };
     })
     .sort((a, b) => a.daysUntil - b.daysUntil);
-}
+});
 
 // ---------- Анонимные вопросы ----------
 
@@ -225,7 +227,8 @@ export async function listQuestions(groupId: string) {
     .from(anonQuestions)
     .leftJoin(users, eq(users.id, anonQuestions.answeredBy))
     .where(and(eq(anonQuestions.groupId, groupId), isNull(anonQuestions.deletedAt)))
-    .orderBy(desc(anonQuestions.createdAt))
+    // Время вопросов округлено до часа, и у соседних оно совпадает: без второго ключа порядок на экране плавал бы.
+    .orderBy(desc(anonQuestions.createdAt), desc(anonQuestions.id))
     .limit(100);
   return rows.map((r) => ({
     id: r.q.id,

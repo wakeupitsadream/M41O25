@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
-import { useGuardedRouter } from "@/components/features/nav-guard";
+import { useRouter } from "next/navigation";
 import { AlertTriangle, Check, Pencil, ScanLine, Sparkles, Wand2 } from "lucide-react";
 import type { DraftLesson } from "@/lib/ocr/draft";
 import { diffDraft, type PrevLesson } from "@/lib/ocr/diff";
@@ -42,7 +42,7 @@ const KINDS: LessonKind[] = ["lecture", "practice", "lab", "consultation", "cred
  * Отказ Polza никогда не блокирует: тот же редактор заполняется руками.
  */
 export function ScanRecognizer({ weekId, hasLessons, subjects, parity = null }: { weekId: string; hasLessons: boolean; subjects: SubjectOpt[]; parity?: "upper" | "lower" | null }) {
-  const router = useGuardedRouter();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [busy, setBusy] = useState<null | "fast" | "strong">(null);

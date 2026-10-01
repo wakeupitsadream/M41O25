@@ -80,7 +80,7 @@ export default function ErrorPage({ error, reset }: { error: Error & { digest?: 
           </p>
         )}
       </div>
-      <Link href="/api/auth/clear" className="pt-2 text-[13px] text-dim underline-offset-4 hover:underline">
+      <Link href="/api/auth/clear" className="pt-2 text-[13px] text-dim underline decoration-dim underline-offset-4">
         Войти заново
       </Link>
       {error.digest && <div className="text-[11px] text-dim tnum">код {error.digest} — назови его админу</div>}

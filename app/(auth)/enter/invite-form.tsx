@@ -17,7 +17,7 @@ export function InviteForm({ defaultCode }: { defaultCode?: string }) {
           autoCapitalize="characters"
           autoCorrect="off"
           spellCheck={false}
-          placeholder="M41-XXXX"
+          placeholder="M41-XXXX-XXXX"
           defaultValue={defaultCode}
           className="h-14 text-center font-display text-xl tracking-[0.15em] uppercase"
           required

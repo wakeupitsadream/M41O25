@@ -1,10 +1,10 @@
 import "server-only";
 import { count, desc, gt, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { appErrors, cronRuns } from "@/lib/db/schema";
+import { appErrors, cronRuns, pushSubscriptions } from "@/lib/db/schema";
 import { env } from "@/lib/env";
 import { storage } from "@/lib/storage";
-import { cronWarnings, describeBackup, latestBackupDay } from "@/lib/ops/health";
+import { cronStale, cronWarnings, describeBackup, latestBackupDay } from "@/lib/ops/health";
 import { todayIso } from "@/lib/tz";
 
 /** Остаток на PolzaAI в рублях (если ключ задан). Ошибки глушим — админка не должна падать из-за внешнего API. */
@@ -15,7 +15,8 @@ export async function polzaBalance(): Promise<{ balance: number | null; error?: 
     const res = await fetch(`${env.polza.baseUrl.replace(/\/$/, "")}/balance`, {
       headers: { Authorization: `Bearer ${env.polza.apiKey}` },
       cache: "no-store",
-      signal: AbortSignal.timeout(6000),
+      // Обзор админки ждёт этот ответ: три секунды — предел, дальше лучше «нет данных», чем пустой экран.
+      signal: AbortSignal.timeout(3000),
     });
     if (!res.ok) return { balance: null, error: `HTTP ${res.status}` };
     const json = (await res.json()) as Record<string, unknown>;
@@ -40,7 +41,7 @@ export async function lastBackup(): Promise<string | null> {
 export async function polzaModels(): Promise<{ missing: string[] } | { error: string } | null> {
   if (env.polza.mock || !env.polza.apiKey) return null;
   try {
-    const res = await fetch(`${env.polza.baseUrl.replace(/\/$/, "")}/models`, { headers: { Authorization: `Bearer ${env.polza.apiKey}` }, cache: "no-store", signal: AbortSignal.timeout(6000) });
+    const res = await fetch(`${env.polza.baseUrl.replace(/\/$/, "")}/models`, { headers: { Authorization: `Bearer ${env.polza.apiKey}` }, cache: "no-store", signal: AbortSignal.timeout(3000) });
     if (!res.ok) return { error: `HTTP ${res.status}` };
     const json = (await res.json()) as { data?: Array<{ id?: string }> } | Array<{ id?: string }>;
     const list = Array.isArray(json) ? json : json.data ?? [];
@@ -70,7 +71,7 @@ export async function diagnostics() {
     dbError = e instanceof Error ? e.message : String(e);
   }
 
-  const onVercel = Boolean(process.env.VERCEL);
+  const onVercel = env.onVercel;
   let storageLine: string;
   let storageOk = true;
   let lastBackupDay: string | null = null;
@@ -95,11 +96,25 @@ export async function diagnostics() {
     : describeBackup({ lastBackupDay, todayIso: todayIso(), storageKind: storage.kind, onVercel });
 
   const since = new Date(Date.now() - 24 * 3600_000);
-  const [[errCount], lastErrors, [lastCron], models] = await Promise.all([
+  const [[errCount], lastErrors, [lastCron], models, [push]] = await Promise.all([
     db.select({ n: count() }).from(appErrors).where(gt(appErrors.createdAt, since)).catch(() => [{ n: -1 }]),
-    db.select({ route: appErrors.route, message: appErrors.message, createdAt: appErrors.createdAt }).from(appErrors).orderBy(desc(appErrors.createdAt)).limit(3).catch(() => []),
+    db
+      .select({ route: appErrors.route, message: appErrors.message, digest: appErrors.digest, createdAt: appErrors.createdAt })
+      .from(appErrors)
+      .orderBy(desc(appErrors.createdAt))
+      .limit(3)
+      .catch(() => []),
     db.select().from(cronRuns).orderBy(desc(cronRuns.ranAt)).limit(1).catch(() => []),
     polzaModels(),
+    // Здоровье пушей: сломанные подписки удаляет cron молча, и без этой строки владелец узнавал бы от людей.
+    db
+      .select({
+        total: count(),
+        failing: sql<number>`count(*) filter (where ${pushSubscriptions.failCount} > 0)`.mapWith(Number),
+        lastError: sql<string | null>`max(${pushSubscriptions.lastError})`,
+      })
+      .from(pushSubscriptions)
+      .catch(() => [{ total: -1, failing: 0, lastError: null }]),
   ]);
 
   const missingEnv = [
@@ -108,6 +123,7 @@ export async function diagnostics() {
     ["CRON_SECRET", env.cronSecret],
     ["POLZA_API_KEY", env.polza.apiKey],
     ["R2_*", env.r2.configured ? "x" : ""],
+    ["VAPID_*", env.push.configured ? "x" : ""],
   ]
     .filter(([, v]) => !v)
     .map(([k]) => k);
@@ -116,12 +132,16 @@ export async function diagnostics() {
     db: { ms: dbMs, error: dbError, mb: dbMb },
     storage: { ok: storageOk, line: storageLine },
     backup,
+    lastBackupDay,
     cronWarnings: cronWarnings(lastCron?.details),
+    // Зелёное «Cron прошёл» только по свежей записи: прогон, упавший до записи в журнал, оставлял бы старую зелёной неделями.
+    cronStale: cronStale(lastCron?.ranAt ?? null),
     errors24h: errCount?.n ?? -1,
     lastErrors,
     lastCron: lastCron ?? null,
     models,
     missingEnv,
+    push: push ?? { total: -1, failing: 0, lastError: null },
     healthcheck: Boolean(env.healthcheckUrl),
   };
 }

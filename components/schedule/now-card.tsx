@@ -88,7 +88,7 @@ export function NowCard({ lessons, minutes, onOpen }: { lessons: ScheduleLesson[
       <div className={`text-[12px] font-semibold uppercase tracking-wide ${accent ? "text-accent-ink/70" : "text-muted"}`}>{label}</div>
       <div className="mt-1 flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="truncate font-display text-[19px] font-bold leading-tight">{title}</div>
+          <div className="line-clamp-2 font-display text-[19px] font-bold leading-tight">{title}</div>
           <div className={`mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] font-medium ${accent ? "text-accent-ink/80" : "text-muted"}`}>{sub}</div>
         </div>
         <ChevronRight className={`size-5 shrink-0 ${accent ? "text-accent-ink/60" : "text-dim"}`} />

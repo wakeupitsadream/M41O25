@@ -7,6 +7,7 @@ import { addDaysIso, capitalize, fmtDayNum, fmtDdMm, fmtRangeShort, fmtWeekday, 
 import { PARITY_LABEL, type ScheduleLesson, type SchedulePayload } from "@/lib/schedule/types";
 import { dayHasFreshChanges, lessonsOn, nowState, semesterPhase, semestersOf, weekFor, type SemesterPhase } from "@/lib/schedule/derive";
 import { cn, pluralRu } from "@/lib/utils";
+import { BellsButton } from "./bells-sheet";
 import { NowCard } from "./now-card";
 import { Badge } from "@/components/ui/primitives";
 
@@ -37,6 +38,10 @@ export function WeekView({ data, now, today, weekStart, defaultWeekStart, weathe
   const phase = semesterPhase(data ? semestersOf(data) : [], isCurrentWeek ? today : weekStart);
   const semesterTitle = phase.kind === "study" || phase.kind === "session" ? phase.semester.title : (data?.semester?.title ?? "");
   const subtitle = phase.kind === "session" ? `Сессия · до ${fmtDdMm(phase.until)}` : semesterTitle;
+  // Одно число и для цифры, и для формы слова: «20 пар», а не «20 пара» при одной отменённой из 21.
+  const active = week ? week.lessons.filter((l) => !l.isCancelled).length : 0;
+  // Офлайн-кеш — просто JSON.parse того, что лежало в localStorage: совсем старый снимок мог быть без group.
+  const slotTimes = data?.group?.slotTimes ?? [];
 
   return (
     <div className="px-5">
@@ -44,33 +49,20 @@ export function WeekView({ data, now, today, weekStart, defaultWeekStart, weathe
         <div className="min-w-0">
           <div className="mb-1 flex items-center gap-2 text-[13px] font-medium uppercase tracking-wide text-muted">
             <span>{isUpcoming ? "Следующая неделя" : isCurrentWeek ? "Эта неделя" : "Неделя"}</span>
-            {week?.parity && (
-              <Badge tone={week.parity === "upper" ? "accent" : "neutral"} className="normal-case tracking-normal">
-                {PARITY_LABEL[week.parity]}
-              </Badge>
-            )}
+            {/* Чётность — нейтральная: акцент только у «сегодня», «сейчас» и CTA, а «Верхняя» каждой второй неделе с ними спорила. */}
+            {week?.parity && <Badge className="normal-case tracking-normal">{PARITY_LABEL[week.parity]}</Badge>}
           </div>
           <h1 className="font-display text-[26px] font-bold leading-none">{fmtRangeShort(weekStart, addDaysIso(weekStart, 5))}</h1>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
-          {!isCurrentWeek && (
-            <button
-              type="button"
-              onClick={onToday}
-              className="h-10 rounded-full bg-surface-2 px-3.5 text-[13px] font-semibold text-fg hairline active:scale-95"
-            >
-              Сегодня
-            </button>
-          )}
+        {!isCurrentWeek && (
           <button
             type="button"
-            onClick={onSemester}
-            aria-label="Семестр"
-            className="grid size-10 place-items-center rounded-full bg-surface-2 text-fg hairline active:scale-95"
+            onClick={onToday}
+            className="h-10 shrink-0 rounded-full bg-surface-2 px-3.5 text-[13px] font-semibold text-fg hairline active:scale-95"
           >
-            <Layers className="size-[18px]" />
+            Сегодня
           </button>
-        </div>
+        )}
       </header>
 
       <div className="mb-4 flex items-center justify-between">
@@ -93,10 +85,25 @@ export function WeekView({ data, now, today, weekStart, defaultWeekStart, weathe
         </button>
       </div>
 
+      {/* Подписи, а не одни иконки: «Семестр» (до сессии N дней) и «Звонки» первокурсник иначе не находит, hover на телефоне нет.
+          Отдельной строкой: рядом с «28 сент — 3 окт» и «Сегодня» на 390px две пилюли с текстом не помещаются. */}
+      <div className="mb-3 flex items-center gap-2">
+        <BellsButton slotTimes={slotTimes} minutes={now?.minutes ?? null} />
+        <button
+          type="button"
+          onClick={onSemester}
+          className="flex h-10 items-center gap-1.5 rounded-full bg-surface-2 px-3.5 text-[13px] font-semibold text-fg hairline active:scale-95"
+        >
+          <Layers className="size-4" /> Семестр
+        </button>
+      </div>
+
       <motion.div
         key={weekStart}
         className="space-y-3"
         drag="x"
+        // Замок направления: диагональный скролл вниз иначе тащил список на 10–15px вбок при каждой прокрутке.
+        dragDirectionLock
         dragConstraints={{ left: 0, right: 0 }}
         dragElastic={0.12}
         dragMomentum={false}
@@ -149,7 +156,7 @@ export function WeekView({ data, now, today, weekStart, defaultWeekStart, weathe
       {data && week && (
         <div className="mt-6 flex items-center justify-center gap-2 text-[12px] text-dim">
           <CalendarRange className="size-3.5" />
-          {week.lessons.filter((l) => !l.isCancelled).length} {pluralRu(week.lessons.length, "пара", "пары", "пар")} на неделе
+          {active} {pluralRu(active, "пара", "пары", "пар")} на неделе
         </div>
       )}
     </div>
@@ -250,7 +257,8 @@ function DayCard({
               {active.slice(0, 3).map((l) => (
                 <span
                   key={l.id}
-                  className="rounded-full px-2 py-0.5 text-[12px] font-medium"
+                  // Пока админ не заполнил «Коротко», тут полное название: обрезаем, а не переносим в три строки внутри пилюли.
+                  className="max-w-full truncate rounded-full px-2 py-0.5 text-[12px] font-medium"
                   style={{ background: `${l.subjectColor ?? "#9C9CA8"}22`, color: l.subjectColor ?? "#9C9CA8" }}
                 >
                   {l.subjectShort ?? l.title}

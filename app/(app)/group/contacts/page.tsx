@@ -2,6 +2,8 @@ import Link from "next/link";
 import { AtSign, MessageSquare, Pencil, Phone, Plus } from "lucide-react";
 import { hasRole, requireUser } from "@/lib/auth";
 import { listContacts } from "@/lib/group/query";
+import { messengerLink } from "@/lib/group/messenger";
+import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/ui/primitives";
 import { SubHeader } from "@/components/group/sub-header";
 
@@ -9,6 +11,28 @@ export const metadata = { title: "Контакты" };
 export const dynamic = "force-dynamic";
 
 const KIND_TITLE = { teacher: "Преподаватели", dean: "Деканат и кафедры", other: "Ещё" } as const;
+
+/**
+ * Мессенджер: «@ник» и адреса t.me / vk.com открываются по тапу (lib/group/messenger.ts), остальное — текст, который
+ * можно выделить и скопировать. target="_blank" здесь уместен: Telegram и ВК перехватывают ссылку приложением, cookie не нужна.
+ */
+function MessengerChip({ value }: { value: string }) {
+  const { href, label } = messengerLink(value);
+  const base = "flex h-9 items-center gap-1.5 rounded-full bg-surface-2 px-3 text-[13px] font-medium hairline";
+  const icon = <MessageSquare className="size-3.5 text-muted" />;
+  if (!href) {
+    return (
+      <span className={cn(base, "select-text")}>
+        {icon} {label}
+      </span>
+    );
+  }
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" className={cn(base, "active:bg-surface-3")}>
+      {icon} {label}
+    </a>
+  );
+}
 
 export default async function ContactsPage() {
   const user = await requireUser();
@@ -55,19 +79,15 @@ export default async function ContactsPage() {
                       <div className="mt-3 flex flex-wrap gap-2">
                         {c.phone && (
                           <a href={`tel:${c.phone.replace(/[^\d+]/g, "")}`} className="flex h-9 items-center gap-1.5 rounded-full bg-surface-2 px-3 text-[13px] font-medium hairline active:bg-surface-3">
-                            <Phone className="size-3.5 text-accent" /> {c.phone}
+                            <Phone className="size-3.5 text-muted" /> {c.phone}
                           </a>
                         )}
                         {c.email && (
                           <a href={`mailto:${c.email}`} className="flex h-9 items-center gap-1.5 rounded-full bg-surface-2 px-3 text-[13px] font-medium hairline active:bg-surface-3">
-                            <AtSign className="size-3.5 text-accent" /> {c.email}
+                            <AtSign className="size-3.5 text-muted" /> {c.email}
                           </a>
                         )}
-                        {c.messenger && (
-                          <span className="flex h-9 items-center gap-1.5 rounded-full bg-surface-2 px-3 text-[13px] font-medium hairline">
-                            <MessageSquare className="size-3.5 text-accent" /> {c.messenger}
-                          </span>
-                        )}
+                        {c.messenger && <MessengerChip value={c.messenger} />}
                       </div>
                     )}
                   </li>

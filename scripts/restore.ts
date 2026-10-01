@@ -6,6 +6,7 @@ import { Pool } from "pg";
 import { normalizeDatabaseUrl } from "../lib/db/url";
 import { invitePrefix } from "../lib/invite";
 import { generateInviteSuffix } from "../lib/utils";
+import { BACKUP_ARRAY_COLUMNS, BACKUP_TABLES } from "../lib/backup-tables";
 
 /**
  * Восстановление из JSON-дампа (cron-бэкап или «Скачать сейчас» в админке):
@@ -17,16 +18,15 @@ import { generateInviteSuffix } from "../lib/utils";
  * В дампе нет pin_hash — после восстановления все профили свободны, и первым войти должен админ. Поэтому
  * инвайт-код меняется на новый и печатается; --keep-code оставляет код из дампа.
  */
-const ORDER = [
-  "groups", "users", "semesters", "subjects", "weeks", "lessons", "schedule_imports", "homework", "hw_edits", "hw_done",
-  "comments", "attachments", "news", "tasks", "task_checks", "polls", "poll_options", "poll_votes", "contacts", "anon_questions", "reactions", "activity",
-  "assistant_access", "assistant_payments", "assistant_conversations", "assistant_messages",
-];
+const ORDER = BACKUP_TABLES;
 
 const camelToSnake = (s: string) => s.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`);
 
-/** Колонки-массивы Postgres (text[]): их pg сериализует сам, а JSON.stringify дал бы `["a"]` вместо `{a}`. Остальные объекты — jsonb. */
-const ARRAY_COLUMNS = new Set(["subjects.aliases"]);
+/** Имя колонки из ключа дампа: только snake_case, иначе кавычки в SQL можно сломать подменённым файлом. */
+const ident = (s: string): string => {
+  if (!/^[a-z_][a-z0-9_]*$/.test(s)) throw new Error(`Подозрительное имя колонки в дампе: ${JSON.stringify(s)}`);
+  return `"${s}"`;
+};
 
 async function main() {
   const args = process.argv.slice(2);
@@ -58,12 +58,17 @@ async function main() {
         const cols = Object.keys(row);
         const values = cols.map((c) => {
           const v = row[c];
-          if (Array.isArray(v) && ARRAY_COLUMNS.has(`${table}.${c}`)) return v;
+          if (Array.isArray(v) && BACKUP_ARRAY_COLUMNS.has(`${table}.${camelToSnake(c)}`)) return v;
           return v !== null && typeof v === "object" && !(v instanceof Date) ? JSON.stringify(v) : v;
         });
-        const sql = `insert into "${table}" (${cols.map((c) => `"${camelToSnake(c)}"`).join(", ")}) values (${cols.map((_, i) => `$${i + 1}`).join(", ")}) on conflict do nothing`;
-        const res = await client.query(sql, values);
-        total += res.rowCount ?? 0;
+        const sql = `insert into "${table}" (${cols.map((c) => ident(camelToSnake(c))).join(", ")}) values (${cols.map((_, i) => `$${i + 1}`).join(", ")}) on conflict do nothing`;
+        try {
+          const res = await client.query(sql, values);
+          total += res.rowCount ?? 0;
+        } catch (e) {
+          // Какая строка не легла — иначе по «violates foreign key constraint» дамп не починить руками.
+          throw new Error(`${table}: строка ${JSON.stringify(row).slice(0, 300)} — ${e instanceof Error ? e.message : e}`);
+        }
       }
       console.log(`[restore] ${table}: ${rows.length}`);
     }

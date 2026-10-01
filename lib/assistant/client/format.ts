@@ -9,7 +9,8 @@ import type { AssistantState } from "../types";
 /** «2026-09-30» → «30.09»: коротко для «до …» в плитке и карточке статуса. Не дата — вернётся как есть. */
 export const ddmm = (iso: string) => (/^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso.slice(8, 10)}.${iso.slice(5, 7)}` : iso);
 
-export const priceLine = (priceRub: number) => `${priceRub} ₽ в месяц`;
+/** Цена везде «за 30 дней», не «в месяц»: продление — ровно +30 дней (extendPaidUntil). Пробел перед ₽ неразрывный. */
+export const priceLine = (priceRub: number) => `${priceRub} ₽ за 30 дней`;
 
 export const daysWord = (n: number) => pluralRu(n, "день", "дня", "дней");
 

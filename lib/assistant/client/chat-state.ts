@@ -54,7 +54,9 @@ export type ChatAction =
   | { type: "reload"; messages: ChatMessage[]; conversation?: ConversationInfo | null }
   /** Перестали ждать ответ: дальше под вопросом «Ответ не пришёл» и «Повторить». */
   | { type: "awaitEnd"; questionId: string }
-  | { type: "limits"; limits: LimitsView };
+  | { type: "limits"; limits: LimitsView }
+  /** Беседу переименовали с этого экрана: заголовок меняется сразу, серверная версия подтвердит его при reload. */
+  | { type: "title"; title: string };
 
 export const NEW_CHAT_TITLE = "Новый чат";
 /** Как сервер называет беседу без заголовка (app/(app)/group/assistant/actions.ts). */
@@ -225,6 +227,8 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return state.awaiting?.questionId === action.questionId ? { ...state, awaiting: null } : state;
     case "limits":
       return { ...state, limits: action.limits };
+    case "title":
+      return { ...state, title: action.title };
   }
 }
 

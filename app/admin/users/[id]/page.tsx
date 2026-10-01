@@ -12,7 +12,19 @@ import { Avatar } from "@/components/ui/primitives";
 import { AssistantAccessCard } from "@/components/admin/assistant-access-card";
 import { accessStatus, extendPaidUntil } from "@/lib/assistant/access";
 import { getAccessRow, getSettings } from "@/lib/assistant/store";
-import { todayIso } from "@/lib/tz";
+import { addDaysIso, APP_TZ, todayIso } from "@/lib/tz";
+
+/**
+ * «до 14:05» — блокировка кончается сегодня; «до завтра, 14:05» — суточная ступень переваливает через полночь,
+ * и без дня время читалось бы как «через пару часов». Пояс — группы, а не сервера (UTC на Vercel).
+ */
+function lockedUntil(until: Date, today: string) {
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: APP_TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(until);
+  const time = until.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone: APP_TZ });
+  if (day === today) return time;
+  if (day === addDaysIso(today, 1)) return `завтра, ${time}`;
+  return `${until.toLocaleDateString("ru-RU", { day: "numeric", month: "short", timeZone: APP_TZ }).replace(".", "")}, ${time}`;
+}
 
 export default async function EditUserPage({ params }: { params: Promise<{ id: string }> }) {
   const admin = await requireRole("admin");
@@ -37,7 +49,7 @@ export default async function EditUserPage({ params }: { params: Promise<{ id: s
           <h1 className="font-display text-[24px] font-bold leading-none">{u.fullName}</h1>
           <div className="mt-1 text-[13px] text-muted">
             {u.pinHash ? "PIN задан" : "ещё не входил"} · устройств: {sessions}
-            {locked && ` · вход заблокирован до ${u.pinLockedUntil!.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Yekaterinburg" })}`}
+            {locked && ` · вход заблокирован до ${lockedUntil(u.pinLockedUntil!, today)}`}
           </div>
         </div>
       </div>

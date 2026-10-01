@@ -3,6 +3,7 @@ import { and, count, eq, gt, inArray } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { activity } from "@/lib/db/schema";
 import type { SessionUser } from "@/lib/auth";
+import { ActionError } from "@/lib/actions";
 
 export const CREATE_EVENTS = ["hw_added", "hw_updated", "hw_edit_added", "comment_added", "poll_created", "news_added", "task_added"] as const;
 
@@ -25,5 +26,5 @@ export async function assertRate(user: SessionUser) {
     .select({ n: count() })
     .from(activity)
     .where(and(eq(activity.actorId, user.id), gt(activity.createdAt, since), inArray(activity.eventType, [...CREATE_EVENTS])));
-  if (n >= LIMIT_PER_HOUR) throw new Error("Слишком много записей за час. Остынь минутку — лимит снимется сам.");
+  if (n >= LIMIT_PER_HOUR) throw new ActionError("Слишком много записей за час. Остынь минутку — лимит снимется сам.");
 }

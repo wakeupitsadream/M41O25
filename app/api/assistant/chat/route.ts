@@ -109,7 +109,7 @@ async function handle(req: Request): Promise<Response> {
   const settings = getSettings(user.group);
   if (!settings.enabled) return json({ error: "Помощник выключен" }, 403);
   // Включить без ключа админка не даст, но ключ могли убрать из Vercel позже — честнее отказать сразу, чем списать лимит.
-  if (!env.assistant.configured) return json({ error: "Помощник сейчас не настроен — админ уже знает" }, 403);
+  if (!env.assistant.configured) return json({ error: "Помощник сейчас не настроен — передай админу" }, 403);
 
   // Одни «сегодня» и «понедельник» на весь запрос: квота, лимиты в done и day сообщений считаются по одному дню,
   // даже если ответ закончится после полуночи.

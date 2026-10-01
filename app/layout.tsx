@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Unbounded } from "next/font/google";
+import { MotionConfig } from "motion/react";
 import "./globals.css";
 import { ChunkReload } from "@/components/features/chunk-reload";
 
@@ -9,11 +10,13 @@ const inter = Inter({
   display: "swap",
 });
 
+// Только используемые веса: 700 — заголовки (font-display + font-bold), 500 — поля кода и PIN (font-display без
+// явного веса: браузер берёт ближайший объявленный). Лишние веса — лишние @font-face и preload-файлы.
 const unbounded = Unbounded({
   subsets: ["latin", "cyrillic"],
   variable: "--font-unbounded",
   display: "swap",
-  weight: ["500", "600", "700", "800"],
+  weight: ["500", "700"],
 });
 
 export const metadata: Metadata = {
@@ -48,7 +51,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ru" className={`${inter.variable} ${unbounded.variable}`}>
       <body className="bg-bg text-fg antialiased">
         <ChunkReload />
-        {children}
+        {/* «Уменьшение движения» в iOS: Motion анимирует инлайн-стилями, и CSS-правило в globals.css его не касается. */}
+        <MotionConfig reducedMotion="user">{children}</MotionConfig>
       </body>
     </html>
   );

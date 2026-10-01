@@ -86,7 +86,6 @@ export function Composer({ text, onText, files, setFiles, streaming, stoppable, 
           {files.map((f) => (
             <div key={f.id} className="flex h-11 max-w-[14rem] shrink-0 items-center gap-2 rounded-full bg-surface-2 pl-1.5 hairline">
               {f.mime.startsWith("image/") ? (
-                // eslint-disable-next-line @next/next/no-img-element
                 <img src={f.url} alt="" className="size-8 shrink-0 rounded-full object-cover" />
               ) : (
                 <span className="grid size-8 shrink-0 place-items-center rounded-full bg-surface-3">

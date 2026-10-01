@@ -3,7 +3,7 @@
  * а незнакомое значение в массиве просто игнорируется (старое устройство не сломает новую сборку).
  * Порядок задаёт порядок галочек в Профиле: сверху то, ради чего приложение открывают каждый день.
  */
-export const PUSH_TOPICS = ["homework", "news", "questions", "polls"] as const;
+export const PUSH_TOPICS = ["homework", "schedule", "news", "questions", "polls"] as const;
 
 export type PushTopic = (typeof PUSH_TOPICS)[number];
 
@@ -12,6 +12,7 @@ export const DEFAULT_TOPICS: PushTopic[] = [...PUSH_TOPICS];
 
 export const TOPIC_LABELS: Record<PushTopic, string> = {
   homework: "Домашка",
+  schedule: "Расписание",
   news: "Новости",
   questions: "Анонимные вопросы",
   polls: "Опросы",

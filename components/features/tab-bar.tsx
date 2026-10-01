@@ -71,13 +71,16 @@ export function TabBar({ latest = {}, feedSeenAt = null }: { latest?: SectionLat
       <Link
         key={t.href}
         href={t.href}
+        aria-current={isActive ? "page" : undefined}
         className={cn("relative flex flex-1 flex-col items-center gap-1 py-2 text-[11px] font-medium transition-colors", isActive ? "text-accent" : "text-muted")}
       >
         <span className="relative">
           <Icon className="size-[22px]" strokeWidth={isActive ? 2.4 : 2} />
-          {dot && <span aria-label="есть новое" className="absolute -right-1.5 -top-1 size-2 rounded-full bg-accent ring-2 ring-bg" />}
+          {dot && <span aria-hidden className="absolute -right-1.5 -top-1 size-2 rounded-full bg-accent ring-2 ring-bg" />}
         </span>
         <span>{t.label}</span>
+        {/* aria-label на span без роли VoiceOver не озвучивает — текст для читалки отдельным скрытым span. */}
+        {dot && <span className="sr-only">есть новое</span>}
         {isActive && (
           <motion.span layoutId="tab-dot" className="absolute -top-0.5 h-1 w-6 rounded-full bg-accent" transition={{ type: "spring", stiffness: 500, damping: 40 }} />
         )}

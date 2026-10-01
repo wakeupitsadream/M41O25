@@ -1,6 +1,6 @@
 # Raspison — правила проекта для Claude Code
 
-PWA группы М41О25 (РАНХиГС, Оренбург): расписание, домашка, жизнь группы. 21 пользователь на iPhone, один оператор (Максим). Production живёт на `raspison.vercel.app`, база — Neon, файлы — Cloudflare R2, распознавание сканов — PolzaAI. Планы и решения: `docs/PLAN.md`, `docs/BRIEF.md`, `docs/ROADMAP.md`; эксплуатация: `README.md`, `docs/RUNBOOK.md`.
+PWA группы М41О25 (РАНХиГС, Оренбург): расписание, домашка, жизнь группы, платный помощник по учёбе. 22 пользователя на iPhone, один оператор (Максим). Production живёт на `raspison.vercel.app`, база — Neon, файлы — Cloudflare R2, распознавание сканов — PolzaAI. Планы и решения: `docs/PLAN.md`, `docs/BRIEF.md`, `docs/ROADMAP.md`; эксплуатация: `README.md`, `docs/RUNBOOK.md`.
 
 ## Стек и команды
 
@@ -37,10 +37,10 @@ npm run e2e:offline         # только против production-сборки 
 
 ## Серверные действия и данные
 
-- Действия возвращают `ActionResult` (`ok()` / `fail()` из `lib/utils.ts`), не бросают исключения на ошибках валидации; редирект только после успеха. Авторизация в каждом действии через `actionUser(minRole)`; роли `student < moderator < admin`.
+- Действия возвращают `ActionResult` (`ok()` / `fail()` из `lib/utils.ts`), не бросают исключения на ошибках валидации; редирект только после успеха. Тело действия — внутри `wrapAction` (или `wrapForm` для `FormState`) из `lib/actions.ts`: своя ошибка — `ActionError` с текстом для человека, всё остальное (Postgres, сеть, баг) превращается в общую фразу и уходит в `app_errors`. Авторизация в каждом действии через `actionUser(minRole)`; роли `student < moderator < admin`. Любой id с клиента — через `asUuid`, дата — `isoDate` из `lib/validation.ts` (формат и существование дня), enum — `z.enum`.
 - Многотабличные записи — в `db.transaction`. Переключатели (галочки, реакции) — одним запросом с `on conflict`.
-- Правки схемы: изменить `lib/db/schema.ts` → `npm run db:generate` → проверить SQL → закоммитить `.sql` и `drizzle/meta` вместе. Применённые миграции не редактировать. Миграции обратно совместимы с предыдущим деплоем: сначала добавляем nullable/с дефолтом, удаляем и переименовываем в следующем релизе.
-- `lib/env.ts` — единственный читатель `process.env` (кроме `NEXT_PUBLIC_*` на клиенте и `VERCEL*` в сборке). Подключение к базе ленивое (`lib/db/index.ts`): импорт модуля без `DATABASE_URL` не падает — это нужно сборке.
+- Правки схемы: изменить `lib/db/schema.ts` → `npm run db:generate` → проверить SQL → закоммитить `.sql` и `drizzle/meta` вместе (CI генерирует миграцию заново и падает, если `schema.ts` разошёлся с `drizzle/`). Применённые миграции не редактировать. Миграции обратно совместимы с предыдущим деплоем: сначала добавляем nullable/с дефолтом, удаляем и переименовываем в следующем релизе. Мигратор Drizzle применяет ВСЕ ожидающие файлы одной транзакцией, поэтому новое значение enum (`ALTER TYPE … ADD VALUE`) и его первое использование в `UPDATE`/`DEFAULT` не могут лежать ни в одном файле, ни в соседних файлах одного деплоя — только через код или следующий релиз. Новая таблица — в `lib/backup-tables.ts` (в дамп или в исключения с причиной), тест полноты это проверяет.
+- `lib/env.ts` — единственный читатель `process.env` (кроме `NEXT_PUBLIC_*` на клиенте и `VERCEL*` в сборке). Подключение к базе ленивое (`lib/db/index.ts`): импорт модуля без `DATABASE_URL` не падает — это нужно сборке. SDK внешних сервисов (`@aws-sdk/client-s3`, `web-push`, `openai`) импортируются `await import()` внутри функции, а не на верхнем уровне модуля, который могут затянуть server actions: иначе они грузятся на холодном старте каждой страницы.
 - Инвайт-код сравнивается канонизированным (`lib/invite.ts`): кириллические двойники → латиница, дефисы игнорируются. Префикс кода всегда латиницей.
 - Файлы отдаются только через `/api/files/[id]`; ссылки для внешнего браузера подписываются `lib/files/token.ts` (`fileHref`). Установленная PWA на iPhone открывает внешние ссылки без cookie — фото показываем через `ImageGrid`, а не `target="_blank"`.
 
@@ -52,9 +52,9 @@ npm run e2e:offline         # только против production-сборки 
 
 ## Известные проблемы
 
-- P0, вылечен обновлением на Next 16.3 (React 19.2.8): в production-сборке на Next 15.5 клиентская навигация, server action или `router.refresh()` иногда не коммитились — React терял ping от ленивого чанка Flight (гонка на границах чанков потока). На Next 16 репро `e2e/nav-hang.mjs` даёт 0 зависаний из 28 попыток без сторожа против 6/6 и 8/8 на Next 15.5. Сторож `NavWatchdog` и `useGuardedRouter` пока оставлены как страховка: правило проекта «`useRouter` из `next/navigation` напрямую не импортировать» действует, ESLint это проверяет. Убрать сторож после недели на реальных телефонах (`docs/ROADMAP.md`, раздел «Проблема P0»).
+- P0, вылечен обновлением на Next 16.3 (React 19.2.8): в production-сборке на Next 15.5 клиентская навигация, server action или `router.refresh()` иногда не коммитились — React терял ping от ленивого чанка Flight (гонка на границах чанков потока). На Next 16 репро `e2e/nav-hang.mjs` даёт 0 зависаний из 28 попыток. Сторож навигации (`NavWatchdog`/`useGuardedRouter`) снят 01.10.2026 после трёх недель на реальных телефонах; `useRouter` импортируется из `next/navigation` напрямую. После каждого обновления `next`/`react` гонять `e2e/nav-hang.mjs` на production-сборке с тяжёлой страницей (~100 контактов); в e2e перезагрузка страницы как «спасение» запрещена (`STRICT_NAV=1` в CI).
 - Маршрутный middleware в Next 16 называется `proxy.ts` с экспортом `proxy` (переименование из `middleware.ts`). Next 16 всегда собирает корневой `proxy.ts` в Node-рантайм, а не в edge; тяжёлые импорты (`pg`, `lib/db`) туда всё равно не тянуть — сессионные константы лежат в `lib/session-cookie.ts`.
 
 ## Проверки перед push
 
-`npm run typecheck && npm run lint && npm run db:check && npm test && npm run build`, затем e2e против production-сборки (`npx next start -p 3001`, `BASE=http://localhost:3001 PW_CHROMIUM=... npm run e2e`, `npm run e2e:offline`). Не запускать `npm audit fix --force` и мажорные обновления (Next 16, TS 7, ESLint 10, Motion 13) без отдельной сессии с полным прогоном.
+`npm run typecheck && npm run lint && npm run db:check && npm test && npm run build`, затем e2e против production-сборки (`npx next start -p 3001`, `BASE=http://localhost:3001 STRICT_NAV=1 PW_CHROMIUM=... npm run e2e`, `npm run e2e:offline`). `next.config.ts` ставит `agentRules: false`: Next не дописывает свой блок в этот файл; документация Next лежит в `node_modules/next/dist/docs/`. Не запускать `npm audit fix --force` и мажорные обновления (Next 16, TS 7, ESLint 10, Motion 13) без отдельной сессии с полным прогоном.

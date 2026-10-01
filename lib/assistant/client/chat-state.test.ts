@@ -339,3 +339,16 @@ test("isAnswered: ответ — строка сразу за вопросом",
   assert.equal(isAnswered(server, Q2), false);
   assert.equal(isAnswered(server, "нет"), false);
 });
+
+test("переименование: заголовок меняется сразу, перечитывание без шапки беседы его не затирает", () => {
+  let s = run(fresh(), send(), ev({ t: "start", conversationId: CID, messageId: MID }));
+  assert.equal(s.title, "Какие пары завтра?");
+  s = run(s, { type: "title", title: "Матан: пределы" });
+  assert.equal(s.title, "Матан: пределы");
+  // RSC-refresh страницы /new приносит reload без conversation — заголовок остаётся новым.
+  s = run(s, ev({ t: "done", messageId: RID, limits: AFTER, usage: null }), { type: "reload", messages: [msg(MID, "user", "Какие пары завтра?"), msg(RID, "assistant", "Три")] });
+  assert.equal(s.title, "Матан: пределы");
+  // А серверная шапка беседы — источник правды: что в базе, то и на экране.
+  s = run(s, { type: "reload", messages: [msg(MID, "user", "Какие пары завтра?"), msg(RID, "assistant", "Три")], conversation: { id: CID, title: "Пределы", createdAt: AT, updatedAt: AT, archivedAt: null } });
+  assert.equal(s.title, "Пределы");
+});

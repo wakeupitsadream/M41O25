@@ -10,6 +10,13 @@ import type { AccessStatus, AssistantSettings, LimitsView } from "./types";
  * Какую долю цены может съесть себестоимость одного человека: требование владельца — маржа не ниже 60 %.
  * Константа, а не настройка: это условие бизнеса, а не ручка, которую крутят, когда лимиты кажутся тесными.
  */
+/** Границы админской формы настроек (здесь, а не в settings.ts: туда вместе с константой уезжал бы Zod в клиентский бандл). */
+export const PRICE_MAX_RUB = 5000;
+export const LIMIT_MIN = 1;
+export const LIMIT_MAX = 200;
+export const TRIAL_MAX_DAYS = 30;
+export const PAYMENT_NOTE_MAX = 500;
+
 export const COST_SHARE = 0.4;
 export const BUDGET_WINDOW_DAYS = 30;
 

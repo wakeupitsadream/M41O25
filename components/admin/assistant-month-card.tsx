@@ -27,12 +27,13 @@ export function AssistantMonthCard({ summary, monthStart, enabled }: { summary: 
           {!enabled && " · выключен"}
         </span>
       </div>
+      {/* Неразрывный пробел перед «₽» и «%» (как NB в assistant-settings-form): в узкой плитке число и знак не разъезжаются по строкам. */}
       <div className="grid grid-cols-3 gap-2">
-        <Stat label="выручка" value={`${rub(summary.revenueRub)} ₽`} />
-        <Stat label="расход" value={`${kop(summary.costRub)} ₽`} />
+        <Stat label="выручка" value={`${rub(summary.revenueRub)} ₽`} />
+        <Stat label="расход" value={`${kop(summary.costRub)} ₽`} />
         <Stat
           label={summary.marginPct === null ? "нет оплат" : "маржа"}
-          value={summary.marginPct === null ? "—" : `${summary.marginPct} %`}
+          value={summary.marginPct === null ? "—" : `${summary.marginPct} %`}
           // Без выручки цвет всё равно несёт смысл: warn — расход уже идёт (пробная неделя), а нули красить незачем.
           className={summary.marginPct !== null || summary.tone !== "ok" ? TONE_TEXT[summary.tone] : undefined}
         />

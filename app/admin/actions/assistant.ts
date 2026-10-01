@@ -13,20 +13,10 @@ import type { FormState } from "@/lib/form";
 import { extendPaidUntil } from "@/lib/assistant/access";
 import { parseSettingsForm } from "@/lib/assistant/settings";
 import { getSettings } from "@/lib/assistant/store";
+import { isCalendarDate } from "@/lib/validation";
 
 /** Админские действия помощника (docs/AI-CHAT.md §7, §9): доступ людям и настройки группы. */
 
-const ISO_RE = /^\d{4}-\d{2}-\d{2}$/;
-
-/**
- * Round-trip, а не Date.parse: «2026-02-30» V8 молча нормализует в 2 марта, а Postgres на такой date упадёт
- * английской ошибкой — админ должен увидеть человеческую. Invalid Date (месяц 13) toISOString бросает — отсекаем раньше.
- */
-const isCalendarDate = (iso: string): boolean => {
-  if (!ISO_RE.test(iso)) return false;
-  const d = new Date(`${iso}T00:00:00Z`);
-  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === iso;
-};
 const MAX_EXTEND_DAYS = 366;
 const NO_POLZA_KEY = "Нет ключа Polza — помощник не сможет отвечать";
 
@@ -85,8 +75,10 @@ export async function extendAccess(userId: string, days = 30): Promise<ActionRes
 }
 
 /**
- * Ручная дата «оплачено до» без платежа (перенос, исправление) или «Снять оплату» (null). Снятие строку не создаёт:
- * у того, кто не начинал, состояние none должно остаться none, иначе он лишится пробной недели.
+ * Ручная дата «оплачено до» без платежа (перенос, исправление) или «Снять оплату» (null). Снятие строку не создаёт,
+ * а строку без триала — удаляет: «+30 дней» не тому человеку и следом «Снять» иначе оставляли бы строку с двумя
+ * пустыми датами, то есть статус expired и «Пробный период уже был» у того, кто его не начинал. Платежи остаются
+ * в истории как есть.
  */
 export async function setPaidUntil(userId: string, iso: string | null): Promise<ActionResult> {
   return wrapAction(async () => {
@@ -97,6 +89,7 @@ export async function setPaidUntil(userId: string, iso: string | null): Promise<
     if (!(await groupMember(admin.groupId, uid))) return fail("Не найден");
     const now = new Date();
     if (iso === null) {
+      await db.delete(assistantAccess).where(and(eq(assistantAccess.userId, uid), sql`${assistantAccess.trialUntil} is null`));
       await db.update(assistantAccess).set({ paidUntil: null, updatedAt: now, updatedBy: admin.id }).where(eq(assistantAccess.userId, uid));
     } else {
       await db

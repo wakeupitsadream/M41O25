@@ -84,6 +84,15 @@ const serwist = new Serwist({
  */
 type PushBody = { title?: string; body?: string; url?: string; tag?: string };
 
+/** Путь внутри приложения: «/что-то», но не «//чужой-хост» — protocol-relative адрес увёл бы окно на другой origin. */
+const innerPath = (u: unknown): string => (typeof u === "string" && u.startsWith("/") && !u.startsWith("//") ? u : "/");
+
+/**
+ * Бейдж на иконке «Домой» (iOS 16.4+ у установленного приложения с разрешением на уведомления): флаг без числа —
+ * сколько непрочитанного, сервис-воркер не знает. Снимает его клиент при каждом показе приложения (AppBadge).
+ */
+const setBadge = () => self.navigator.setAppBadge?.().catch(() => {});
+
 self.addEventListener("push", (event) => {
   let data: PushBody = {};
   try {
@@ -93,15 +102,18 @@ self.addEventListener("push", (event) => {
     if (text) data = { body: text };
   }
   const title = data.title || "Raspison";
-  const url = typeof data.url === "string" && data.url.startsWith("/") ? data.url : "/";
+  const url = innerPath(data.url);
   event.waitUntil(
-    self.registration.showNotification(title, {
-      body: data.body || "Что-то новое в группе",
-      icon: "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
-      tag: data.tag || "raspison",
-      data: { url },
-    }),
+    Promise.all([
+      self.registration.showNotification(title, {
+        body: data.body || "Что-то новое в группе",
+        icon: "/icons/icon-192.png",
+        badge: "/icons/icon-192.png",
+        tag: data.tag || "raspison",
+        data: { url },
+      }),
+      setBadge(),
+    ]),
   );
 });
 
@@ -109,7 +121,7 @@ self.addEventListener("push", (event) => {
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const data = event.notification.data as { url?: string } | undefined;
-  const url = typeof data?.url === "string" && data.url.startsWith("/") ? data.url : "/";
+  const url = innerPath(data?.url);
   event.waitUntil(
     (async () => {
       const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });

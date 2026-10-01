@@ -7,8 +7,10 @@ import { isAccessActive } from "@/lib/assistant/access";
 import { replyStage, retrySource } from "@/lib/assistant/client/chat-state";
 import { blockReason, limitCopy } from "@/lib/assistant/client/limits";
 import type { AssistantState } from "@/lib/assistant/types";
+import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import { COMPOSER_INPUT_ID, Composer } from "./composer";
+import { ConversationMenu } from "./conversation-menu";
 import { FixedBottom } from "./fixed-bottom";
 import { MessageItem } from "./message-item";
 import { MAX_FILES, type Uploaded } from "./upload";
@@ -22,6 +24,10 @@ const SUGGESTIONS = ["Какие пары завтра?", "Что задали �
  * чужой недописанный вопрос (и отправить его от своего имени). Чужие черновики стираются при открытии чата.
  */
 const DRAFT_PREFIX = "raspison:assistant-draft:";
+/** Отметка «подсказку о сильном режиме уже показывали» — на устройство, не на пользователя: объяснение нужно один раз. */
+const STRONG_HINT_KEY = "raspison:assistant-strong-hint";
+/** Остаток дневного лимита показываем под полем, только когда он уже кончается: до этого цифра — шум. */
+const DAY_LEFT_WARN = 3;
 const draftKey = (userId: string, conversationId: string | null) => `${DRAFT_PREFIX}${userId}:${conversationId ?? "new"}`;
 
 const dropForeignDrafts = (userId: string) => {
@@ -142,6 +148,7 @@ export function ChatScreen({ initial, assistant, userId }: { initial: ChatInitia
   const chat = useChat({ initial, limits: assistant.limits, onReturnDraft: returnDraft });
   const { state } = chat;
   const streaming = state.pending !== null;
+  const toast = useToast();
 
   const active = isAccessActive(assistant.access);
   const locked = !active || (chat.notice?.kind === "blocked" && chat.notice.status !== 429);
@@ -151,6 +158,23 @@ export function ChatScreen({ initial, assistant, userId }: { initial: ChatInitia
   // «trial», — тоже гаснет.
   const strongAllowed = !locked && blockReason(state.limits, true) === null;
   const strong = strongPick && strongAllowed;
+  const dayLeft = Math.max(0, state.limits.day.limit - state.limits.day.used);
+
+  // Чип говорит только «Сильный 3»; когда он нужен — объясняем один раз, при первом включении на этом устройстве,
+  // иначе его либо не трогают, либо тратят три сильных в неделю на «какие пары завтра».
+  const toggleStrong = () => {
+    const next = !strongPick;
+    setStrongPick(next);
+    if (!next) return;
+    let seen = false;
+    try {
+      seen = localStorage.getItem(STRONG_HINT_KEY) !== null;
+      if (!seen) localStorage.setItem(STRONG_HINT_KEY, "1");
+    } catch {
+      // без storage подсказка покажется ещё раз — не страшно
+    }
+    if (!seen) toast(`Сильный режим: для сложных задач, длинных документов и проверки решений. Медленнее и всего ${state.limits.strong.limit} в неделю.`, "ok");
+  };
 
   const key = draftKey(userId, state.conversationId);
   useEffect(() => {
@@ -238,13 +262,15 @@ export function ChatScreen({ initial, assistant, userId }: { initial: ChatInitia
             <ChevronLeft className="size-6" />
           </Link>
           <h1 className="min-w-0 flex-1 truncate font-display text-[16px] font-bold">{state.title}</h1>
+          {/* У ещё не созданной беседы (/new) ни переименовывать, ни прятать нечего — id появится после первого ответа. */}
+          {state.conversationId && <ConversationMenu conversationId={state.conversationId} title={state.title} disabled={streaming} onRenamed={chat.setTitle} />}
           <button
             type="button"
             role="switch"
             aria-checked={strong}
             aria-label={`Сильный режим: умнее и медленнее, осталось ${strongLeft} на неделе`}
             disabled={!strongAllowed}
-            onClick={() => setStrongPick((v) => !v)}
+            onClick={toggleStrong}
             className={cn(
               "flex h-10 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-semibold transition active:scale-95 disabled:opacity-40",
               strong ? "bg-fg text-bg" : "bg-surface-2 text-muted",
@@ -289,16 +315,21 @@ export function ChatScreen({ initial, assistant, userId }: { initial: ChatInitia
             </Link>
           </div>
         ) : (
-          <Composer
-            text={text}
-            onText={onText}
-            files={files}
-            setFiles={setFiles}
-            streaming={streaming}
-            stoppable={state.pending?.started === true}
-            onSend={submit}
-            onStop={chat.stop}
-          />
+          <>
+            <Composer
+              text={text}
+              onText={onText}
+              files={files}
+              setFiles={setFiles}
+              streaming={streaming}
+              stoppable={state.pending?.started === true}
+              onSend={submit}
+              onStop={chat.stop}
+            />
+            {dayLeft <= DAY_LEFT_WARN && (
+              <p className="px-1 pt-1.5 text-[12px] text-dim tnum">{dayLeft === 0 ? "на сегодня сообщения закончились" : `осталось сегодня ${dayLeft}`}</p>
+            )}
+          </>
         )}
       </FixedBottom>
     </div>

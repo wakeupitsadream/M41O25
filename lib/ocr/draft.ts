@@ -1,6 +1,7 @@
 import type { SlotTime } from "@/lib/db/schema";
 import type { LessonKind } from "@/lib/schedule/types";
-import { DAY_CODES, KIND_FROM_OCR, type OcrLesson, type OcrResult } from "./schema";
+import type { OcrLesson, OcrResult } from "./schema";
+import { DAY_CODES, KIND_FROM_OCR } from "./consts";
 import { matchSubjectDetailed, type MatchKind, type SubjectRef as MatchSubjectRef } from "./match";
 
 export { matchSubject, matchSubjectDetailed, normalizeTitle } from "./match";

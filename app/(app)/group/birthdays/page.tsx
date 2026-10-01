@@ -37,7 +37,7 @@ export default async function BirthdaysPage() {
 
   return (
     <>
-      <SubHeader title="Дни рождения" subtitle={`${list.length} ${pluralRu(list.length, "человек", "человека", "человек")} указали дату`} />
+      <SubHeader title="Дни рождения" subtitle={`${list.length} ${pluralRu(list.length, "человек", "человека", "человек")} ${pluralRu(list.length, "указал", "указали", "указали")} дату`} />
       <div className="space-y-5 px-5">
         {list.length === 0 && <EmptyState emoji="🎂" title="Пока никто не указал" text="Дата рождения задаётся в профиле. Год можно поставить любой — показываем только день и месяц." />}
         {soon.length > 0 && (

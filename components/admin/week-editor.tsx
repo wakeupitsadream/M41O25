@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { useGuardedRouter } from "@/components/features/nav-guard";
+import { useRouter } from "next/navigation";
 import { Ban, Check, Plus, Trash2, Undo2 } from "lucide-react";
 import type { SlotTime } from "@/lib/db/schema";
 import { addDaysIso, capitalize, fmtDayMonth, fmtRangeShort, fmtWeekday } from "@/lib/schedule/time";
@@ -45,8 +45,16 @@ type Draft = Omit<LessonInput, "weekId"> & { id?: string; isCancelled?: boolean 
 
 const KINDS: LessonKind[] = ["lecture", "practice", "lab", "consultation", "credit", "exam", "other"];
 
+/**
+ * Удаление из опубликованной недели — не то же, что отмена: отменённая пара остаётся в расписании зачёркнутой
+ * с бейджем, удалённая исчезает, и студент узнаёт о ней только из уведомления и строки в «Что нового». Чаще всего
+ * нужна именно отмена, поэтому спрашиваем. В черновике никто ничего не видит — там без вопросов.
+ */
+const DELETE_PUBLISHED_CONFIRM =
+  "Удалить насовсем? Пара исчезнет из расписания — студентам уйдут только уведомление и строка в «Что нового». Если пару отменили, лучше «Отменить»: она останется зачёркнутой.";
+
 export function WeekEditor({ week, lessons, subjects, semesters, slotTimes }: Props) {
-  const router = useGuardedRouter();
+  const router = useRouter();
   const [pending, start] = useTransition();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -175,7 +183,7 @@ export function WeekEditor({ week, lessons, subjects, semesters, slotTimes }: Pr
                     <li key={st.slot} className="flex items-stretch">
                       <div className="flex w-14 shrink-0 flex-col items-center justify-center border-r border-border py-2 text-center tnum">
                         <span className="text-[13px] font-semibold">{st.slot}</span>
-                        <span className="text-[10px] text-dim">{st.start}</span>
+                        <span className="text-[11px] text-dim">{st.start}</span>
                       </div>
                       <div className="flex min-w-0 flex-1 flex-col">
                         {inSlot.map((l) => (
@@ -278,7 +286,14 @@ export function WeekEditor({ week, lessons, subjects, semesters, slotTimes }: Pr
                   <Button variant="secondary" size="icon" title={draft.isCancelled ? "Вернуть" : "Отменить пару"} onClick={() => run(() => toggleCancelLesson(draft.id!))}>
                     {draft.isCancelled ? <Undo2 className="size-4" /> : <Ban className="size-4" />}
                   </Button>
-                  <Button variant="danger" size="icon" title="Удалить" onClick={() => run(() => deleteLesson(draft.id!))}>
+                  <Button
+                    variant="danger"
+                    size="icon"
+                    title="Удалить"
+                    onClick={() => {
+                      if (!published || window.confirm(DELETE_PUBLISHED_CONFIRM)) run(() => deleteLesson(draft.id!));
+                    }}
+                  >
                     <Trash2 className="size-4" />
                   </Button>
                 </>

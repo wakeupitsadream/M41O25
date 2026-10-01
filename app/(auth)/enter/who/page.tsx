@@ -41,12 +41,18 @@ export default async function WhoPage() {
             </Link>
           </li>
         ))}
-        {list.length === 0 && <li className="px-4 py-6 text-center text-muted">В группе пока никого нет</li>}
+        {list.length === 0 && <li className="px-4 py-6 text-center text-muted">Список ещё не заполнен — попроси старосту добавить группу.</li>}
       </ul>
+      {/* Самый частый сбой в день запуска — опечатка в фамилии или пропущенный человек; сам себя добавить нельзя по замыслу. */}
+      {list.length > 0 && (
+        <p className="text-center text-[13px] leading-relaxed text-muted">
+          Нет тебя или фамилия с ошибкой? Напиши старосте — добавить и исправить может только он, чужой профиль занимать нельзя.
+        </p>
+      )}
       <p className="text-center text-[12px] leading-relaxed text-dim">
         Имя, эмодзи и день рождения видны только участникам группы. Сервис размещён на Vercel и Neon (за пределами РФ). Удалиться из группы можно через админа.
       </p>
-      <Link href="/enter" className="block text-center text-[14px] text-muted underline-offset-4 hover:underline">
+      <Link href="/enter" className="block text-center text-[14px] text-muted underline decoration-dim underline-offset-4">
         Другой код
       </Link>
     </div>

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { createHmac } from "node:crypto";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { TransactionRollbackError, and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { homework } from "@/lib/db/schema";
 import { z } from "zod";
 import { db } from "@/lib/db";
@@ -13,13 +13,12 @@ import { actionUser, hasRole } from "@/lib/auth";
 import { assertRate } from "@/lib/rate-limit";
 import { parseLocalDateTime, todayIso } from "@/lib/tz";
 import { env } from "@/lib/env";
-import { fail, ok, type ActionResult } from "@/lib/utils";
-import { wrapAction } from "@/lib/actions";
+import { asUuid, fail, ok, type ActionResult } from "@/lib/utils";
+import { wrapAction, wrapForm } from "@/lib/actions";
+import { isoDate } from "@/lib/validation";
 import { pushAuthorName } from "@/lib/push/format";
 import { notifyQuietly } from "@/lib/push/send";
 import type { FormState } from "@/lib/form";
-
-const iso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 const bump = (...paths: string[]) => {
   revalidatePath("/group", "layout");
@@ -34,10 +33,14 @@ const forgetActivity = (entityType: string, entityId: string) => db.delete(activ
 
 // ---------- Реакции ----------
 
+const REACTION_ENTITIES = ["news", "homework", "task"] as const;
+
 export async function toggleReaction(entityType: "news" | "homework" | "task", entityId: string, emoji: string): Promise<ActionResult> {
   return wrapAction(async () => {
     const user = await actionUser();
     if (!["🔥", "👍", "💀", "❤️", "😂", "🎉"].includes(emoji)) return fail("Не та реакция");
+    // Аргументы приходят с клиента как есть: чужое значение enum или не-uuid иначе долетали бы до Postgres.
+    if (!REACTION_ENTITIES.includes(entityType) || !asUuid(entityId)) return fail("Запись не найдена");
     const table = entityType === "news" ? news : entityType === "task" ? tasks : homework;
     const [exists] = await db.select({ id: table.id }).from(table).where(and(eq(table.id, entityId), eq(table.groupId, user.groupId), isNull(table.deletedAt)));
     if (!exists) return fail("Запись не найдена");
@@ -115,7 +118,7 @@ export async function deleteNews(id: string): Promise<ActionResult> {
 const taskSchema = z.object({
   title: z.string().trim().min(2, "Название слишком короткое").max(120),
   description: z.string().trim().max(2000).optional().or(z.literal("")),
-  dueDate: iso.optional().or(z.literal("")),
+  dueDate: isoDate.optional().or(z.literal("")),
   trackChecks: z.boolean(),
 });
 
@@ -139,6 +142,7 @@ export async function createTask(input: z.infer<typeof taskSchema>): Promise<Act
 export async function toggleTaskCheck(taskId: string, userId: string): Promise<ActionResult> {
   return wrapAction(async () => {
     const admin = await actionUser("admin");
+    if (!asUuid(taskId) || !asUuid(userId)) return fail("Задача не найдена");
     const [t] = await db.select({ id: tasks.id }).from(tasks).where(and(eq(tasks.id, taskId), eq(tasks.groupId, admin.groupId)));
     if (!t) return fail("Задача не найдена");
     const [member] = await db.select({ id: users.id }).from(users).where(and(eq(users.id, userId), eq(users.groupId, admin.groupId)));
@@ -154,6 +158,7 @@ export async function toggleTaskCheck(taskId: string, userId: string): Promise<A
 export async function setTaskClosed(taskId: string, closed: boolean): Promise<ActionResult> {
   return wrapAction(async () => {
     const user = await actionUser("moderator");
+    if (!asUuid(taskId)) return fail("Задача не найдена");
     await db.update(tasks).set({ closedAt: closed ? new Date() : null }).where(and(eq(tasks.id, taskId), eq(tasks.groupId, user.groupId)));
     bump("/group/tasks", `/group/tasks/${taskId}`);
     return ok();
@@ -162,9 +167,12 @@ export async function setTaskClosed(taskId: string, closed: boolean): Promise<Ac
 
 export async function deleteTask(taskId: string) {
   const user = await actionUser("moderator");
-  await db.update(tasks).set({ deletedAt: new Date() }).where(and(eq(tasks.id, taskId), eq(tasks.groupId, user.groupId)));
-  await forgetActivity("task", taskId);
-  bump("/group/tasks");
+  const id = asUuid(taskId);
+  if (id) {
+    await db.update(tasks).set({ deletedAt: new Date() }).where(and(eq(tasks.id, id), eq(tasks.groupId, user.groupId)));
+    await forgetActivity("task", id);
+    bump("/group/tasks");
+  }
   redirect("/group/tasks");
 }
 
@@ -206,6 +214,7 @@ export async function createPoll(input: z.infer<typeof pollSchema>): Promise<Act
 export async function vote(pollId: string, optionId: string): Promise<ActionResult> {
   return wrapAction(async () => {
     const user = await actionUser();
+    if (!asUuid(pollId) || !asUuid(optionId)) return fail("Опрос не найден");
     const [p] = await db.select().from(polls).where(and(eq(polls.id, pollId), eq(polls.groupId, user.groupId), isNull(polls.deletedAt)));
     if (!p) return fail("Опрос не найден");
     if (p.closedAt || (p.closesAt && p.closesAt < new Date())) return fail("Опрос закрыт");
@@ -232,6 +241,7 @@ export async function vote(pollId: string, optionId: string): Promise<ActionResu
 export async function setPollClosed(pollId: string, closed: boolean): Promise<ActionResult> {
   return wrapAction(async () => {
     const user = await actionUser();
+    if (!asUuid(pollId)) return fail("Не найдено");
     const [p] = await db.select().from(polls).where(and(eq(polls.id, pollId), eq(polls.groupId, user.groupId)));
     if (!p) return fail("Не найдено");
     if (p.createdBy !== user.id && !hasRole(user, "moderator")) return fail("Закрыть может автор или староста");
@@ -244,6 +254,7 @@ export async function setPollClosed(pollId: string, closed: boolean): Promise<Ac
 export async function deletePoll(pollId: string): Promise<ActionResult> {
   return wrapAction(async () => {
     const user = await actionUser();
+    if (!asUuid(pollId)) return fail("Не найдено");
     const [p] = await db.select().from(polls).where(and(eq(polls.id, pollId), eq(polls.groupId, user.groupId)));
     if (!p) return fail("Не найдено");
     if (p.createdBy !== user.id && !hasRole(user, "admin")) return fail("Удалить может автор или админ");
@@ -279,41 +290,50 @@ const readContact = (fd: FormData) => ({
 const nullable = (s: string | undefined) => (s ? s : null);
 
 export async function createContact(_prev: FormState, formData: FormData): Promise<FormState> {
-  const user = await actionUser("moderator");
-  const parsed = contactSchema.safeParse(readContact(formData));
-  if (!parsed.success) return { error: "Проверь поля: имя от 2 символов, остальное короче лимита" };
-  const d = parsed.data;
-  await db.insert(contacts).values({
-    groupId: user.groupId,
-    kind: d.kind,
-    name: d.name,
-    roleOrSubject: nullable(d.roleOrSubject),
-    phone: nullable(d.phone),
-    email: nullable(d.email),
-    messenger: nullable(d.messenger),
-    note: nullable(d.note),
+  return wrapForm(async () => {
+    const user = await actionUser("moderator");
+    const parsed = contactSchema.safeParse(readContact(formData));
+    if (!parsed.success) return { error: "Проверь поля: имя от 2 символов, остальное короче лимита" };
+    const d = parsed.data;
+    await db.insert(contacts).values({
+      groupId: user.groupId,
+      kind: d.kind,
+      name: d.name,
+      roleOrSubject: nullable(d.roleOrSubject),
+      phone: nullable(d.phone),
+      email: nullable(d.email),
+      messenger: nullable(d.messenger),
+      note: nullable(d.note),
+    });
+    bump("/group/contacts");
+    redirect("/group/contacts");
   });
-  bump("/group/contacts");
-  redirect("/group/contacts");
 }
 
 export async function updateContact(id: string, _prev: FormState, formData: FormData): Promise<FormState> {
-  const user = await actionUser("moderator");
-  const parsed = contactSchema.safeParse(readContact(formData));
-  if (!parsed.success) return { error: "Проверь поля: имя от 2 символов, остальное короче лимита" };
-  const d = parsed.data;
-  await db
-    .update(contacts)
-    .set({ kind: d.kind, name: d.name, roleOrSubject: nullable(d.roleOrSubject), phone: nullable(d.phone), email: nullable(d.email), messenger: nullable(d.messenger), note: nullable(d.note) })
-    .where(and(eq(contacts.id, id), eq(contacts.groupId, user.groupId)));
-  bump("/group/contacts");
-  redirect("/group/contacts");
+  return wrapForm(async () => {
+    const user = await actionUser("moderator");
+    const cid = asUuid(id);
+    if (!cid) return { error: "Контакт не найден" };
+    const parsed = contactSchema.safeParse(readContact(formData));
+    if (!parsed.success) return { error: "Проверь поля: имя от 2 символов, остальное короче лимита" };
+    const d = parsed.data;
+    await db
+      .update(contacts)
+      .set({ kind: d.kind, name: d.name, roleOrSubject: nullable(d.roleOrSubject), phone: nullable(d.phone), email: nullable(d.email), messenger: nullable(d.messenger), note: nullable(d.note) })
+      .where(and(eq(contacts.id, cid), eq(contacts.groupId, user.groupId)));
+    bump("/group/contacts");
+    redirect("/group/contacts");
+  });
 }
 
 export async function deleteContact(id: string) {
   const user = await actionUser("moderator");
-  await db.delete(contacts).where(and(eq(contacts.id, id), eq(contacts.groupId, user.groupId)));
-  bump("/group/contacts");
+  const cid = asUuid(id);
+  if (cid) {
+    await db.delete(contacts).where(and(eq(contacts.id, cid), eq(contacts.groupId, user.groupId)));
+    bump("/group/contacts");
+  }
   redirect("/group/contacts");
 }
 
@@ -332,18 +352,33 @@ export async function askAnon(body: string): Promise<ActionResult> {
     if (!env.anonPepper) return fail("Анонимные вопросы выключены: на сервере не задан ANON_PEPPER");
     const keyHash = createHmac("sha256", env.anonPepper).update(user.id).digest("hex");
     const day = todayIso();
-    // Одним запросом: параллельные отправки не проскочат мимо лимита.
-    const [q] = await db
-      .insert(anonQuota)
-      .values({ keyHash, day, count: 1 })
-      .onConflictDoUpdate({ target: [anonQuota.keyHash, anonQuota.day], set: { count: sql`${anonQuota.count} + 1` } })
-      .returning({ count: anonQuota.count });
-    if ((q?.count ?? 0) > ANON_PER_DAY) return fail("На сегодня лимит анонимных вопросов исчерпан");
-
+    // Время округляется до часа — ВВЕРХ, до начала следующего. Минута по-прежнему скрыта (защита от сопоставления
+    // с last_seen_at), зато событие всегда новее любого feed_seen_at: при округлении вниз вопрос, заданный в 10:45,
+    // получал 10:00 и для всех, кто открывал ленту после десяти, никогда не становился «новым».
     const rounded = new Date();
     rounded.setMinutes(0, 0, 0);
-    const [row] = await db.insert(anonQuestions).values({ groupId: user.groupId, body: text, createdAt: rounded }).returning({ id: anonQuestions.id });
-    await db.insert(activity).values({ groupId: user.groupId, eventType: "anon_question", entityType: "anon_question", entityId: row.id, actorId: null, payload: {}, createdAt: rounded });
+    rounded.setHours(rounded.getHours() + 1);
+    // Квота и вопрос — одной транзакцией: упавшая вставка не должна съедать одну из пяти попыток дня.
+    // Upsert квоты атомарен и внутри транзакции: параллельные отправки не проскочат мимо лимита.
+    const result = await db.transaction(async (tx) => {
+      const [q] = await tx
+        .insert(anonQuota)
+        .values({ keyHash, day, count: 1 })
+        .onConflictDoUpdate({ target: [anonQuota.keyHash, anonQuota.day], set: { count: sql`${anonQuota.count} + 1` } })
+        .returning({ count: anonQuota.count });
+      if ((q?.count ?? 0) > ANON_PER_DAY) {
+        tx.rollback();
+        return null;
+      }
+      const [row] = await tx.insert(anonQuestions).values({ groupId: user.groupId, body: text, createdAt: rounded }).returning({ id: anonQuestions.id });
+      await tx.insert(activity).values({ groupId: user.groupId, eventType: "anon_question", entityType: "anon_question", entityId: row.id, actorId: null, payload: {}, createdAt: rounded });
+      return row;
+    }).catch((e: unknown) => {
+      // tx.rollback() бросает TransactionRollbackError — это наш отказ по лимиту, а не сбой.
+      if (e instanceof TransactionRollbackError) return null;
+      throw e;
+    });
+    if (!result) return fail("На сегодня лимит анонимных вопросов исчерпан");
     bump("/group/questions");
     // exceptUserId нет намеренно: пуш приходит всем, включая спросившего. Исключение автора выдало бы его.
     after(() => notifyQuietly({ kind: "anon_question", body: text }, { groupId: user.groupId, exceptUserId: null }));
@@ -354,8 +389,10 @@ export async function askAnon(body: string): Promise<ActionResult> {
 export async function answerAnon(id: string, body: string): Promise<ActionResult> {
   return wrapAction(async () => {
     const user = await actionUser("moderator");
+    if (!asUuid(id)) return fail("Вопрос не найден");
     const text = body.trim();
     if (!text) return fail("Пустой ответ");
+    if (text.length > 3000) return fail("Слишком длинно");
     await db
       .update(anonQuestions)
       .set({ answerBody: text, answeredBy: user.id, answeredAt: new Date() })
@@ -370,6 +407,7 @@ export async function answerAnon(id: string, body: string): Promise<ActionResult
 export async function deleteAnon(id: string): Promise<ActionResult> {
   return wrapAction(async () => {
     const user = await actionUser("admin");
+    if (!asUuid(id)) return fail("Вопрос не найден");
     await db.update(anonQuestions).set({ deletedAt: new Date() }).where(and(eq(anonQuestions.id, id), eq(anonQuestions.groupId, user.groupId)));
     bump("/group/questions");
     return ok();

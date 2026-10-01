@@ -6,14 +6,18 @@ import { z } from "zod";
 import { db } from "@/lib/db";
 import { lessons, scheduleImports, subjects, weeks } from "@/lib/db/schema";
 import { actionUser } from "@/lib/auth";
-import { fail, ok, type ActionResult } from "@/lib/utils";
+import { addDaysIso } from "@/lib/tz";
+import { asUuid, fail, ok, type ActionResult } from "@/lib/utils";
+import { wrapAction } from "@/lib/actions";
 import { pickNewLessons, type ApplyMode } from "@/lib/ocr/apply";
 import { aliasesToLearn, MAX_ALIAS_LENGTH } from "@/lib/ocr/match";
+import { isoDate } from "@/lib/validation";
+import { homework } from "@/lib/db/schema";
+import { sql } from "drizzle-orm";
 
 const hhmm = /^([01]\d|2[0-3]):[0-5]\d$/;
-const validDate = (v: string) => !Number.isNaN(Date.parse(`${v}T00:00:00Z`)) && new Date(`${v}T00:00:00Z`).toISOString().startsWith(v);
 const draftLesson = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(validDate, "Некорректная дата"),
+  date: isoDate,
   slot: z.number().int().min(1).max(10),
   startsAt: z.string().regex(hhmm, "Время начала"),
   endsAt: z.string().regex(hhmm, "Время конца"),
@@ -37,8 +41,9 @@ export type ApplyDraftResult = { count: number; skipped: number; learned: number
  * это написание сохраняется в aliases — в следующий раз предмет найдётся точно.
  */
 export async function applyDraft(weekId: string, importId: string | null, items: ApplyDraftItem[], applyMode: ApplyMode): Promise<ActionResult<ApplyDraftResult>> {
-  try {
+  return wrapAction(async () => {
     const user = await actionUser("admin");
+    if (!asUuid(weekId) || (importId !== null && !asUuid(importId))) return fail("Неделя не найдена");
     if (applyMode !== "replace" && applyMode !== "add-missing") return fail("Неизвестный режим применения");
     const parsed = z.array(draftLesson).max(80).safeParse(items);
     if (!parsed.success) {
@@ -95,6 +100,21 @@ export async function applyDraft(weekId: string, importId: string | null, items:
           })),
         );
       }
+      // «Заменить все» удалил старые пары, и ДЗ, записанные «к паре», потеряли lesson_id (FK set null).
+      // Привязываем их заново к новой паре того же предмета в тот же день — иначе в карточке ДЗ пропадает строка
+      // «к паре …», а чинить это можно было только правкой каждой записи.
+      if (applyMode === "replace") {
+        const weekEnd = addDaysIso(week.startsOn, 6);
+        await tx.execute(sql`
+          update ${homework} h set lesson_id = (
+            select l.id from ${lessons} l
+            where l.group_id = h.group_id and l.subject_id = h.subject_id and l.date = h.due_date and not l.is_cancelled
+            order by l.slot limit 1
+          )
+          where h.group_id = ${user.groupId} and h.lesson_id is null and h.subject_id is not null and h.deleted_at is null
+            and h.due_date between ${week.startsOn} and ${weekEnd}
+        `);
+      }
       for (const [subjectId, fresh] of learn) {
         const current = subjectRows.find((s) => s.id === subjectId)?.aliases ?? [];
         await tx
@@ -111,7 +131,5 @@ export async function applyDraft(weekId: string, importId: string | null, items:
     if (learn.size) revalidatePath("/admin/subjects");
     const learned = [...learn.values()].reduce((n, a) => n + a.length, 0);
     return ok({ count: parsed.data.length - skipped, skipped, learned });
-  } catch (e) {
-    return fail(e instanceof Error ? e.message : "Не удалось применить");
-  }
+  });
 }

@@ -1,12 +1,16 @@
 import "server-only";
 import { gzipSync } from "node:zlib";
 import { getTableColumns } from "drizzle-orm";
+import type { PgTable } from "drizzle-orm/pg-core";
 import { db, schema } from "@/lib/db";
+import { BACKUP_TABLES, type BackupTable } from "@/lib/backup-tables";
 import { todayIso } from "@/lib/tz";
 
-const TABLES = {
+/** Имя таблицы в дампе → объект Drizzle. Состав и порядок — BACKUP_TABLES (общие с restore и тестом полноты). */
+const BY_NAME: Record<BackupTable, PgTable> = {
   groups: schema.groups,
   users: schema.users,
+  push_subscriptions: schema.pushSubscriptions,
   semesters: schema.semesters,
   subjects: schema.subjects,
   weeks: schema.weeks,
@@ -27,28 +31,36 @@ const TABLES = {
   anon_questions: schema.anonQuestions,
   reactions: schema.reactions,
   activity: schema.activity,
-  // Помощник: доступ, платежи (из них выручка), беседы и сообщения. assistant_quota не бэкапим, как anon_quota — счётчики за две недели.
   assistant_access: schema.assistantAccess,
   assistant_payments: schema.assistantPayments,
   assistant_conversations: schema.assistantConversations,
   assistant_messages: schema.assistantMessages,
-} as const;
+};
 
 /**
  * Полный JSON-дамп базы, gzip. Один формат для ежедневного cron-бэкапа и ручного скачивания из админки;
  * восстанавливается scripts/restore.ts. pin_hash не выгружаем: 4-значный PIN перебирается офлайн за секунды.
+ *
+ * Все таблицы читаются в одной транзакции repeatable read: иначе каждая шла бы своим autocommit-запросом, и дамп,
+ * снятый днём кнопкой «Скачать сейчас», мог содержать дополнение без записи — а restore на нарушении FK
+ * откатывается целиком.
  */
 export async function buildBackup(): Promise<{ key: string; payload: Buffer; tables: number }> {
   const dump: Record<string, unknown[]> = {};
-  for (const [name, table] of Object.entries(TABLES)) {
-    if (name === "users") {
-      const { pinHash: _omit, ...cols } = getTableColumns(schema.users);
-      void _omit;
-      dump[name] = await db.select(cols).from(schema.users);
-    } else {
-      dump[name] = await db.select().from(table);
-    }
-  }
+  await db.transaction(
+    async (tx) => {
+      for (const name of BACKUP_TABLES) {
+        if (name === "users") {
+          const { pinHash: _omit, ...cols } = getTableColumns(schema.users);
+          void _omit;
+          dump[name] = await tx.select(cols).from(schema.users);
+        } else {
+          dump[name] = await tx.select().from(BY_NAME[name]);
+        }
+      }
+    },
+    { isolationLevel: "repeatable read", accessMode: "read only" },
+  );
   const payload = gzipSync(Buffer.from(JSON.stringify({ version: 1, createdAt: new Date().toISOString(), tables: dump })));
-  return { key: `backups/${todayIso()}.json.gz`, payload, tables: Object.keys(TABLES).length };
+  return { key: `backups/${todayIso()}.json.gz`, payload, tables: BACKUP_TABLES.length };
 }

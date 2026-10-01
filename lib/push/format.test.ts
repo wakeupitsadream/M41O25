@@ -1,6 +1,6 @@
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { test } from "node:test";
-import { buildNotification, dueDateLabel, genitiveName, joinAuthor, joinSentence, pushAuthorName, snippet, topicOf } from "@/lib/push/format";
+import { buildNotification, dueDateLabel, genitiveName, joinAuthor, joinSentence, pushAuthorName, snippet, topicOf, weekRangeLabel } from "@/lib/push/format";
 
 test("snippet: короткий текст остаётся как есть, переносы схлопываются", () => {
   strictEqual(snippet("  Завтра\n\nпары нет  "), "Завтра пары нет");
@@ -281,9 +281,97 @@ test("ответ на вопрос и опрос ведут на свои экр
 
 test("темы событий", () => {
   deepStrictEqual(
-    (["news", "homework", "hw_due_moved", "anon_question", "anon_answer", "poll"] as const).map(topicOf),
-    ["news", "homework", "homework", "questions", "questions", "polls"],
+    (["news", "homework", "hw_due_moved", "anon_question", "anon_answer", "poll", "lesson_cancelled", "lesson_restored", "lesson_changed", "week_published"] as const).map(topicOf),
+    ["news", "homework", "homework", "questions", "questions", "polls", "schedule", "schedule", "schedule", "schedule"],
   );
+});
+
+test("отмена пары: глагол без рода, дата сразу за ним, короткое имя предмета в заголовке, полное — в теле", () => {
+  const n = buildNotification({ kind: "lesson_cancelled", title: "Математический анализ", subject: "Матан", date: "2026-10-02", startsAt: "10:00" });
+  strictEqual(n.title, "Отменили пару 2 октября: Матан");
+  strictEqual(n.body, "10:00 · Математический анализ");
+  // Ведёт в сам день: там пара зачёркнута с бейджем «отменена».
+  strictEqual(n.url, "/s/d/2026-10-02");
+  strictEqual(n.tag, "schedule");
+  strictEqual(topicOf("lesson_cancelled"), "schedule");
+});
+
+test("отмена пары без короткого имени: в заголовке полное название, в теле — только время", () => {
+  const n = buildNotification({ kind: "lesson_cancelled", title: "Философия", subject: null, date: "2026-10-02", startsAt: "08:30" });
+  strictEqual(n.title, "Отменили пару 2 октября: Философия");
+  strictEqual(n.body, "08:30");
+  // Пустое короткое имя (short_name стёрли руками) и поле без значения — одно и то же.
+  for (const subject of ["", "   ", undefined]) {
+    const m = buildNotification({ kind: "lesson_cancelled", title: "Философия", subject, date: "2026-10-02", startsAt: "08:30" });
+    strictEqual(m.title, "Отменили пару 2 октября: Философия", JSON.stringify(subject));
+    strictEqual(m.body, "08:30", JSON.stringify(subject));
+  }
+});
+
+test("отмена пары: длинное название обрезается хвостом, дата остаётся в первых 40 символах", () => {
+  const long = "Основы российской государственности";
+  const n = buildNotification({ kind: "lesson_cancelled", title: long, subject: null, date: "2026-09-30", startsAt: "11:50" });
+  strictEqual(n.title, `Отменили пару 30 сентября: ${long}`);
+  // «Отменили пару » — 14 символов, самая длинная дата («30 сентября») — 11: дата целиком в видимой части заголовка.
+  strictEqual(n.title.slice(0, 40).includes("30 сентября"), true, n.title.slice(0, 40));
+  // Пара вовсе без названия — заголовок без висящего двоеточия, тело не ломается.
+  const bare = buildNotification({ kind: "lesson_cancelled", title: "  ", subject: "", date: "2026-09-30", startsAt: "11:50" });
+  strictEqual(bare.title, "Отменили пару 30 сентября");
+  strictEqual(bare.body, "11:50");
+});
+
+test("возврат пары: та же форма, что у отмены, со своим глаголом", () => {
+  const n = buildNotification({ kind: "lesson_restored", title: "Математический анализ", subject: "Матан", date: "2026-10-02", startsAt: "10:00" });
+  strictEqual(n.title, "Вернули пару 2 октября: Матан");
+  strictEqual(n.body, "10:00 · Математический анализ");
+  strictEqual(n.url, "/s/d/2026-10-02");
+  strictEqual(n.tag, "schedule");
+  strictEqual(buildNotification({ kind: "lesson_restored", title: "Философия", date: "2026-10-02", startsAt: "08:30" }).title, "Вернули пару 2 октября: Философия");
+});
+
+test("изменение пары: в теле — что поменялось, а без этого честное «проверь расписание»", () => {
+  const n = buildNotification({ kind: "lesson_changed", title: "Математический анализ", subject: "Матан", date: "2026-10-02", startsAt: "10:00", what: "аудитория 305" });
+  strictEqual(n.title, "Изменили пару 2 октября: Матан");
+  strictEqual(n.body, "10:00 · аудитория 305");
+  strictEqual(n.url, "/s/d/2026-10-02");
+  strictEqual(n.tag, "schedule");
+  // Новая пара в опубликованной неделе — тот же вид события, разница только в what.
+  strictEqual(buildNotification({ kind: "lesson_changed", title: "Физкультура", date: "2026-10-02", startsAt: "13:50", what: "добавлена пара" }).body, "13:50 · добавлена пара");
+  for (const what of [undefined, null, "", "   "]) {
+    const m = buildNotification({ kind: "lesson_changed", title: "Философия", date: "2026-10-02", startsAt: "08:30", what });
+    strictEqual(m.title, "Изменили пару 2 октября: Философия", JSON.stringify(what));
+    strictEqual(m.body, "08:30 · проверь расписание", JSON.stringify(what));
+  }
+});
+
+test("изменение пары: длинная причина режется по слову, а не посреди", () => {
+  const what = "аудитория 305, преподаватель Иванова Ирина Ивановна, " + "подробности ".repeat(20);
+  const n = buildNotification({ kind: "lesson_changed", title: "Матан", date: "2026-10-02", startsAt: "10:00", what });
+  strictEqual(n.body.length <= 141, true, String(n.body.length));
+  strictEqual(n.body.startsWith("10:00 · аудитория 305, преподаватель Иванова Ирина Ивановна"), true, n.body);
+  strictEqual(n.body.endsWith("…"), true, n.body);
+});
+
+test("публикация недели: диапазон как в шапке недели, ссылка на саму неделю", () => {
+  const n = buildNotification({ kind: "week_published", startsOn: "2026-10-05" });
+  strictEqual(n.title, "Расписание на 5–10 окт готово");
+  strictEqual(n.body, "Посмотри неделю — что-то могло поменяться");
+  strictEqual(n.url, "/s/w/2026-10-05");
+  strictEqual(n.tag, "schedule-week");
+  strictEqual(topicOf("week_published"), "schedule");
+  strictEqual(buildNotification({ kind: "week_published", startsOn: "2026-09-28" }).title, "Расписание на 28 сент — 3 окт готово");
+});
+
+test("диапазон недели: понедельник–суббота, сокращения как у date-fns ru, стык месяцев и года", () => {
+  strictEqual(weekRangeLabel("2026-10-05"), "5–10 окт");
+  strictEqual(weekRangeLabel("2026-09-28"), "28 сент — 3 окт");
+  strictEqual(weekRangeLabel("2026-12-28"), "28 дек — 2 янв");
+  strictEqual(weekRangeLabel("2026-03-02"), "2–7 мар");
+  strictEqual(weekRangeLabel("2026-05-04"), "4–9 мая");
+  strictEqual(weekRangeLabel("2026-02-23"), "23–28 февр");
+  strictEqual(weekRangeLabel("2026-11-02"), "2–7 нояб");
+  // Непонятная строка — как есть, не «NaN–NaN undefined».
+  for (const bad of ["2026-13-01", "2026-09-00", "понедельник", ""]) strictEqual(weekRangeLabel(bad), bad, bad);
 });
 
 test("имя автора: ник важнее, иначе имя из «Фамилия Имя»", () => {
@@ -309,4 +397,32 @@ test("родительный падеж: имена склоняются, лат
     ["🙂", "🙂"],
   ];
   for (const [from, to] of pairs) strictEqual(genitiveName(from), to, from);
+});
+
+test("родительный падеж: женские имена на «-ь» — через «-и», мужские по-прежнему через «-я»", () => {
+  const pairs: [string, string][] = [
+    ["Любовь", "Любови"],
+    ["Нинель", "Нинели"],
+    ["Рахиль", "Рахили"],
+    ["Эсфирь", "Эсфири"],
+    ["Игорь", "Игоря"],
+    ["Даниль", "Даниля"],
+  ];
+  for (const [from, to] of pairs) strictEqual(genitiveName(from), to, from);
+});
+
+test("родительный падеж: беглая гласная — словарём, регистр первой буквы как в нике", () => {
+  const pairs: [string, string][] = [
+    ["Лев", "Льва"],
+    ["Павел", "Павла"],
+    ["Пётр", "Петра"],
+    ["Петр", "Петра"],
+    [" Лев ", "Льва"],
+    ["лев", "льва"],
+    // Похожие, но не из словаря, — обычное правило.
+    ["Левон", "Левона"],
+  ];
+  for (const [from, to] of pairs) strictEqual(genitiveName(from), to, from);
+  strictEqual(buildNotification({ kind: "news", author: "Любовь", body: "Сбор в 9" }).title, "Новость от Любови");
+  strictEqual(buildNotification({ kind: "poll", author: "Лев", question: "Идём?" }).title, "Опрос от Льва");
 });

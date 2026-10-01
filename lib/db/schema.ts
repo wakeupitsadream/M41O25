@@ -266,7 +266,7 @@ export const attachments = pgTable(
     uploadedBy: uuid("uploaded_by").notNull().references(() => users.id),
     createdAt: createdAt(),
   },
-  (t) => [index("attachments_entity_idx").on(t.entityType, t.entityId)],
+  (t) => [index("attachments_entity_idx").on(t.entityType, t.entityId), index("attachments_uploader_created_idx").on(t.uploadedBy, t.createdAt)],
 );
 
 export const news = pgTable(
@@ -421,7 +421,7 @@ export const pushSubscriptions = pgTable(
     p256dh: text("p256dh").notNull(),
     auth: text("auth").notNull(),
     userAgent: text("user_agent"),
-    topics: text("topics").array().notNull().default(sql`'{homework,news,questions,polls}'::text[]`),
+    topics: text("topics").array().notNull().default(sql`'{homework,schedule,news,questions,polls}'::text[]`),
     lastSuccessAt: timestamp("last_success_at", { withTimezone: true }),
     failCount: integer("fail_count").notNull().default(0),
     lastError: text("last_error"),
@@ -454,7 +454,12 @@ export const activity = pgTable(
     payload: jsonb("payload").$type<Record<string, unknown>>(),
     createdAt: createdAt(),
   },
-  (t) => [index("activity_group_created_idx").on(t.groupId, t.createdAt)],
+  (t) => [
+    index("activity_group_created_idx").on(t.groupId, t.createdAt),
+    // Лимит действий считает строки по актору на каждом создании (lib/rate-limit.ts); чистка ленты ищет по сущности.
+    index("activity_actor_created_idx").on(t.actorId, t.createdAt),
+    index("activity_entity_idx").on(t.entityType, t.entityId),
+  ],
 );
 
 /* ─── Помощник по учёбе (docs/AI-CHAT.md) ──────────────────────────────────── */

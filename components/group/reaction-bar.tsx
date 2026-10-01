@@ -4,6 +4,7 @@ import { useOptimistic, useTransition } from "react";
 import { toggleReaction } from "@/app/(app)/group/actions";
 import type { ReactionSummary } from "@/lib/group/query";
 import { cn } from "@/lib/utils";
+import { safeAction } from "@/lib/client/safe-action";
 import { useToast } from "@/components/ui/toast";
 
 const EMOJI = ["🔥", "👍", "💀", "❤️"];
@@ -30,12 +31,14 @@ export function ReactionBar({ entityType, entityId, reactions }: { entityType: "
             onClick={() =>
               start(async () => {
                 apply(e);
-                const res = await toggleReaction(entityType, entityId, e);
-                if (!res.ok) toast(res.error ?? "Реакция не сохранилась");
+                // Без router.refresh(): toggleReaction делает revalidatePath, и свежие реакции приходят в ответе самого
+                // действия; при ошибке или без сети оптимистичное состояние откатится по завершении transition.
+                const res = await safeAction(() => toggleReaction(entityType, entityId, e), toast);
+                if (res && !res.ok) toast(res.error ?? "Реакция не сохранилась");
               })
             }
             className={cn(
-              "flex h-8 items-center gap-1 rounded-full px-2.5 text-[13px] transition active:scale-95",
+              "flex h-10 items-center gap-1 rounded-full px-3 text-[13px] transition active:scale-95",
               r?.mine ? "bg-accent/15 text-accent ring-1 ring-accent/40" : "bg-surface-2 text-muted",
               !r && "opacity-70",
             )}

@@ -305,5 +305,8 @@ export function useChat({ initial, limits, onReturnDraft }: { initial: ChatIniti
     [send],
   );
 
-  return { state, notice, setNotice, send, stop, retry, restoring };
+  /** Новый заголовок после переименования с этого экрана; серверная версия подтвердит его при следующем reload. */
+  const setTitle = useCallback((title: string) => dispatch({ type: "title", title }), []);
+
+  return { state, notice, setNotice, send, stop, retry, restoring, setTitle };
 }

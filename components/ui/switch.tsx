@@ -2,21 +2,24 @@
 
 import { cn } from "@/lib/utils";
 
-/** Сам тумблер: дорожка с кружком, состояние — цветом и положением (не только цветом). */
+/**
+ * Сам тумблер: дорожка с кружком, состояние — цветом и положением (не только цветом).
+ * Кружок «выкл» — muted: border-strong на дорожке surface-3 давал 1,25:1, и выключенный тумблер был тёмным пятном без положения.
+ */
 export function Switch({ checked, className }: { checked: boolean; className?: string }) {
   return (
     <span
       aria-hidden
       className={cn(
         "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors duration-150",
-        checked ? "bg-accent" : "bg-surface-3 ring-1 ring-border-strong",
+        checked ? "bg-accent" : "bg-surface-3 ring-1 ring-muted/40",
         className,
       )}
     >
       <span
         className={cn(
           "absolute size-5 rounded-full bg-fg shadow-sm transition-[left] duration-150",
-          checked ? "left-[1.625rem] bg-accent-ink" : "left-1 bg-border-strong",
+          checked ? "left-[1.625rem] bg-accent-ink" : "left-1 bg-muted",
         )}
       />
     </span>

@@ -1,7 +1,7 @@
 import { z } from "zod";
+import { DAY_CODES, OCR_LESSON_TYPES } from "./consts";
 
-export const DAY_CODES = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
-export type DayCode = (typeof DAY_CODES)[number];
+export { DAY_CODES, KIND_FROM_OCR, type DayCode } from "./consts";
 
 export const ocrLessonSchema = z.object({
   day: z.enum(DAY_CODES),
@@ -10,7 +10,7 @@ export const ocrLessonSchema = z.object({
   time_start: z.string().regex(/^\d{1,2}[:.\-]\d{2}$/).nullable(),
   time_end: z.string().regex(/^\d{1,2}[:.\-]\d{2}$/).nullable(),
   subject: z.string().min(1),
-  lesson_type: z.enum(["лекция", "практика", "лаба", "семинар", "консультация", "зачёт", "экзамен", "другое"]).nullable(),
+  lesson_type: z.enum(OCR_LESSON_TYPES).nullable(),
   teacher: z.string().nullable(),
   room: z.string().nullable(),
   week_type: z.enum(["upper", "lower", "both"]),
@@ -62,14 +62,3 @@ export const ocrJsonSchema = {
     },
   },
 } as const;
-
-export const KIND_FROM_OCR: Record<NonNullable<OcrLesson["lesson_type"]>, "lecture" | "practice" | "lab" | "consultation" | "credit" | "exam" | "other"> = {
-  лекция: "lecture",
-  практика: "practice",
-  семинар: "practice",
-  лаба: "lab",
-  консультация: "consultation",
-  зачёт: "credit",
-  экзамен: "exam",
-  другое: "other",
-};

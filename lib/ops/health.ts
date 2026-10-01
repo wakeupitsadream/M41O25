@@ -30,6 +30,8 @@ export function summarizeCronRun(input: {
   backupError: string | null;
   failedScanDeletes: number;
   failedOrphanDeletes: number;
+  /** Шаги обслуживания, упавшие исключением (имя: сообщение). Прогон красный, но бэкап при этом мог лечь. */
+  stepErrors?: string[];
 }): CronSummary {
   const warnings: string[] = [];
   let error: string | null = null;
@@ -38,6 +40,13 @@ export function summarizeCronRun(input: {
   else if (!input.plan.run) {
     if (input.plan.failure) error = input.plan.reason;
     else warnings.push(`Бэкап пропущен: ${input.plan.reason}`);
+  }
+  // Упавший шаг уборки — провал прогона (сторож должен покраснеть), но бэкап важнее: его причина идёт первой.
+  const steps = input.stepErrors ?? [];
+  if (steps.length) {
+    const text = `Упали шаги: ${steps.join("; ")}`;
+    if (error === null) error = text;
+    else warnings.push(text);
   }
 
   const files = input.failedScanDeletes + input.failedOrphanDeletes;
@@ -50,6 +59,19 @@ export function summarizeCronRun(input: {
   }
 
   return { ok: error === null, error, warnings };
+}
+
+/** Сколько дней хранить тексты бесед помощника; строки и стоимость остаются (app/api/cron/daily/route.ts, шаг 6). */
+export const ASSISTANT_CONTENT_RETENTION_DAYS = 180;
+
+/**
+ * Прогон считается пропавшим, если последняя запись старше полутора суток: cron идёт раз в день в часовом окне,
+ * так что 36 часов — это гарантированно пропущенный запуск, а не задержка. Записи нет вовсе — тоже «не доходит».
+ */
+export const CRON_STALE_MS = 36 * 3600_000;
+
+export function cronStale(lastRanAt: Date | null, now = Date.now()): boolean {
+  return lastRanAt === null || now - lastRanAt.getTime() > CRON_STALE_MS;
 }
 
 /** Предупреждения из details последнего прогона (jsonb, формат мог быть старым — читаем осторожно). */

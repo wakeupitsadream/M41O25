@@ -1,6 +1,6 @@
 "use client";
 
-import { useGuardedRouter } from "@/components/features/nav-guard";
+import { useRouter } from "next/navigation";
 import { useOptimistic, useState, useTransition } from "react";
 import { Check, Lock, Trash2, Undo2 } from "lucide-react";
 import { motion } from "motion/react";
@@ -10,12 +10,15 @@ import { dueLabel, fmtDateTime } from "@/lib/hw/format";
 import { Avatar, Badge } from "@/components/ui/primitives";
 import { Linkify } from "@/components/ui/linkify";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/components/ui/toast";
+import { safeAction } from "@/lib/client/safe-action";
 import { cn, displayName, pluralRu } from "@/lib/utils";
 
 type Task = NonNullable<Awaited<ReturnType<typeof getTask>>>;
 
 export function TaskDetail({ task, me, today }: { task: Task; me: { id: string; isAdmin: boolean; isMod: boolean }; today: string }) {
-  const router = useGuardedRouter();
+  const router = useRouter();
+  const toast = useToast();
   const [pending, start] = useTransition();
   const [people, toggle] = useOptimistic(task.people, (prev: Task["people"], userId: string) =>
     prev.map((p) => (p.id === userId ? { ...p, checkedAt: p.checkedAt ? null : new Date().toISOString() } : p)),
@@ -29,9 +32,24 @@ export function TaskDetail({ task, me, today }: { task: Task; me: { id: string; 
   const [error, setError] = useState<string | null>(null);
   const run = (fn: () => Promise<unknown>) =>
     start(async () => {
-      const res = (await fn()) as { ok?: boolean; error?: string } | undefined;
+      // Без сети action падает исключением, а не ActionResult: safeAction покажет причину и вернёт null (ревью UI-01).
+      const res = (await safeAction(fn, (m) => {
+        setError(m);
+        toast(m);
+      })) as { ok?: boolean; error?: string } | null | undefined;
+      if (res === null) return;
       if (res && res.ok === false) return setError(res.error ?? "Не удалось");
       router.refresh();
+    });
+
+  // Галочка «сдал» — без router.refresh(): toggleTaskCheck делает revalidatePath, и свежий список приходит в ответе
+  // самого действия; до него показываем оптимистичное состояние, при отказе — тост и откат по завершении transition
+  // (ревью PERF-11, UI-01).
+  const check = (userId: string) =>
+    start(async () => {
+      toggle(userId);
+      const res = await safeAction(() => toggleTaskCheck(task.id, userId), toast);
+      if (res && !res.ok) toast(res.error ?? "Отметка не сохранилась");
     });
 
   return (
@@ -58,7 +76,7 @@ export function TaskDetail({ task, me, today }: { task: Task; me: { id: string; 
             </div>
             {mine && (
               <div className={cn("mt-3 text-[13px] font-medium", mine.checkedAt ? "text-ok" : "text-muted")}>
-                {mine.checkedAt ? "✓ Ты сдал" : "Ты пока не отмечен"}
+                {mine.checkedAt ? "✓ Ты в списке сдавших" : "Тебя ещё не отметили"}
               </div>
             )}
           </div>
@@ -73,14 +91,14 @@ export function TaskDetail({ task, me, today }: { task: Task; me: { id: string; 
             <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted">
               Ещё не сдали {left.length > 0 && <span className="text-dim">{left.length}</span>}
             </h2>
-            <PeopleList people={left} canToggle={me.isAdmin && !task.closed} pending={pending} onToggle={(id) => start(async () => { toggle(id); await toggleTaskCheck(task.id, id); router.refresh(); })} />
+            <PeopleList people={left} canToggle={me.isAdmin && !task.closed} pending={pending} onToggle={check} />
             {left.length === 0 && <div className="rounded-md bg-ok/10 px-3.5 py-3 text-[14px] text-ok">Все сдали 🎉</div>}
           </section>
           <section className="space-y-2">
             <h2 className="text-[13px] font-semibold uppercase tracking-wide text-muted">
               Сдали {done.length > 0 && <span className="text-dim">{done.length}</span>}
             </h2>
-            <PeopleList people={done} canToggle={me.isAdmin && !task.closed} pending={pending} onToggle={(id) => start(async () => { toggle(id); await toggleTaskCheck(task.id, id); router.refresh(); })} />
+            <PeopleList people={done} canToggle={me.isAdmin && !task.closed} pending={pending} onToggle={check} />
           </section>
         </>
       )}

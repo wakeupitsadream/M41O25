@@ -1,18 +1,23 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useGuardedRouter } from "@/components/features/nav-guard";
+import { usePathname, useRouter } from "next/navigation";
+import { sectionOfPath } from "@/lib/group/unread";
 
 /**
  * iOS держит установленную PWA замороженной сутками: при возвращении на экран после долгой паузы,
  * при появлении сети и при восстановлении из bfcache перечитываем данные страницы (RSC), иначе
- * домашка и лента показывают вчерашнее. Расписание обновляется своим хуком, здесь его не трогаем.
+ * домашка и лента показывают вчерашнее. Расписание обновляется своим хуком (components/schedule/use-schedule.ts:
+ * те же visibilitychange и online плюс интервал), поэтому на /s router.refresh() не делаем — иначе один возврат
+ * в приложение стоил бы трёх запросов одних и тех же данных (ревью PERF-03).
  */
 export function RefreshOnResume({ minHiddenMs = 60_000 }: { minHiddenMs?: number }) {
-  const router = useGuardedRouter();
+  const router = useRouter();
+  const pathname = usePathname();
   const hiddenAt = useRef<number | null>(null);
 
   useEffect(() => {
+    if (sectionOfPath(pathname) === "schedule") return;
     const typing = () => {
       const el = document.activeElement;
       return el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el instanceof HTMLElement && el.isContentEditable);
@@ -39,7 +44,7 @@ export function RefreshOnResume({ minHiddenMs = 60_000 }: { minHiddenMs?: number
       window.removeEventListener("online", onOnline);
       window.removeEventListener("pageshow", onPageShow);
     };
-  }, [router, minHiddenMs]);
+  }, [router, pathname, minHiddenMs]);
 
   return null;
 }

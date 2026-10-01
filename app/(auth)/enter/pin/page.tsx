@@ -36,8 +36,8 @@ export default async function PinPage({ searchParams }: { searchParams: Promise<
         <h1 className="font-display text-[28px] font-bold leading-tight">{claimed ? "Введи PIN" : "Придумай PIN"}</h1>
         <p className="text-[15px] text-muted">
           {claimed
-            ? "Четыре цифры, которые ты задал при первом входе."
-            : "Четыре цифры. Нужны, чтобы никто не зашёл под твоим именем с другого телефона."}
+            ? "Четыре цифры, заданные при первом входе."
+            : "Четыре цифры, чтобы никто не зашёл под твоим именем. Спросим их только при входе с другого телефона или после сброса — каждый раз вводить не придётся."}
         </p>
       </div>
       <PinForm userId={user.id} claimed={claimed} />

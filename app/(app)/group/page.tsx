@@ -47,7 +47,7 @@ export default async function GroupPage() {
           <span className="flex-1">
             <span className="block font-display text-[16px] font-bold">Что нового</span>
             <span className={cn("block text-[13px]", counts.unread ? "text-accent-ink/70" : "text-muted")}>
-              {counts.unread ? `${counts.unread} ${pluralRu(counts.unread, "событие", "события", "событий")} с твоего последнего захода` : "ты всё видел"}
+              {counts.unread ? `${counts.unread} ${pluralRu(counts.unread, "событие", "события", "событий")} с твоего последнего захода` : "ничего нового"}
             </span>
           </span>
           <ChevronRight className="size-4 opacity-60" />

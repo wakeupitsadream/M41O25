@@ -1,7 +1,7 @@
 import "server-only";
 import { mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import type { S3Client } from "@aws-sdk/client-s3";
 import { env } from "@/lib/env";
 
 /**
@@ -18,19 +18,34 @@ export interface Storage {
 
 class R2Storage implements Storage {
   readonly kind = "r2" as const;
-  private client = new S3Client({
-    region: "auto",
-    endpoint: `https://${env.r2.accountId}.r2.cloudflarestorage.com`,
-    credentials: { accessKeyId: env.r2.accessKeyId, secretAccessKey: env.r2.secretAccessKey },
-  });
+  private client: S3Client | null = null;
+
+  /**
+   * SDK подключается при первом обращении к файлам, а не при импорте модуля: lib/storage тянется в server actions
+   * домашки, а через них — в лэйаут каждой страницы. Конструировать S3-клиент (с его провайдерами учётных данных)
+   * на каждом холодном старте каждой страницы — лишние сотни миллисекунд ради страницы, которой файлы не нужны.
+   */
+  private async s3() {
+    if (!this.client) {
+      const { S3Client } = await import("@aws-sdk/client-s3");
+      this.client = new S3Client({
+        region: "auto",
+        endpoint: `https://${env.r2.accountId}.r2.cloudflarestorage.com`,
+        credentials: { accessKeyId: env.r2.accessKeyId, secretAccessKey: env.r2.secretAccessKey },
+      });
+    }
+    return this.client;
+  }
 
   async put(key: string, body: Buffer, contentType: string) {
-    await this.client.send(new PutObjectCommand({ Bucket: env.r2.bucket, Key: key, Body: body, ContentType: contentType }));
+    const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+    await (await this.s3()).send(new PutObjectCommand({ Bucket: env.r2.bucket, Key: key, Body: body, ContentType: contentType }));
   }
 
   async get(key: string) {
     try {
-      const res = await this.client.send(new GetObjectCommand({ Bucket: env.r2.bucket, Key: key }));
+      const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+      const res = await (await this.s3()).send(new GetObjectCommand({ Bucket: env.r2.bucket, Key: key }));
       const bytes = await res.Body?.transformToByteArray();
       if (!bytes) return null;
       return { body: Buffer.from(bytes), contentType: res.ContentType ?? "application/octet-stream" };
@@ -41,11 +56,13 @@ class R2Storage implements Storage {
   }
 
   async delete(key: string) {
-    await this.client.send(new DeleteObjectCommand({ Bucket: env.r2.bucket, Key: key }));
+    const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
+    await (await this.s3()).send(new DeleteObjectCommand({ Bucket: env.r2.bucket, Key: key }));
   }
 
   async list(prefix: string) {
-    const res = await this.client.send(new ListObjectsV2Command({ Bucket: env.r2.bucket, Prefix: prefix, MaxKeys: 1000 }));
+    const { ListObjectsV2Command } = await import("@aws-sdk/client-s3");
+    const res = await (await this.s3()).send(new ListObjectsV2Command({ Bucket: env.r2.bucket, Prefix: prefix, MaxKeys: 1000 }));
     return (res.Contents ?? []).map((o) => o.Key!).filter(Boolean);
   }
 }

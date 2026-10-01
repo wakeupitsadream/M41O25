@@ -18,8 +18,8 @@ import { pushAuthorName } from "@/lib/push/format";
 import { notifyQuietly, pushConfigured } from "@/lib/push/send";
 import { fail, ok, type ActionResult } from "@/lib/utils";
 import { wrapAction } from "@/lib/actions";
+import { isoDate } from "@/lib/validation";
 
-const iso = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Дата в формате ГГГГ-ММ-ДД");
 const uuidList = (max: number) => z.array(z.string().uuid()).max(max, `Не больше ${max} файлов`);
 
 /** Потолок вложений у одной записи (сумма при создании и добавленных позже). */
@@ -30,7 +30,7 @@ const createSchema = z.object({
   body: z.string().trim().min(1, "Напиши, что задали").max(4000),
   title: z.string().trim().max(120).optional().or(z.literal("")),
   subjectId: z.string().uuid().nullable(),
-  dueDate: iso,
+  dueDate: isoDate,
   /** Пара, к которой привязана запись; сервер перепроверяет по дате и предмету (см. resolveLessonId). */
   lessonId: z.string().uuid().nullable().optional(),
   attachmentIds: uuidList(MAX_HW_ATTACHMENTS),

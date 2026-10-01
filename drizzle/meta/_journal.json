@@ -57,6 +57,13 @@
       "when": 1790226443513,
       "tag": "0007_assistant",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1790831697289,
+      "tag": "0008_review_indexes_schedule_topic",
+      "breakpoints": true
     }
   ]
 }

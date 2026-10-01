@@ -104,7 +104,7 @@ ASSISTANT_POLZA_MARKUP   default 1.25
 
 Цикл инструментов: не более 2 кругов. Аргументы tool-call в стриме склеиваются по `index`; `finish_reason === 'tool_calls'` → выполнить, добавить `role: 'tool'` сообщения, следующий круг. Usage суммируется по кругам; при `include_usage` он в последнем чанке с `choices: []`; если стрим оборвался без usage — оценка `Math.ceil(chars / 3.5)` и пометка в `error`.
 
-Ошибки провайдера → `describeProviderError` из `lib/ocr/recognize.ts`, но текст про OCR_MODEL заменить своей обёрткой (`lib/assistant/errors.ts`): 402 → «У помощника закончился баланс — админ уже знает» плюс `logAppError`; 429/5xx → «Помощник перегружен, повтори через минуту»; таймаут → «Ответ не успел за минуту — спроси короче или без сильного режима».
+Ошибки провайдера → `describeProviderError` из `lib/ocr/recognize.ts`, но текст про OCR_MODEL заменить своей обёрткой (`lib/assistant/errors.ts`): 402 → «У помощника закончился баланс — передай админу» плюс `logAppError`; 429/5xx → «Помощник перегружен, повтори через минуту»; таймаут → «Ответ не успел за минуту — спроси короче или без сильного режима».
 
 Mock (`env.polza.mock`): стрим из заготовленного ответа по 20–40 символов с паузой 15 мс, один вызов инструмента `get_schedule`, если в вопросе есть «расписан» или «пар», usage `{ prompt: 1200, completion: 80, cached: 0 }`. Маркеры в тексте для тестов: `[mock-error]` — ошибка до первого слова (квота возвращается), `[mock-slow]` — медленный стрим для проверки обрыва. Нужен для e2e и локальной разработки.
 
@@ -166,7 +166,7 @@ Mock (`env.polza.mock`): стрим из заготовленного ответ
 ### Server actions (`app/(app)/group/assistant/actions.ts`, все через `wrapAction`, возвращают `ActionResult`)
 
 - `startTrial(): ActionResult<{ until: string }>` — только из состояния `none`
-- `listConversations(): ActionResult<{ items: { id, title, updatedAt, preview }[] }>` (не архивные, ≤ 50)
+- `listConversations(): ActionResult<{ items: { id, title, updatedAt, preview }[] }>` (не архивные, ≤ 50). Переименование и архив — в шапке чата кнопка «⋯» (`components/assistant/conversation-menu.tsx`); тексты сообщений старше 180 дней cron стирает, строка и стоимость остаются (`lib/ops/health.ts`, `ASSISTANT_CONTENT_RETENTION_DAYS`), в чате такое сообщение показывается как «Текст удалён по сроку хранения».
 - `getConversation(id): ActionResult<{ conversation, messages: ChatMessage[] }>` — только своя
 - `renameConversation(id, title)`, `archiveConversation(id)` — только своя
 - `getAssistantState(): ActionResult<AssistantState>` — `{ enabled, access, limits, settings: { priceRub, paymentNote, trialDays }, strongAvailable }`
@@ -189,7 +189,7 @@ Mock (`env.polza.mock`): стрим из заготовленного ответ
 
 Полоска «Ресурс · 30 дней» в процентах рядом со счётчиками; «исчерпан» — когда сервер уже не пустит обычный вопрос, а не только на 100 %.
 
-Хаб «Группа»: плитка «Помощник» (иконка `Sparkles`), hint по статусу: «пробная неделя до 30.09» / «оплачено до 24.10» / «7 дней бесплатно» / «200 ₽ в месяц»; плитка не показывается, если помощник выключен админом. Правила проекта: `useGuardedRouter`, тап-таргеты ≥ 40 px, акцент только на CTA и «сейчас», тёмная тема, localStorage только в `useEffect`.
+Хаб «Группа»: плитка «Помощник» (иконка `Sparkles`), hint по статусу: «пробная неделя до 30.09» / «оплачено до 24.10» / «7 дней бесплатно» / «200 ₽ в месяц»; плитка не показывается, если помощник выключен админом. Правила проекта: `useRouter` из `next/navigation`, тап-таргеты ≥ 40 px, акцент только на CTA и «сейчас», тёмная тема, localStorage только в `useEffect`.
 
 ## 9. Админка
 

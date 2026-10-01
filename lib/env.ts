@@ -15,6 +15,8 @@ const polza = {
 
 export const env = {
   tz: process.env.APP_TZ ?? "Asia/Yekaterinburg",
+  /** Сборка и функции на Vercel (любое окружение). Нужен там, где локальный фолбэк допустим, а в облаке — нет. */
+  onVercel: Boolean(process.env.VERCEL),
   authSecret: process.env.AUTH_SECRET ?? "",
   anonPepper: process.env.ANON_PEPPER ?? "",
   cronSecret: process.env.CRON_SECRET ?? "",

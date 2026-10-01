@@ -1,6 +1,6 @@
 import { TOOL_RESULT_LIMIT } from "./compact";
 import { HISTORY_TOKENS } from "./context";
-import { budgetKopecks, COST_SHARE } from "./limits";
+import { budgetKopecks, COST_SHARE } from "./limit-rules";
 import { costKopecks, estimateTokens, PRICES_USD_PER_MTOK } from "./pricing";
 import type { AssistantSettings, AssistantUsage } from "./types";
 

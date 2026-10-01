@@ -54,7 +54,7 @@ export function Roulette({ people }: { people: Person[] }) {
         setWinner(person);
         try { navigator.vibrate?.([30, 40, 80]); } catch {}
         void import("canvas-confetti").then(({ default: confetti }) =>
-          confetti({ particleCount: 60, spread: 70, origin: { y: 0.55 }, colors: ["#C8FF2E", "#F4F4F6", person.color] }),
+          confetti({ particleCount: 60, spread: 70, origin: { y: 0.55 }, colors: ["#C8FF2E", "#F4F4F6", person.color], disableForReducedMotion: true }),
         );
         if (noRepeatRef.current) setPool((p) => p.filter((x) => x.id !== person.id));
         return;

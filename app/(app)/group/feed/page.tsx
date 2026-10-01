@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { listFeed, type FeedItem } from "@/lib/group/query";
 import { nextPageHref, olderLimit, parseFeedParams } from "@/lib/group/feed-page";
 import { fmtDateTime } from "@/lib/hw/format";
-import { fmtRangeShort, addDaysIso } from "@/lib/schedule/time";
+import { addDaysIso, fmtDayShort, fmtRangeShort, fmtWeekday, isIso } from "@/lib/schedule/time";
 import { Avatar, EmptyState } from "@/components/ui/primitives";
 import { SubHeader } from "@/components/group/sub-header";
 import { MarkSeen } from "@/components/group/mark-seen";
@@ -13,36 +13,43 @@ import { cn, displayName, pluralRu } from "@/lib/utils";
 export const metadata = { title: "Что нового" };
 export const dynamic = "force-dynamic";
 
+/** « (чт, 2 окт)» после названия пары: в payload дата лежит строкой базы YYYY-MM-DD, человеку её не показываем. */
+const onDate = (date: string | null | undefined) => (date && isIso(date) ? ` (${fmtWeekday(date, false)}, ${fmtDayShort(date)})` : "");
+
+/**
+ * Тексты без глагола прошедшего времени: пола в профиле нет, и «Катя добавил ДЗ» читала бы половина группы
+ * каждый день. Имя актёра стоит перед текстом как подпись — так же сделано в пушах (lib/push/format.ts).
+ */
 function describe(e: FeedItem): { icon: React.ElementType; text: string; href: string | null } {
   const p = e.payload as Record<string, string | null | undefined>;
   switch (e.eventType) {
     case "hw_added":
-      return { icon: BookOpen, text: `добавил ДЗ: «${p.title ?? ""}»`, href: e.entityId ? `/hw/${e.entityId}` : "/hw" };
+      return { icon: BookOpen, text: `новое ДЗ: «${p.title ?? ""}»`, href: e.entityId ? `/hw/${e.entityId}` : "/hw" };
     case "hw_edit_added":
-      return { icon: PencilLine, text: `дополнил ДЗ: «${p.text ?? ""}»`, href: e.entityId ? `/hw/${e.entityId}` : "/hw" };
+      return { icon: PencilLine, text: `дополнение к ДЗ: «${p.text ?? ""}»`, href: e.entityId ? `/hw/${e.entityId}` : "/hw" };
     case "hw_updated":
       // Только существенные правки и не чаще раза в день на запись (app/(app)/hw/actions.ts, updateHomework).
-      return { icon: PencilLine, text: `изменил ДЗ «${p.title ?? ""}»${p.what ? `: ${p.what}` : ""}`, href: e.entityId ? `/hw/${e.entityId}` : "/hw" };
+      return { icon: PencilLine, text: `правка ДЗ «${p.title ?? ""}»${p.what ? `: ${p.what}` : ""}`, href: e.entityId ? `/hw/${e.entityId}` : "/hw" };
     case "comment_added":
-      return { icon: MessageCircle, text: `уточнил по ДЗ: «${p.text ?? ""}»`, href: e.entityId ? `/hw/${e.entityId}` : "/hw" };
+      return { icon: MessageCircle, text: `уточнение по ДЗ: «${p.text ?? ""}»`, href: e.entityId ? `/hw/${e.entityId}` : "/hw" };
     case "schedule_published":
-      return { icon: CalendarDays, text: `опубликовал расписание на ${p.startsOn ? fmtRangeShort(p.startsOn, addDaysIso(p.startsOn, 5)) : "неделю"}`, href: p.startsOn ? `/s/w/${p.startsOn}` : "/s" };
+      return { icon: CalendarDays, text: `расписание на ${p.startsOn ? fmtRangeShort(p.startsOn, addDaysIso(p.startsOn, 5)) : "неделю"}`, href: p.startsOn ? `/s/w/${p.startsOn}` : "/s" };
     case "schedule_changed":
-      return { icon: CalendarDays, text: `изменил пару ${p.title ?? ""} (${p.date ?? ""})`, href: p.date ? `/s/d/${p.date}` : "/s" };
+      return { icon: CalendarDays, text: `замена: ${p.title ?? ""}${onDate(p.date)}`, href: p.date ? `/s/d/${p.date}` : "/s" };
     case "lesson_cancelled":
-      return { icon: CalendarDays, text: `отменил пару ${p.title ?? ""} (${p.date ?? ""})`, href: p.date ? `/s/d/${p.date}` : "/s" };
+      return { icon: CalendarDays, text: `отмена пары ${p.title ?? ""}${onDate(p.date)}`, href: p.date ? `/s/d/${p.date}` : "/s" };
     case "lesson_restored":
-      return { icon: CalendarDays, text: `вернул пару ${p.title ?? ""} (${p.date ?? ""})`, href: p.date ? `/s/d/${p.date}` : "/s" };
+      return { icon: CalendarDays, text: `пара возвращена: ${p.title ?? ""}${onDate(p.date)}`, href: p.date ? `/s/d/${p.date}` : "/s" };
     case "news_added":
-      return { icon: Newspaper, text: `написал новость: «${p.title ?? ""}»`, href: "/group/news" };
+      return { icon: Newspaper, text: `новость: «${p.title ?? ""}»`, href: "/group/news" };
     case "task_added":
-      return { icon: CheckSquare, text: `завёл задачу: «${p.title ?? ""}»`, href: e.entityId ? `/group/tasks/${e.entityId}` : "/group/tasks" };
+      return { icon: CheckSquare, text: `задача: «${p.title ?? ""}»`, href: e.entityId ? `/group/tasks/${e.entityId}` : "/group/tasks" };
     case "poll_created":
-      return { icon: Vote, text: `создал опрос: «${p.question ?? ""}»`, href: "/group/polls" };
+      return { icon: Vote, text: `опрос: «${p.question ?? ""}»`, href: "/group/polls" };
     case "anon_question":
       return { icon: MessageCircleQuestion, text: "Новый анонимный вопрос", href: "/group/questions" };
     case "anon_answered":
-      return { icon: MessageCircleQuestion, text: `ответил на анонимный вопрос`, href: "/group/questions" };
+      return { icon: MessageCircleQuestion, text: "ответ на анонимный вопрос", href: "/group/questions" };
     default:
       return { icon: Newspaper, text: e.eventType, href: null };
   }
@@ -56,7 +63,11 @@ function FeedRow({ e, isNew }: { e: FeedItem; isNew: boolean }) {
       {e.actor ? <Avatar user={e.actor} size="sm" /> : <span className="grid size-8 shrink-0 place-items-center rounded-full bg-surface-2 text-muted"><Icon className="size-4" /></span>}
       <div className="min-w-0 flex-1">
         <div className="text-[14px] leading-snug">
-          {e.actor && <span className="font-semibold">{displayName(e.actor)} </span>}
+          {e.actor && (
+            <>
+              <span className="font-semibold">{displayName(e.actor)}</span> —{" "}
+            </>
+          )}
           <span className={e.actor ? "text-fg" : "font-semibold"}>{d.text}</span>
         </div>
         <div className="mt-0.5 flex items-center gap-1.5 text-[12px] text-dim">

@@ -6,6 +6,8 @@ import {
   HOMEWORK_ORPHAN_TTL_MS,
   NO_R2_ON_VERCEL,
   ORPHAN_TTL_MS,
+  CRON_STALE_MS,
+  cronStale,
   cronWarnings,
   describeBackup,
   latestBackupDay,
@@ -142,4 +144,20 @@ test("orphanCutoffs: вложение домашки живёт дольше о�
   assert.equal(HOMEWORK_ORPHAN_TTL_MS, QUEUE_TTL_MS + ORPHAN_TTL_MS);
   // Сутки для остальных не трогали: брошенные крестиком файлы новостей и задач по-прежнему уходят на следующий день.
   assert.ok(cut.common.getTime() > oldestLivingQueueEntry);
+});
+
+test("summarizeCronRun: упавший шаг уборки красит прогон, но причина бэкапа важнее", () => {
+  const steps = summarizeCronRun({ plan: { run: true }, backupError: null, failedScanDeletes: 0, failedOrphanDeletes: 0, stepErrors: ["сессии: timeout"] });
+  assert.equal(steps.ok, false);
+  assert.equal(steps.error, "Упали шаги: сессии: timeout");
+  const both = summarizeCronRun({ plan: { run: true }, backupError: "R2 500", failedScanDeletes: 0, failedOrphanDeletes: 0, stepErrors: ["сироты: ECONNRESET"] });
+  assert.equal(both.error, "Бэкап не удался: R2 500");
+  assert.deepEqual(both.warnings, ["Упали шаги: сироты: ECONNRESET"]);
+});
+
+test("cronStale: записи нет или ей больше полутора суток — прогоны не доходят", () => {
+  const now = Date.UTC(2026, 9, 1, 12, 0, 0);
+  assert.equal(cronStale(null, now), true);
+  assert.equal(cronStale(new Date(now - 8 * 3600_000), now), false);
+  assert.equal(cronStale(new Date(now - CRON_STALE_MS - 1), now), true);
 });

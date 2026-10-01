@@ -2,8 +2,13 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    # main и рабочие ветки; для веток dependabot и форков хватает прогона по pull_request — иначе каждый PR шёл дважды.
+    branches: [main, "claude/**"]
   pull_request:
+
+# Токену job хватает чтения: workflow ничего не пишет в репозиторий.
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -42,16 +47,35 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm run lint -- --max-warnings 0
-      - name: Миграции согласованы со схемой
+      - name: История миграций без коллизий
         run: npm run db:check
+      - name: Схема не разошлась с миграциями
+        # drizzle-kit check смотрит только историю снапшотов; дрейф lib/db/schema.ts без db:generate он не ловит,
+        # а production применяет только то, что лежит в drizzle/. Поэтому генерируем и требуем чистого git status.
+        run: |
+          npx drizzle-kit generate --name ci-drift-check
+          if [ -n "$(git status --porcelain drizzle)" ]; then
+            echo "::error::lib/db/schema.ts изменён без миграции — запусти npm run db:generate и закоммить drizzle/"
+            git status --porcelain drizzle
+            exit 1
+          fi
       - name: Unit-тесты
         run: npm test
       - name: База для e2e
         run: npm run db:migrate && npm run db:seed -- --demo
       - name: Сборка (как на Vercel, без миграций)
         run: npm run build
+      - name: Версия Playwright для кэша браузера
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: pw-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
       - name: Chromium для Playwright
-        run: npx playwright install --with-deps chromium
+        run: |
+          if [ "${{ steps.pw-cache.outputs.cache-hit }}" = "true" ]; then npx playwright install-deps chromium; else npx playwright install --with-deps chromium; fi
       - name: Production-сервер
         run: |
           (npx next start -p 3001 > server.log 2>&1 &)
@@ -65,7 +89,24 @@ jobs:
       - name: e2e
         env:
           BASE: http://localhost:3001
+          STRICT_NAV: "1"
         run: npm run e2e && npm run e2e:offline
+      - name: Cron и бэкап в локальное хранилище
+        # Два самых редко исполняемых и самых важных куска кода: ночной прогон и дамп. Локально хранилище —
+        # папка .data/uploads, так что бэкап ложится на диск раннера и его можно восстановить ниже.
+        run: |
+          curl -sf -H "Authorization: Bearer $CRON_SECRET" http://localhost:3001/api/cron/daily -o cron.json || { cat cron.json 2>/dev/null; exit 1; }
+          node -e 'const r=require("./cron.json"); console.log(JSON.stringify(r)); if (!r.ok || !r.backup) process.exit(1)'
+      - name: Репетиция восстановления из бэкапа
+        env:
+          RESTORE_URL: postgres://postgres:postgres@localhost:5432/raspison_restore
+        run: |
+          psql "$DATABASE_URL" -c 'create database raspison_restore'
+          DATABASE_URL="$RESTORE_URL" npm run db:migrate
+          DATABASE_URL="$RESTORE_URL" npm run db:restore -- .data/uploads/backups/*.json.gz --truncate
+          users=$(psql "$RESTORE_URL" -Atc 'select count(*) from users')
+          echo "restored users: $users"
+          [ "$users" -gt 0 ]
       - name: Логи и скриншоты при падении
         if: failure()
         uses: actions/upload-artifact@v4

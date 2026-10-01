@@ -10,7 +10,7 @@ export default function OfflinePage() {
         <WifiOff className="size-7" />
       </div>
       <h1 className="font-display text-2xl font-bold">Нет сети</h1>
-      <p className="max-w-xs text-muted">Расписание открывается и без интернета — открой его с главного экрана. Остальное подтянется, когда появится связь.</p>
+      <p className="max-w-xs text-muted">Расписание сохранено на телефоне и открывается без интернета — кнопка ниже. Остальное подтянется, когда появится связь.</p>
       <Link href="/s" className="mt-2 rounded-full bg-accent px-6 py-3 font-semibold text-accent-ink active:bg-accent-press">
         К расписанию
       </Link>

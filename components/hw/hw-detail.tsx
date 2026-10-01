@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useGuardedRouter } from "@/components/features/nav-guard";
+import { useRouter } from "next/navigation";
 import { useToast } from "@/components/ui/toast";
-import { useState, useTransition } from "react";
+import { useOptimistic, useState, useTransition } from "react";
 import { CalendarDays, Check, Copy, FileText, MessageCircle, Paperclip, Pencil, PencilLine, Send, Trash2, Undo2, X } from "lucide-react";
 import {
   addComment,
@@ -27,6 +27,7 @@ import { ImageGrid } from "@/components/ui/image-grid";
 import { ReactionBar } from "@/components/group/reaction-bar";
 import { AttachmentUploader, type UploadedFile } from "./attachment-uploader";
 import type { ReactionSummary } from "@/lib/group/query";
+import { safeAction } from "@/lib/client/safe-action";
 import { cn, displayName } from "@/lib/utils";
 
 type Person = { id: string; fullName: string; nickname: string | null; avatarEmoji: string; color: string };
@@ -66,7 +67,7 @@ const MAX_HW_FILES = 10;
 const MAX_EDIT_FILES = 4;
 
 export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
-  const router = useGuardedRouter();
+  const router = useRouter();
   const [pending, start] = useTransition();
   const [sheet, setSheet] = useState<null | "edit-add" | "dup" | "edit-orig" | "files">(null);
   const [editText, setEditText] = useState("");
@@ -76,6 +77,7 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
   const [orig, setOrig] = useState({ title: hw.title ?? "", body: hw.body, dueDate: hw.dueDate, subjectId: hw.subject?.id ?? null });
+  const [done, setDone] = useOptimistic(hw.done);
 
   const canEditOrig = me.isAdmin || hw.author.id === me.id;
   // Файлы к чужой записи добавляют автор, староста и админ; своё фото любой может приложить блоком «Дополнить».
@@ -87,7 +89,12 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
   const run = (fn: () => Promise<{ ok: boolean; error?: string } | void>, after?: () => void) => {
     setError(null);
     start(async () => {
-      const res = await fn();
+      // Без сети action падает исключением, а не ActionResult: safeAction покажет тост и вернёт null (ревью UI-01).
+      const res = await safeAction(fn, (message) => {
+        setError(message);
+        toast(message);
+      });
+      if (res === null) return;
       if (res && !res.ok) {
         // Тостом, а не только строкой на странице: половина действий запускается из шторки, а строка ошибки
         // живёт в обычном потоке под ней — оттуда её не видно, и отказ (например, часовой лимит правок)
@@ -102,6 +109,15 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
     });
   };
 
+  // Галочка «сделано» — без router.refresh(): toggleDone делает revalidatePath, и свежая запись приходит в ответе самого
+  // действия, а до него показываем оптимистичное состояние; при отказе — тост и откат по завершении transition (ревью PERF-11).
+  const toggleDoneMark = () =>
+    start(async () => {
+      setDone(!done);
+      const res = await safeAction(() => toggleDone(hw.id), toast);
+      if (res && !res.ok) toast(res.error ?? "Отметка не сохранилась");
+    });
+
   return (
     <div className="space-y-5 pb-6">
       {hw.original && (
@@ -113,8 +129,9 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
               «{(hw.original.title ?? hw.original.body).slice(0, 40)}»
             </Link>
           </span>
-          {(me.isAdmin || hw.duplicateMarkedBy === me.id) && (
-            <button type="button" className="font-semibold" onClick={() => run(() => markDuplicate(hw.id, null))}>
+          {/* Как на сервере (markDuplicate): снять отметку могут тот, кто её поставил, автор записи, староста и админ. */}
+          {(me.isAdmin || me.isModerator || hw.duplicateMarkedBy === me.id || hw.author.id === me.id) && (
+            <button type="button" className="-my-2 min-h-10 px-2 font-semibold" onClick={() => run(() => markDuplicate(hw.id, null))}>
               снять
             </button>
           )}
@@ -133,7 +150,7 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
           <Badge tone={due.tone}>{due.text}</Badge>
         </div>
         {hw.title && <h1 className="mt-3 font-display text-[26px] font-bold leading-tight">{hw.title}</h1>}
-        <p className={cn("mt-3 whitespace-pre-wrap text-[17px] leading-relaxed", hw.done && "line-through decoration-muted")}>{hw.body}</p>
+        <p className={cn("mt-3 whitespace-pre-wrap text-[17px] leading-relaxed", done && "line-through decoration-muted")}>{hw.body}</p>
         <div className="mt-3 flex items-center gap-2 text-[13px] text-muted">
           <Avatar user={hw.author} size="xs" />
           <span>{displayName(hw.author)}</span>
@@ -163,7 +180,7 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
               <div className="flex items-center gap-2 text-[12px]" style={{ color: e.author.color }}>
                 <Avatar user={e.author} size="xs" />
                 <span className="font-semibold">{displayName(e.author)}</span>
-                <span className="text-dim">дополнил · {fmtDateTime(e.createdAt)}</span>
+                <span className="text-dim">дополнение · {fmtDateTime(e.createdAt)}</span>
                 {(me.isAdmin || e.author.id === me.id) && (
                   <button type="button" aria-label="Удалить дополнение" className="ml-auto grid size-10 shrink-0 -mr-2 place-items-center text-dim" onClick={() => run(() => deleteEdit(e.id))}>
                     <Trash2 className="size-3.5" />
@@ -186,8 +203,8 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
           <PencilLine className="size-4" /> Дополнить
         </Button>
         {me.showDone && (
-          <Button variant={hw.done ? "primary" : "secondary"} loading={pending} onClick={() => run(() => toggleDone(hw.id))}>
-            <Check className="size-4" strokeWidth={3} /> {hw.done ? "Сделано" : "Сделал"}
+          <Button variant={done ? "primary" : "secondary"} loading={pending} onClick={toggleDoneMark}>
+            <Check className="size-4" strokeWidth={3} /> {done ? "Сделано" : "Готово"}
           </Button>
         )}
         {!hw.original && candidates.length > 0 && (
@@ -259,7 +276,7 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
       {canEditOrig && (
         <button
           type="button"
-          className="mx-auto flex items-center gap-1.5 text-[13px] text-dim"
+          className="mx-auto flex min-h-10 items-center gap-1.5 px-3 text-[13px] text-dim"
           onClick={() => {
             if (window.confirm("Удалить запись? Дополнения и комментарии уйдут вместе с ней.")) run(() => deleteHomework(hw.id));
           }}
@@ -300,7 +317,6 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
             {hw.attachments.map((a) => (
               <div key={a.id} className="relative">
                 {a.mime.startsWith("image/") ? (
-                  // eslint-disable-next-line @next/next/no-img-element
                   <img src={a.url} alt={a.name} className="size-24 rounded-md object-cover hairline" />
                 ) : (
                   <div className="flex h-24 w-36 flex-col justify-between rounded-md bg-surface-2 p-2 hairline">
@@ -350,7 +366,7 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
       </Sheet>
 
       <Sheet open={sheet === "dup"} onClose={() => setSheet(null)} title="Дубль какой записи?">
-        <p className="mb-3 text-[13px] text-muted">Запись свернётся и будет вести на оригинал. Снять отметку сможешь ты или админ.</p>
+        <p className="mb-3 text-[13px] text-muted">Запись свернётся и будет вести на оригинал. Снять отметку сможешь ты, автор записи или староста.</p>
         <ul className="space-y-2">
           {candidates.map((c) => (
             <li key={c.id}>
@@ -393,7 +409,7 @@ export function HwDetail({ hw, me, today, candidates, subjects }: Props) {
           </Button>
           <p className="text-[12px] text-dim">В ленту «Что нового» попадёт только существенная правка: другой предмет, дедлайн или текст. Опечатки — нет.</p>
           <p className="text-[12px] text-dim">Новый дедлайн разбудит группу пушем, если он ещё не прошёл. Правка текста и смена предмета молчат.</p>
-          {hw.done && (
+          {done && (
             <p className="flex items-center gap-1 text-[12px] text-dim">
               <Undo2 className="size-3" /> Отметка «сделано» останется твоей личной
             </p>

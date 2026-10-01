@@ -1,6 +1,7 @@
 "use client";
 
 import { forwardRef, useState, type InputHTMLAttributes, type TextareaHTMLAttributes } from "react";
+import { CalendarDays } from "lucide-react";
 import { maskTime, toHm } from "@/lib/time-mask";
 import { cn } from "@/lib/utils";
 
@@ -11,25 +12,47 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   return <input ref={ref} className={cn(base, className)} {...props} />;
 });
 
+// Подсказка и иконка только там, где нативное пустое поле — пустая коробка: `-webkit-touch-callout` есть лишь в iOS WebKit,
+// так что `@supports (-webkit-touch-callout: none)` — это iPhone/iPad. Остальные браузеры рисуют свои сегменты и пикер.
+const iosOnly = "supports-[-webkit-touch-callout:none]:flex";
+
 /**
  * Дата. Safari на iPhone рисует своё поле, которое не сжимается и обрезает значение справа:
  * снимаем нативный вид, разрешаем сжиматься (min-w-0) и прижимаем значение влево.
+ * Плейсхолдер у type="date" там не рисуется, поэтому пустое поле подписываем сами («дд.мм.гггг» + календарь).
  */
 export const DateInput = forwardRef<HTMLInputElement, Omit<InputHTMLAttributes<HTMLInputElement>, "type">>(function DateInput(
-  { className, ...props },
+  { className, value, defaultValue, onChange, ...props },
   ref,
 ) {
+  // `:not([value])` на ввод не реагирует — пустоту ведём сами: по value у управляемого поля, по onChange у неуправляемого.
+  const [typedEmpty, setTypedEmpty] = useState(() => !defaultValue);
+  const empty = value !== undefined ? !value : typedEmpty;
   return (
-    <Input
-      ref={ref}
-      type="date"
-      className={cn(
-        // min-h — чтобы поле осталось тап-таргетом, даже если Safari схлопнет высоту значения.
-        "min-h-12 min-w-0 appearance-none [&::-webkit-date-and-time-value]:m-0 [&::-webkit-date-and-time-value]:text-left",
-        className,
-      )}
-      {...props}
-    />
+    <div className="relative">
+      <Input
+        ref={ref}
+        type="date"
+        value={value}
+        defaultValue={defaultValue}
+        data-empty={empty ? "" : undefined}
+        className={cn(
+          // min-h — чтобы поле осталось тап-таргетом, даже если Safari схлопнет высоту значения.
+          "min-h-12 min-w-0 appearance-none [&::-webkit-date-and-time-value]:m-0 [&::-webkit-date-and-time-value]:text-left",
+          "supports-[-webkit-touch-callout:none]:pr-11",
+          className,
+        )}
+        onChange={(e) => {
+          setTypedEmpty(!e.target.value);
+          onChange?.(e);
+        }}
+        {...props}
+      />
+      <span aria-hidden="true" className={cn("pointer-events-none absolute inset-0 hidden items-center px-4 text-dim", iosOnly)}>
+        {empty && <span className="text-[15px]">дд.мм.гггг</span>}
+        <CalendarDays className="ml-auto size-4 shrink-0" />
+      </span>
+    </div>
   );
 });
 

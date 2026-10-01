@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { and, count, eq, desc } from "drizzle-orm";
 import { Activity, CalendarPlus, ChevronRight, DatabaseBackup, KeyRound, Users2, BookMarked, Wallet } from "lucide-react";
-import { diagnostics, lastBackup, polzaBalance } from "@/lib/admin/status";
+import { diagnostics, polzaBalance } from "@/lib/admin/status";
 import { signScoped } from "@/lib/files/token";
 import { storage } from "@/lib/storage";
 import { db } from "@/lib/db";
@@ -31,10 +31,10 @@ export default async function AdminHome() {
   const today = todayIso();
   const monthStart = monthStartIso(today);
   // Карточка помощника — не повод ронять обзор: при ошибке базы её просто не будет, как нет данных у Polza/бэкапа.
-  const [polza, backup, diag, assistantMonth] =
-    user.role === "admin"
-      ? await Promise.all([polzaBalance(), lastBackup(), diagnostics(), monthFinance(user.groupId, monthStart, today).catch(() => null)])
-      : [null, null, null, null];
+  // Диагностика уже листает хранилище ради даты бэкапа — второй листинг R2 для карточки не нужен.
+  const [polza, diag, assistantMonth] =
+    user.role === "admin" ? await Promise.all([polzaBalance(), diagnostics(), monthFinance(user.groupId, monthStart, today).catch(() => null)]) : [null, null, null];
+  const backup = diag?.lastBackupDay ?? null;
   const assistant = withDefaults(group?.assistantSettings);
 
   return (
@@ -45,7 +45,7 @@ export default async function AdminHome() {
         <Card className="space-y-3">
           <div className="flex items-center justify-between">
             <div className="font-display text-lg font-bold">Расписание</div>
-            <Link href="/admin/schedule" className="text-[13px] font-medium text-muted">Все недели</Link>
+            <Link href="/admin/schedule" className="-my-2 inline-flex min-h-10 items-center text-[13px] font-medium text-muted">Все недели</Link>
           </div>
           <WeekLine label="Эта неделя" monday={thisMonday} week={current} />
           <WeekLine label="Следующая" monday={nextMonday} week={next} />
@@ -80,10 +80,10 @@ export default async function AdminHome() {
               <DatabaseBackup className="size-4" /> <span className="text-[12px] font-medium">Бэкап</span>
             </div>
             <div className="mt-2 font-display text-xl font-bold tnum">{backup ?? "нет"}</div>
-            <div className="truncate text-[11px] text-dim">{storage.kind === "r2" ? "ежедневно в R2" : process.env.VERCEL ? "R2 не подключён — бэкапов нет" : "локальная папка"}</div>
+            <div className="truncate text-[11px] text-dim">{storage.kind === "r2" ? "ежедневно в R2" : env.onVercel ? "R2 не подключён — бэкапов нет" : "локальная папка"}</div>
             <a
               href={`/api/admin/backup?u=${user.id}&t=${signScoped(`backup:${user.id}`, 3600_000)}`}
-              className="mt-2 inline-block text-[12px] font-semibold text-accent"
+              className="-mb-2 mt-1 inline-flex min-h-10 items-center text-[12px] font-semibold text-accent"
             >
               Скачать сейчас
             </a>
@@ -103,10 +103,10 @@ export default async function AdminHome() {
             <DiagRow ok={diag.storage.ok} text={diag.storage.line} />
             <DiagRow ok={diag.backup.ok} text={diag.backup.line} />
             <DiagRow
-              ok={Boolean(diag.lastCron?.ok)}
+              ok={Boolean(diag.lastCron?.ok) && !diag.cronStale}
               text={
                 diag.lastCron
-                  ? `Cron ${diag.lastCron.ok ? "прошёл" : "упал"} ${diag.lastCron.ranAt.toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Yekaterinburg" })}${diag.lastCron.error ? `: ${diag.lastCron.error}` : ""}`
+                  ? `Cron ${diag.lastCron.ok ? "прошёл" : "упал"} ${diag.lastCron.ranAt.toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: env.tz })}${diag.lastCron.error ? `: ${diag.lastCron.error}` : ""}${diag.cronStale ? " — с тех пор прогоны не доходят (нет записи больше полутора суток)" : ""}`
                   : "Cron ещё не запускался (работает только на production)"
               }
             />
@@ -116,9 +116,20 @@ export default async function AdminHome() {
             <DiagRow ok={diag.errors24h === 0} text={diag.errors24h < 0 ? "Журнал ошибок недоступен" : diag.errors24h === 0 ? "Ошибок за сутки нет" : `Ошибок за сутки: ${diag.errors24h}`} />
             {diag.lastErrors.map((e, i) => (
               <li key={i} className="truncate pl-6 text-[12px] text-dim">
+                {e.digest && <span className="font-mono">{e.digest.slice(0, 8)} · </span>}
                 {e.route ?? "?"}: {e.message}
               </li>
             ))}
+            {env.push.configured && (
+              <DiagRow
+                ok={diag.push.total >= 0 && diag.push.failing === 0}
+                text={
+                  diag.push.total < 0
+                    ? "Подписки на пуши: таблица недоступна"
+                    : `Подписок на пуши: ${diag.push.total}${diag.push.failing ? ` · со сбоями: ${diag.push.failing}${diag.push.lastError ? ` (${diag.push.lastError})` : ""}` : ""}`
+                }
+              />
+            )}
             <DiagRow
               ok={polza?.balance !== null && polza?.balance !== undefined && polza.balance >= 20}
               text={polza?.balance !== null && polza?.balance !== undefined ? `Polza: ${polza.balance.toFixed(0)} ₽${polza.balance < 20 ? " — пополни" : ""}` : `Polza: ${polza?.error ?? "нет данных"}`}
@@ -142,7 +153,7 @@ export default async function AdminHome() {
             <div className="text-[13px] text-muted">Инвайт-код группы</div>
             <div className="font-display text-xl font-bold tracking-wider">{group?.inviteCode}</div>
           </div>
-          <Link href="/admin/settings" className="text-[13px] font-medium text-muted">Сменить</Link>
+          <Link href="/admin/settings" className="-my-2 inline-flex min-h-10 items-center text-[13px] font-medium text-muted">Сменить</Link>
         </Card>
       )}
     </div>

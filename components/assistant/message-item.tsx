@@ -2,10 +2,18 @@
 
 import { memo } from "react";
 import dynamic from "next/dynamic";
-import { FileText, RotateCw, Zap } from "lucide-react";
+import { Copy, FileText, RotateCw, Zap } from "lucide-react";
 import { ImageGrid } from "@/components/ui/image-grid";
+import { useToast } from "@/components/ui/toast";
 import { toolLabel } from "@/lib/assistant/client/format";
 import type { UiMessage, replyStage } from "@/lib/assistant/client/chat-state";
+
+/**
+ * Срок хранения текстов бесед (lib/ops/health.ts, ASSISTANT_CONTENT_RETENTION_DAYS): старше — текст стёрт cron-ом.
+ * Момент берём при загрузке модуля, а не в рендере (правило purity React Compiler): точность в часы тут не нужна.
+ */
+const RETENTION_MS = 180 * 86_400_000;
+const LOADED_AT = Date.now();
 
 /**
  * react-markdown с remark-gfm — отдельным чанком: на хабе и в списке бесед он не нужен. На сервере рендерится
@@ -45,6 +53,7 @@ const statusNote = (m: UiMessage) => m.note ?? (m.status === "error" ? "Отве
  * остальные пузыри (и их markdown) не перерисовываются на каждый кусок текста.
  */
 export const MessageItem = memo(function MessageItem({ m, stage, canRetry, onRetry }: { m: UiMessage; stage: Stage; canRetry: boolean; onRetry: (key: string) => void }) {
+  const toast = useToast();
   const images = m.attachments.filter((a) => a.mime.startsWith("image/"));
   const docs = m.attachments.filter((a) => !a.mime.startsWith("image/"));
 
@@ -73,13 +82,32 @@ export const MessageItem = memo(function MessageItem({ m, stage, canRetry, onRet
 
   // Пока ответ ждём с сервера, подпись «прервался» не показываем: он, скорее всего, ещё придёт целиком.
   const note = stage?.kind === "awaiting" ? null : statusNote(m);
-  const silent = !m.content && !stage && m.status === "done";
+  // Пустой текст у старого ответа — не «молчание», а ретенция: cron стирает тексты старше ASSISTANT_CONTENT_RETENTION_DAYS.
+  const trimmed = !m.content && !stage && m.status === "done" && LOADED_AT - Date.parse(m.createdAt) > RETENTION_MS;
+  const silent = !m.content && !stage && m.status === "done" && !trimmed;
   const label = stage?.kind === "tool" ? toolLabel(stage.name) : stage?.kind === "awaiting" ? "ответ ещё готовится…" : "думает…";
+  // Копируем исходный markdown целиком: выделить таблицу или список долгим нажатием на iPhone получается через раз.
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(m.content);
+      toast("Скопировано", "ok");
+    } catch {
+      toast("Не скопировалось — выдели текст пальцем");
+    }
+  };
   return (
     <div className="pr-2 text-[15px] leading-relaxed">
       {m.content && <Markdown text={m.content} />}
       {stage && <Thinking label={label} />}
       {silent && <p className="text-muted">Помощник ничего не ответил — спроси иначе</p>}
+      {trimmed && <p className="text-dim">Текст удалён по сроку хранения</p>}
+      {m.status === "done" && m.content && !stage && (
+        <div className="-ml-2.5 mt-1">
+          <button type="button" onClick={copy} className="flex min-h-10 items-center gap-1.5 rounded-full px-2.5 text-[13px] font-medium text-dim active:bg-surface-2">
+            <Copy className="size-3.5" /> Скопировать
+          </button>
+        </div>
+      )}
       {note && (
         <div className="mt-1 flex flex-wrap items-center gap-x-1 text-[13px] text-dim">
           <span>{note}</span>

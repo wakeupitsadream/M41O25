@@ -1,15 +1,16 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useGuardedRouter } from "@/components/features/nav-guard";
+import { useRouter } from "next/navigation";
 import { EyeOff, ListChecks, Plus, X } from "lucide-react";
 import { createPoll } from "@/app/(app)/group/actions";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
+import { safeAction } from "@/lib/client/safe-action";
 import { cn } from "@/lib/utils";
 
 export function PollForm() {
-  const router = useGuardedRouter();
+  const router = useRouter();
   const [pending, start] = useTransition();
   const [question, setQuestion] = useState("");
   const [options, setOptions] = useState(["", ""]);
@@ -63,7 +64,9 @@ export function PollForm() {
         disabled={question.trim().length < 3 || filled.length < 2}
         onClick={() =>
           start(async () => {
-            const res = await createPoll({ question, options: filled, isMulti, isAnonymous, closesAt });
+            // Без сети action падает исключением: safeAction покажет причину в строке ошибки, набранное останется (ревью UI-01).
+            const res = await safeAction(() => createPoll({ question, options: filled, isMulti, isAnonymous, closesAt }), setError);
+            if (!res) return;
             if (!res.ok) return setError(res.error);
             router.replace("/group/polls");
           })

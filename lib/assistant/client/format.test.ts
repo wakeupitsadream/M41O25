@@ -14,10 +14,10 @@ test("ddmm: день и месяц с ведущими нулями, не-дат
 test("accessHint: подсказка на плитке по каждому состоянию", () => {
   assert.equal(accessHint({ access: { kind: "none" }, settings }), "7 дней бесплатно");
   assert.equal(accessHint({ access: { kind: "none" }, settings: { ...settings, trialDays: 3 } }), "3 дня бесплатно");
-  assert.equal(accessHint({ access: { kind: "none" }, settings: { ...settings, trialDays: 0 } }), "200 ₽ в месяц", "без триала — сразу цена");
+  assert.equal(accessHint({ access: { kind: "none" }, settings: { ...settings, trialDays: 0 } }), "200 ₽ за 30 дней", "без триала — сразу цена");
   assert.equal(accessHint({ access: { kind: "trial", until: "2026-09-30" }, settings }), "пробная до 30.09");
   assert.equal(accessHint({ access: { kind: "paid", until: "2026-10-24" }, settings }), "оплачено до 24.10");
-  assert.equal(accessHint({ access: { kind: "expired", since: "2026-09-20" }, settings: { ...settings, priceRub: 250 } }), "250 ₽ в месяц");
+  assert.equal(accessHint({ access: { kind: "expired", since: "2026-09-20" }, settings: { ...settings, priceRub: 250 } }), "250 ₽ за 30 дней");
 });
 
 test("toolLabel: известные инструменты по-русски, незнакомый — общая фраза", () => {

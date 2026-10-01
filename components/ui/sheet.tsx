@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { AnimatePresence, motion, useDragControls } from "motion/react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -56,6 +56,8 @@ export function Sheet({ open, onClose, title, children, className }: SheetProps)
   const closeRef = useRef(onClose);
   // Клавиатура iOS не меняет layout viewport: следим за visualViewport и поднимаем лист над клавиатурой.
   const [kb, setKb] = useState<{ height: number; offset: number } | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
 
   useEffect(() => {
     if (!open) return;
@@ -100,6 +102,15 @@ export function Sheet({ open, onClose, title, children, className }: SheetProps)
     // на каждый ре-рендер ломала бы восстановление скролла (особенно у шторки поверх шторки).
   }, [open]);
 
+  // Фокус: при открытии — на панель (VoiceOver читает заголовок, а не остаётся под оверлеем), при закрытии —
+  // обратно на элемент, который шторку открыл. Ловушки фокуса нет: aria-modal прячет остальное от читалки.
+  useEffect(() => {
+    if (!open) return;
+    const opener = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
+    panelRef.current?.focus({ preventScroll: true });
+    return () => opener?.focus({ preventScroll: true });
+  }, [open]);
+
   return (
     <AnimatePresence>
       {open && (
@@ -112,14 +123,16 @@ export function Sheet({ open, onClose, title, children, className }: SheetProps)
             exit={{ opacity: 0 }}
             transition={{ duration: 0.2 }}
             onClick={onClose}
-            onTouchMove={(e) => e.preventDefault()}
           />
           <motion.div
             key="panel"
+            ref={panelRef}
             role="dialog"
             aria-modal
+            aria-labelledby={title ? titleId : undefined}
+            tabIndex={-1}
             className={cn(
-              "fixed inset-x-0 bottom-0 z-50 mx-auto max-w-lg rounded-t-xl bg-surface shadow-float hairline",
+              "fixed inset-x-0 bottom-0 z-50 mx-auto max-w-lg rounded-t-xl bg-surface shadow-float outline-none hairline",
               "max-h-[92dvh] overflow-y-auto overscroll-contain scrollbar-none",
               className,
             )}
@@ -148,12 +161,16 @@ export function Sheet({ open, onClose, title, children, className }: SheetProps)
             >
               <div className="h-1.5 w-10 rounded-full bg-border-strong" />
               <div className="flex w-full items-center justify-between px-5 pb-2 pt-3">
-                <h2 className="font-display text-lg font-bold">{title}</h2>
+                {title && (
+                  <h2 id={titleId} className="font-display text-lg font-bold">
+                    {title}
+                  </h2>
+                )}
                 <button
                   type="button"
                   onClick={onClose}
                   aria-label="Закрыть"
-                  className="grid size-9 place-items-center rounded-full bg-surface-2 text-muted active:scale-95"
+                  className="ml-auto grid size-10 place-items-center rounded-full bg-surface-2 text-muted active:scale-95"
                 >
                   <X className="size-4" />
                 </button>

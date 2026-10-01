@@ -45,14 +45,14 @@ export default async function MePage() {
 
         {hasRole(user, "moderator") && (
           <Link href="/admin" className="flex items-center gap-3 rounded-lg bg-surface p-4 hairline active:bg-surface-2">
-            <ShieldCheck className="size-5 text-accent" />
+            <ShieldCheck className="size-5 text-muted" />
             <span className="flex-1 font-medium">Админка</span>
             <ChevronRight className="size-4 text-dim" />
           </Link>
         )}
 
         <Card>
-          <form action={updateProfile} className="space-y-3">
+          <ActionForm action={updateProfile} className="space-y-3">
             <div className="font-display text-[16px] font-bold">О себе</div>
             <div className="grid grid-cols-[1fr_5rem] gap-3">
               <Field label="Как тебя называть">
@@ -62,13 +62,14 @@ export default async function MePage() {
                 <Input name="avatarEmoji" defaultValue={user.avatarEmoji} className="text-center text-xl" maxLength={8} />
               </Field>
             </div>
-            <Field label="День рождения" hint="Покажем группе в разделе «Дни рождения». Можно не указывать.">
+            <p className="-mt-1.5 text-[13px] text-dim">Эмодзи — твоя аватарка в ленте и комментариях. Сотрёшь — будет 🙂.</p>
+            <Field label="День рождения" hint="Группе видны только день и месяц, год никто не увидит. Можно не указывать.">
               <DateInput name="birthday" defaultValue={user.birthday ?? ""} />
             </Field>
             <SubmitButton variant="secondary" className="w-full">
               Сохранить
             </SubmitButton>
-          </form>
+          </ActionForm>
         </Card>
 
         <Card>
@@ -95,7 +96,7 @@ export default async function MePage() {
 
         <HwDoneSwitch value={user.showHwDone} />
 
-        <p className="px-1 text-[12px] leading-relaxed text-dim">Удалиться из группы — напиши админу: он убирает профиль из списка, записи остаются без имени.</p>
+        <p className="px-1 text-[12px] leading-relaxed text-dim">Удалиться из группы — напиши админу: он закроет вход и уберёт тебя из списка. Твои записи и имя под ними останутся — это история группы.</p>
 
         <form action={logout}>
           <button type="submit" className="flex w-full items-center gap-3 rounded-lg bg-surface p-4 text-danger hairline active:bg-surface-2">

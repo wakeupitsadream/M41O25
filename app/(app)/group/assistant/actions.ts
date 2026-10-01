@@ -35,7 +35,7 @@ export async function startTrial(): Promise<ActionResult<{ until: string }>> {
   return wrapAction(async () => {
     const user = await actionUser();
     const settings = getSettings(user.group);
-    if (!settings.enabled) return fail("Помощник пока выключен — спроси у старосты");
+    if (!settings.enabled) return fail("Помощник пока выключен — его включает админ");
     if (settings.trialDays <= 0) return fail("Пробного периода нет — доступ включает админ после оплаты");
     const today = todayIso();
     const status = accessStatus(today, await getAccessRow(user.id));

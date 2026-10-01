@@ -9,6 +9,7 @@ import { dueLabel } from "@/lib/hw/format";
 import { toggleDone } from "@/app/(app)/hw/actions";
 import { Avatar, Badge } from "@/components/ui/primitives";
 import { cn, displayName } from "@/lib/utils";
+import { safeAction } from "@/lib/client/safe-action";
 import { useToast } from "@/components/ui/toast";
 
 export function HwCard({ item, today, showDone, index = 0 }: { item: HwListItem; today: string; showDone: boolean; index?: number }) {
@@ -71,15 +72,17 @@ export function HwCard({ item, today, showDone, index = 0 }: { item: HwListItem;
         <button
           type="button"
           aria-label={done ? "Снять отметку" : "Сделано"}
-          onClick={() =>
+          onClick={(e) => {
+            // Кнопка лежит поверх Link: тап по ней не должен заодно открыть карточку.
+            e.preventDefault();
             start(async () => {
               setDone(!done);
-              const res = await toggleDone(item.id);
-              if (!res.ok) toast(res.error ?? "Отметка не сохранилась");
-            })
-          }
+              const res = await safeAction(() => toggleDone(item.id), toast);
+              if (res && !res.ok) toast(res.error ?? "Отметка не сохранилась");
+            });
+          }}
           className={cn(
-            "absolute right-3 top-3 grid size-8 place-items-center rounded-full transition active:scale-90",
+            "absolute right-2 top-2 grid size-10 place-items-center rounded-full transition active:scale-90",
             done ? "bg-accent text-accent-ink" : "bg-surface-2 text-dim hairline",
           )}
         >

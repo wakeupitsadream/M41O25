@@ -1,6 +1,6 @@
 "use client";
 
-import { useGuardedRouter } from "@/components/features/nav-guard";
+import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { FileText, Pin, PinOff, Trash2 } from "lucide-react";
 import { motion } from "motion/react";
@@ -12,10 +12,11 @@ import { Linkify } from "@/components/ui/linkify";
 import { ImageGrid } from "@/components/ui/image-grid";
 import { ReactionBar } from "./reaction-bar";
 import { cn, displayName } from "@/lib/utils";
+import { safeAction } from "@/lib/client/safe-action";
 import { useToast } from "@/components/ui/toast";
 
 export function NewsCard({ item, canManage, isAdmin, meId }: { item: NewsItem; canManage: boolean; isAdmin: boolean; meId: string }) {
-  const router = useGuardedRouter();
+  const router = useRouter();
   const toast = useToast();
   const [pending, start] = useTransition();
   const images = item.attachments.filter((a) => a.mime.startsWith("image/"));
@@ -26,20 +27,20 @@ export function NewsCard({ item, canManage, isAdmin, meId }: { item: NewsItem; c
     <motion.article
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      className={cn("rounded-lg bg-surface p-4 hairline", item.pinned && "ring-1 ring-accent/50")}
+      className={cn("rounded-lg bg-surface p-4 hairline", item.pinned && "ring-1 ring-warn/40")}
     >
       <div className="flex items-center gap-2 text-[12px] text-muted">
         <Avatar user={item.author} size="xs" />
         <span className="font-semibold text-fg">{displayName(item.author)}</span>
         <span>{fmtDateTime(item.createdAt)}</span>
         {item.pinned && (
-          <Badge tone="accent">
+          <Badge tone="warn">
             <Pin className="size-3" /> закреп
           </Badge>
         )}
         <span className="flex-1" />
         {canManage && (
-          <button type="button" aria-label={item.pinned ? "Открепить" : "Закрепить"} disabled={pending} className="-my-2 grid size-10 shrink-0 place-items-center text-dim" onClick={() => start(async () => { const res = await togglePinNews(item.id); if (!res.ok) toast(res.error ?? "Не получилось"); router.refresh(); })}>
+          <button type="button" aria-label={item.pinned ? "Открепить" : "Закрепить"} disabled={pending} className="-my-2 grid size-10 shrink-0 place-items-center text-dim" onClick={() => start(async () => { const res = await safeAction(() => togglePinNews(item.id), toast); if (!res) return; if (!res.ok) toast(res.error ?? "Не получилось"); router.refresh(); })}>
             {item.pinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
           </button>
         )}
@@ -50,7 +51,7 @@ export function NewsCard({ item, canManage, isAdmin, meId }: { item: NewsItem; c
             disabled={pending}
             className="-my-2 -mr-2 grid size-10 shrink-0 place-items-center text-dim"
             onClick={() => {
-              if (window.confirm("Удалить новость?")) start(async () => { const res = await deleteNews(item.id); if (!res.ok) toast(res.error ?? "Не получилось"); router.refresh(); });
+              if (window.confirm("Удалить новость?")) start(async () => { const res = await safeAction(() => deleteNews(item.id), toast); if (!res) return; if (!res.ok) toast(res.error ?? "Не получилось"); router.refresh(); });
             }}
           >
             <Trash2 className="size-4" />

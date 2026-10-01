@@ -18,7 +18,9 @@ const html = (size, { maskable = false, radius = 0.22 } = {}) => `<!doctype html
   .r b{color:#c8ff2e;font-weight:800}
 </style></head><body><div class="tile"><div class="glow"></div><div class="r">R<b>.</b></div></div></body></html>`;
 
-const browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM ?? "/opt/pw-browsers/chromium" });
+// PW_CHROMIUM — путь к системному Chromium (песочница разработки); без него Playwright берёт свой браузер
+// (npx playwright install chromium) — так же, как e2e/lib.mjs.
+const browser = await chromium.launch({ executablePath: process.env.PW_CHROMIUM || undefined });
 const page = await browser.newPage({ viewport: { width: 512, height: 512 }, deviceScaleFactor: 1 });
 
 const render = async (file, size, opts) => {

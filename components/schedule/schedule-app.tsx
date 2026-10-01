@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion, type Variants } from "motion/react";
 import { WifiOff } from "lucide-react";
@@ -31,11 +31,12 @@ function parseView(pathname: string, today: string): View {
 
 const viewKey = (v: View) => (v.level === "week" ? `w:${v.weekStart}` : v.level === "day" ? `d:${v.date}` : "semester");
 
-// Погружение: новый уровень «подлетает» из глубины (крупнее и размыт), предыдущий уходит назад.
+// Погружение: новый уровень «подлетает» из глубины (крупнее), предыдущий уходит назад. Без blur: размытие двух
+// полноэкранных слоёв дорого на старых iPhone, а opacity+scale честно гасятся MotionConfig reducedMotion.
 const depthVariants: Variants = {
-  enter: (dir: number) => ({ opacity: 0, scale: dir >= 0 ? 1.06 : 0.94, filter: "blur(8px)" }),
-  center: { opacity: 1, scale: 1, filter: "blur(0px)" },
-  exit: (dir: number) => ({ opacity: 0, scale: dir >= 0 ? 0.94 : 1.06, filter: "blur(8px)" }),
+  enter: (dir: number) => ({ opacity: 0, scale: dir >= 0 ? 1.06 : 0.94 }),
+  center: { opacity: 1, scale: 1 },
+  exit: (dir: number) => ({ opacity: 0, scale: dir >= 0 ? 0.94 : 1.06 }),
 };
 
 const depthTransition = { type: "spring", stiffness: 300, damping: 34, mass: 0.9 } as const;
@@ -66,13 +67,23 @@ export function ScheduleApp({ initialData, serverToday, weather = null }: { init
 
   // Сколько раз мы сами углублялись — чтобы «назад» уходил по истории, а не выбрасывал из приложения.
   const pushed = useRef(0);
+  // Прокрутка экранов, с которых уходили по истории (ключ экрана → scrollY). Next держит history.scrollRestoration
+  // в "manual", поэтому при возврате восстанавливаем её сами; прямой переход вперёд по-прежнему начинается с верха.
+  const scrollMemo = useRef(new Map<string, number>());
+  const restorePending = useRef(false);
   const toTop = () => window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
-  const go = useCallback((path: string) => {
-    window.history.pushState(null, "", path);
-    pushed.current += 1;
-    toTop();
-  }, []);
+  const go = useCallback(
+    (path: string) => {
+      scrollMemo.current.set(key, window.scrollY);
+      restorePending.current = false;
+      window.history.pushState(null, "", path);
+      pushed.current += 1;
+      toTop();
+    },
+    [key],
+  );
   const replace = useCallback((path: string) => {
+    restorePending.current = false;
     window.history.replaceState(null, "", path);
     toTop();
   }, []);
@@ -87,10 +98,19 @@ export function ScheduleApp({ initialData, serverToday, weather = null }: { init
   useEffect(() => {
     const onPop = () => {
       pushed.current = Math.max(0, pushed.current - 1);
+      // Экран ещё старый: запоминаем его прокрутку (вперёд по истории тоже вернёт на место) и просим восстановить новый.
+      scrollMemo.current.set(key, window.scrollY);
+      restorePending.current = true;
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, []);
+  }, [key]);
+  // Экран сменился по истории — возвращаем прокрутку до отрисовки кадра, чтобы неделя не мелькнула с чужой позиции.
+  useLayoutEffect(() => {
+    if (!restorePending.current) return;
+    restorePending.current = false;
+    window.scrollTo({ top: scrollMemo.current.get(key) ?? 0, behavior: "instant" as ScrollBehavior });
+  }, [key]);
 
   const openDay = useCallback((date: string) => go(`/s/d/${date}`), [go]);
   const openWeek = useCallback((monday: string) => go(`/s/w/${monday}`), [go]);
@@ -173,7 +193,7 @@ export function ScheduleApp({ initialData, serverToday, weather = null }: { init
           exit="exit"
           transition={depthTransition}
           className="min-h-dvh origin-center"
-          style={{ willChange: "transform, opacity, filter" }}
+          style={{ willChange: "transform, opacity" }}
         >
           {view.level === "week" && (
             <WeekView

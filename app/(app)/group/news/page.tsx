@@ -5,6 +5,7 @@ import { listNews } from "@/lib/group/query";
 import { EmptyState } from "@/components/ui/primitives";
 import { SubHeader } from "@/components/group/sub-header";
 import { NewsCard } from "@/components/group/news-card";
+import { pluralRu } from "@/lib/utils";
 
 export const metadata = { title: "Новости" };
 export const dynamic = "force-dynamic";
@@ -18,7 +19,7 @@ export default async function NewsPage() {
     <>
       <SubHeader
         title="Новости"
-        subtitle={`${items.length ? items.length : "пока нет"} ${items.length ? "записей" : ""}`}
+        subtitle={items.length ? `${items.length} ${pluralRu(items.length, "запись", "записи", "записей")}` : "пока нет"}
         right={
           canPost ? (
             <Link href="/group/news/new" className="flex h-10 items-center gap-1.5 rounded-full bg-accent px-4 text-[14px] font-semibold text-accent-ink active:bg-accent-press">

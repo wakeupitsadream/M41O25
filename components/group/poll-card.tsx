@@ -1,18 +1,19 @@
 "use client";
 
-import { useGuardedRouter } from "@/components/features/nav-guard";
+import { useRouter } from "next/navigation";
 import { useOptimistic, useTransition } from "react";
 import { Check, EyeOff, Lock, Trash2, Undo2 } from "lucide-react";
 import { motion } from "motion/react";
 import type { PollItem } from "@/lib/group/query";
 import { deletePoll, setPollClosed, vote } from "@/app/(app)/group/actions";
 import { fmtDateTime } from "@/lib/hw/format";
+import { safeAction } from "@/lib/client/safe-action";
 import { Avatar, Badge } from "@/components/ui/primitives";
 import { useToast } from "@/components/ui/toast";
 import { cn, displayName, pluralRu } from "@/lib/utils";
 
 export function PollCard({ poll, me }: { poll: PollItem; me: { id: string; isMod: boolean; isAdmin: boolean } }) {
-  const router = useGuardedRouter();
+  const router = useRouter();
   const toast = useToast();
   const [pending, start] = useTransition();
   const [state, applyVote] = useOptimistic(poll, (prev: PollItem, optionId: string) => {
@@ -62,7 +63,15 @@ export function PollCard({ poll, me }: { poll: PollItem; me: { id: string; isMod
               <button
                 type="button"
                 disabled={state.closed || pending}
-                onClick={() => start(async () => { applyVote(o.id); const res = await vote(poll.id, o.id); if (!res.ok) toast(res.error ?? "Голос не принят"); router.refresh(); })}
+                onClick={() =>
+                  start(async () => {
+                    applyVote(o.id);
+                    // Без router.refresh(): vote делает revalidatePath, и свежий опрос приходит в ответе самого действия;
+                    // при отказе или без сети — тост, оптимистичный голос откатится по завершении transition (ревью PERF-11, UI-01).
+                    const res = await safeAction(() => vote(poll.id, o.id), toast);
+                    if (res && !res.ok) toast(res.error ?? "Голос не принят");
+                  })
+                }
                 className={cn("relative w-full overflow-hidden rounded-md px-3.5 py-3 text-left hairline transition active:scale-[0.99]", mine ? "ring-1 ring-accent/70" : "")}
               >
                 <motion.span
@@ -72,7 +81,7 @@ export function PollCard({ poll, me }: { poll: PollItem; me: { id: string; isMod
                   transition={{ type: "spring", stiffness: 160, damping: 24 }}
                 />
                 <span className="relative flex items-center gap-2">
-                  <span className={cn("grid size-5 shrink-0 place-items-center rounded-full border-2", mine ? "border-accent bg-accent text-accent-ink" : "border-border-strong")}>
+                  <span className={cn("grid size-5 shrink-0 place-items-center rounded-full border-2", mine ? "border-accent bg-accent text-accent-ink" : "border-muted/70")}>
                     {mine && <Check className="size-3" strokeWidth={3} />}
                   </span>
                   <span className="flex-1 text-[15px] font-medium">{o.text}</span>
@@ -99,7 +108,7 @@ export function PollCard({ poll, me }: { poll: PollItem; me: { id: string; isMod
         {poll.closesAt && !state.closed && <span>· до {fmtDateTime(poll.closesAt)}</span>}
         <span className="flex-1" />
         {canManage && (
-          <button type="button" className="-my-2 flex h-10 items-center gap-1 text-dim" disabled={pending} onClick={() => start(async () => { const res = await setPollClosed(poll.id, !state.closed); if (!res.ok) toast(res.error ?? "Не получилось"); router.refresh(); })}>
+          <button type="button" className="-my-2 flex h-10 items-center gap-1 text-dim" disabled={pending} onClick={() => start(async () => { const res = await safeAction(() => setPollClosed(poll.id, !state.closed), toast); if (!res) return; if (!res.ok) toast(res.error ?? "Не получилось"); router.refresh(); })}>
             {state.closed ? <Undo2 className="size-3.5" /> : <Lock className="size-3.5" />}
             {state.closed ? "открыть" : "закрыть"}
           </button>
@@ -111,7 +120,7 @@ export function PollCard({ poll, me }: { poll: PollItem; me: { id: string; isMod
             className="-my-2 -mr-2 grid size-10 shrink-0 place-items-center text-dim"
             disabled={pending}
             onClick={() => {
-              if (window.confirm("Удалить опрос?")) start(async () => { const res = await deletePoll(poll.id); if (!res.ok) toast(res.error ?? "Не получилось"); router.refresh(); });
+              if (window.confirm("Удалить опрос?")) start(async () => { const res = await safeAction(() => deletePoll(poll.id), toast); if (!res) return; if (!res.ok) toast(res.error ?? "Не получилось"); router.refresh(); });
             }}
           >
             <Trash2 className="size-3.5" />

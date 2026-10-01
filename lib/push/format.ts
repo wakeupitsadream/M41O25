@@ -11,7 +11,17 @@ export type PushEvent =
   | { kind: "hw_due_moved"; id: string; author: string; subject: string | null; prevDueDate: string; dueDate: string }
   | { kind: "anon_question"; body: string }
   | { kind: "anon_answer"; author: string; body: string }
-  | { kind: "poll"; author: string; question: string };
+  | { kind: "poll"; author: string; question: string }
+  /**
+   * Расписание опубликованной недели. title — название пары как в расписании, subject — короткое имя предмета
+   * («Матан»), если оно есть: в заголовок идёт оно, полное название тогда уходит в тело. date — день пары, startsAt —
+   * «HH:MM». У lesson_changed what — что именно поменялось («аудитория 305», «было 08:30–10:00», «добавлена пара»);
+   * без него тело честно просит проверить расписание.
+   */
+  | { kind: "lesson_cancelled"; title: string; date: string; startsAt: string; subject?: string | null }
+  | { kind: "lesson_restored"; title: string; date: string; startsAt: string; subject?: string | null }
+  | { kind: "lesson_changed"; title: string; date: string; startsAt: string; subject?: string | null; what?: string | null }
+  | { kind: "week_published"; startsOn: string };
 
 const MAX_BODY = 140;
 
@@ -84,6 +94,18 @@ export const pushAuthorName = (user: { fullName: string; nickname: string | null
 const HUSHING = "гкхжчшщ";
 
 /**
+ * Женские имена на «-ь»: третье склонение, родительный на «-и» (Любовь → Любови), а не «-я», как у Игоря.
+ * Список короткий и закрытый — других женских имён на мягкий знак в русском обиходе практически нет.
+ */
+const FEMININE_SOFT = new Set(["любовь", "нинель", "рахиль", "эсфирь"]);
+
+/** Беглая гласная: правилом «+а» не взять (Лев → Лева, Павел → Павела), поэтому словарём. Ключ — имя строчными. */
+const FLEETING_VOWEL: Record<string, string> = { лев: "Льва", павел: "Павла", пётр: "Петра", петр: "Петра" };
+
+/** Форма из словаря в регистре первой буквы исходного имени: «лев» в нике → «льва», а не «Льва». */
+const matchCase = (sample: string, word: string): string => (sample[0] === sample[0].toLowerCase() ? word[0].toLowerCase() + word.slice(1) : word);
+
+/**
  * Родительный падеж имени для «Новость от ___». Русские имена склоняются по нескольким простым правилам;
  * ник латиницей или что-то нераспознаваемое оставляем как есть — лучше «Новость от Nick», чем выдуманное окончание.
  */
@@ -91,7 +113,11 @@ export function genitiveName(name: string): string {
   const n = name.trim();
   const last = n.slice(-1).toLowerCase();
   if (!/[а-яё]/.test(last)) return n;
+  const lower = n.toLowerCase();
+  const irregular = FLEETING_VOWEL[lower];
+  if (irregular) return matchCase(n, irregular);
   const stem = n.slice(0, -1);
+  if (last === "ь" && FEMININE_SOFT.has(lower)) return `${stem}и`; // Любовь → Любови
   if (last === "й" || last === "ь") return `${stem}я`; // Андрей → Андрея, Игорь → Игоря
   if (last === "я") return `${stem}и`; // Илья → Ильи, Мария → Марии
   if (last === "а") return `${stem}${HUSHING.includes(stem.slice(-1).toLowerCase()) ? "и" : "ы"}`; // Ольга → Ольги, Анна → Анны
@@ -106,6 +132,10 @@ const TOPIC_BY_KIND: Record<PushEvent["kind"], PushTopic> = {
   anon_question: "questions",
   anon_answer: "questions",
   poll: "polls",
+  lesson_cancelled: "schedule",
+  lesson_restored: "schedule",
+  lesson_changed: "schedule",
+  week_published: "schedule",
 };
 
 export const topicOf = (kind: PushEvent["kind"]): PushTopic => TOPIC_BY_KIND[kind];
@@ -130,6 +160,59 @@ export function dueDateLabel(iso: string, withYear = false): string {
 
 /** Год из «2026-09-15» — только чтобы сравнить две даты между собой. У строки без года (мусор) — null. */
 const isoYear = (iso: string): string | null => (/^\d{4}-/.test(iso) ? iso.slice(0, 4) : null);
+
+/**
+ * Те же сокращения, что даёт date-fns ru в шапке недели и в ленте (fmtRangeShort → «28 сент — 3 окт»): пуш и экран
+ * называют неделю одинаково. Своя таблица, а не lib/schedule/time — этот модуль без date-fns и без часовых поясов.
+ */
+const MONTHS_SHORT = ["янв", "февр", "мар", "апр", "мая", "июн", "июл", "авг", "сент", "окт", "нояб", "дек"];
+
+/**
+ * Календарный сдвиг ISO-даты на days дней. Date.UTC и getUTC* — это арифметика на числах, а не «момент времени
+ * в поясе сервера»: 2026-09-28 + 5 даст 2026-10-03 на любой машине, и ловушка с UTC-полуночью (см. dueDateLabel)
+ * сюда не относится. Мусор на входе — null.
+ */
+function shiftIso(iso: string, days: number): { y: number; m: number; d: number } | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return null;
+  const t = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + days));
+  if (Number.isNaN(t.getTime()) || Number(m[2]) < 1 || Number(m[2]) > 12 || Number(m[3]) < 1 || Number(m[3]) > 31) return null;
+  return { y: t.getUTCFullYear(), m: t.getUTCMonth(), d: t.getUTCDate() };
+}
+
+/**
+ * «2026-10-05» → «5–10 окт»: учебная неделя с понедельника по субботу, как в заголовке экрана недели. На стыке
+ * месяцев — «28 сент — 3 окт». Непонятную строку возвращаем как есть, по той же логике, что dueDateLabel.
+ */
+export function weekRangeLabel(startsOn: string): string {
+  const a = shiftIso(startsOn, 0);
+  const b = shiftIso(startsOn, 5);
+  if (!a || !b) return startsOn;
+  if (a.m === b.m) return `${a.d}–${b.d} ${MONTHS_SHORT[b.m]}`;
+  return `${a.d} ${MONTHS_SHORT[a.m]} — ${b.d} ${MONTHS_SHORT[b.m]}`;
+}
+
+/**
+ * Заголовок пуша о паре: короткое имя предмета, если оно есть, иначе название пары. Пустые строки и пробелы — это
+ * отсутствие, как и у домашки; совсем без названия заголовок обходится без двоеточия.
+ */
+const lessonLabel = (e: { title: string; subject?: string | null }): string => e.subject?.trim() || e.title.trim();
+
+/** «Отменили пару 2 октября: Матан» — или «Отменили пару 2 октября», если назвать пару нечем. */
+const lessonTitle = (verb: string, e: { title: string; date: string; subject?: string | null }): string => {
+  const head = `${verb} пару ${dueDateLabel(e.date)}`;
+  const label = lessonLabel(e);
+  return label ? `${head}: ${label}` : head;
+};
+
+/**
+ * Тело пуша о паре: время — и полное название, если в заголовке стояло короткое («10:00 · Математический анализ»).
+ * Разделитель «·» тот же, что в карточках дня («3 пары · 08:30–13:40»).
+ */
+const lessonBody = (e: { title: string; startsAt: string; subject?: string | null }): string => {
+  const full = e.title.trim();
+  return e.subject?.trim() && full ? `${e.startsAt} · ${full}` : e.startsAt;
+};
 
 /** Заголовок — что случилось, тело — начало текста. Имя приложения iOS подставит сам, дублировать не нужно. */
 export function buildNotification(event: PushEvent): PushPayload {
@@ -197,5 +280,34 @@ export function buildNotification(event: PushEvent): PushPayload {
       return { title: `Ответ от ${genitiveName(event.author)}`, body: snippet(event.body), url: "/group/questions", tag: "questions" };
     case "poll":
       return { title: `Опрос от ${genitiveName(event.author)}`, body: snippet(event.question), url: "/group/polls", tag: "polls" };
+    case "lesson_cancelled":
+    case "lesson_restored":
+      // Безличные «Отменили»/«Вернули», как у домашки: пола в профиле нет. Дата сразу за глаголом — на экране блокировки
+      // видно около 40 символов, и «Отменили пару 2 октября: » (25) оставляет место под короткое имя предмета; длинное
+      // название обрежется хвостом, как и у «Задали к …». Без «сегодня/завтра»: пуш лежит на экране до утра.
+      return {
+        title: lessonTitle(event.kind === "lesson_cancelled" ? "Отменили" : "Вернули", event),
+        body: snippet(lessonBody(event)),
+        url: `/s/d/${event.date}`,
+        tag: "schedule",
+      };
+    case "lesson_changed":
+      // «Изменили» покрывает и правку, и замену, и новую пару в уже опубликованной неделе — что именно, говорит what.
+      // Нет what — тело не выдумывает, а просит открыть день: лучше честное «проверь расписание», чем ошибочная деталь.
+      return {
+        title: lessonTitle("Изменили", event),
+        body: snippet(`${event.startsAt} · ${event.what?.trim() || "проверь расписание"}`),
+        url: `/s/d/${event.date}`,
+        tag: "schedule",
+      };
+    case "week_published":
+      // Ссылка на саму неделю: открыть и пролистать удобнее, чем гадать по дню. Тег свой — публикация недели и правка
+      // пары в логах должны различаться (send.ts к тегу дописывает время, так что на экране они и так не слипнутся).
+      return {
+        title: `Расписание на ${weekRangeLabel(event.startsOn)} готово`,
+        body: "Посмотри неделю — что-то могло поменяться",
+        url: `/s/w/${event.startsOn}`,
+        tag: "schedule-week",
+      };
   }
 }

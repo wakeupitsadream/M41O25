@@ -36,8 +36,8 @@ export function InstallHint() {
     <AnimatePresence>
       {show && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }} className="relative rounded-lg bg-accent/10 p-4 ring-1 ring-accent/30">
-          <button type="button" aria-label="Скрыть" onClick={dismiss} className="absolute right-3 top-3 grid size-7 place-items-center rounded-full bg-surface-2 text-muted">
-            <X className="size-3.5" />
+          <button type="button" aria-label="Скрыть" onClick={dismiss} className="absolute right-2 top-2 grid size-9 place-items-center rounded-full bg-surface-2 text-muted">
+            <X className="size-4" />
           </button>
           <div className="font-display text-[15px] font-bold">Поставь как приложение</div>
           <p className="mt-1 text-[13px] leading-relaxed text-muted">

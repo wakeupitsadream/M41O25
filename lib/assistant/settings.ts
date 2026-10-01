@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { LIMIT_MAX, LIMIT_MIN, PAYMENT_NOTE_MAX, PRICE_MAX_RUB, TRIAL_MAX_DAYS } from "./limit-rules";
 import type { AssistantSettings, AssistantSettingsStored } from "./types";
 
 /**
@@ -16,11 +17,7 @@ export const DEFAULT_SETTINGS: AssistantSettings = {
   paymentNote: "",
 };
 
-export const PRICE_MAX_RUB = 5000;
-export const LIMIT_MIN = 1;
-export const LIMIT_MAX = 200;
-export const TRIAL_MAX_DAYS = 30;
-export const PAYMENT_NOTE_MAX = 500;
+export { LIMIT_MAX, LIMIT_MIN, PAYMENT_NOTE_MAX, PRICE_MAX_RUB, TRIAL_MAX_DAYS };
 
 /** Одно сообщение на все проверки поля: админу важно, какое поле не так, а не какая именно граница нарушена. */
 const int = (message: string, min: number, max: number) => z.number({ error: message }).int(message).min(min, message).max(max, message);

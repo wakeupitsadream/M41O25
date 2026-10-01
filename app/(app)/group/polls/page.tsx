@@ -5,6 +5,7 @@ import { listPolls } from "@/lib/group/query";
 import { EmptyState } from "@/components/ui/primitives";
 import { SubHeader } from "@/components/group/sub-header";
 import { PollCard } from "@/components/group/poll-card";
+import { pluralRu } from "@/lib/utils";
 
 export const metadata = { title: "Опросы" };
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ export default async function PollsPage() {
     <>
       <SubHeader
         title="Опросы"
-        subtitle={open.length ? `${open.length} активных` : "решаем вместе"}
+        subtitle={open.length ? `${open.length} ${pluralRu(open.length, "активный", "активных", "активных")}` : "решаем вместе"}
         right={
           <Link href="/group/polls/new" className="flex h-10 items-center gap-1.5 rounded-full bg-accent px-4 text-[14px] font-semibold text-accent-ink active:bg-accent-press">
             <Plus className="size-4" /> Опрос

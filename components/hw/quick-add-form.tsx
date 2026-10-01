@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import { useGuardedRouter } from "@/components/features/nav-guard";
+import { useRouter } from "next/navigation";
 import { CalendarClock, ChevronDown, CloudUpload, Send } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { createHomework } from "@/app/(app)/hw/actions";
@@ -47,7 +47,7 @@ const isOnline = () => (typeof navigator === "undefined" ? true : navigator.onLi
  * а упавшая из-за сети отправка уходит в очередь и уезжает сама (lib/hw/draft.ts, components/hw/hw-outbox.tsx).
  */
 export function QuickAddForm({ subjects, suggestedSubjectId, upcomingBySubject, today, meId }: Props) {
-  const router = useGuardedRouter();
+  const router = useRouter();
   const [pending, start] = useTransition();
   const [form, setForm] = useState<DraftFields>({ body: "", title: "", subjectId: suggestedSubjectId, dueOverride: null });
   const { body, title, subjectId, dueOverride } = form;
@@ -195,7 +195,7 @@ export function QuickAddForm({ subjects, suggestedSubjectId, upcomingBySubject, 
               key={s.id}
               type="button"
               onClick={() => patch({ subjectId: active ? null : s.id, dueOverride: null })}
-              className={cn("shrink-0 rounded-full px-3.5 py-2 text-[13px] font-semibold transition", active ? "text-bg" : "bg-surface-2 text-muted hairline")}
+              className={cn("inline-flex min-h-10 shrink-0 items-center rounded-full px-3.5 text-[13px] font-semibold transition", active ? "text-bg" : "bg-surface-2 text-muted hairline")}
               style={active ? { background: s.color ?? "#F4F4F6" } : undefined}
             >
               {s.shortName ?? s.name}

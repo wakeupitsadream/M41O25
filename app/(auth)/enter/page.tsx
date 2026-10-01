@@ -25,6 +25,13 @@ export default async function EnterPage({ searchParams }: { searchParams: Promis
         <p className="text-[15px] leading-relaxed text-muted">Приложение только для своих. Код — в закрепе беседы группы.</p>
       </div>
       <EnterInstallHint />
+      {cleared && (
+        // Сюда приводит /api/auth/clear: сессию отозвал админ («Выйти везде», сброс PIN, удаление) или она истекла.
+        // Без объяснения это выглядит как «сломалось»; черновик ДЗ ClearLocal не трогает — об этом тоже говорим.
+        <p className="rounded-lg bg-surface px-3.5 py-3 text-[13px] leading-relaxed text-muted hairline">
+          Вход на этом устройстве закончился — сессия истекла или админ её сбросил. Введи код из закрепа беседы и свой PIN; если PIN сбросили — придумаешь новый. Недописанная домашка никуда не делась.
+        </p>
+      )}
       <InviteForm defaultCode={code?.slice(0, 20).toUpperCase()} />
     </div>
   );

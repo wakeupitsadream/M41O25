@@ -5,6 +5,11 @@ const eslintConfig = [
   ...nextVitals,
   ...nextTs,
   {
+    // Фото пользователей идут через /api/files с images.unoptimized — next/image в проекте не используется нигде,
+    // и правило только плодило точечные отключения.
+    rules: { "@next/next/no-img-element": "off" },
+  },
+  {
     ignores: [
       "node_modules/**",
       ".next/**",
@@ -15,25 +20,6 @@ const eslintConfig = [
       "public/swe-worker*.js",
       ".claude/**",
     ],
-  },
-  {
-    // useRouter из next/navigation только внутри сторожа навигации; остальным — useGuardedRouter (см. CLAUDE.md, P0).
-    files: ["**/*.ts", "**/*.tsx"],
-    ignores: ["components/features/nav-guard.tsx"],
-    rules: {
-      "no-restricted-imports": [
-        "error",
-        {
-          paths: [
-            {
-              name: "next/navigation",
-              importNames: ["useRouter"],
-              message: "Используй useGuardedRouter из @/components/features/nav-guard: обход зависания навигации (docs/ROADMAP.md, P0).",
-            },
-          ],
-        },
-      ],
-    },
   },
 ];
 

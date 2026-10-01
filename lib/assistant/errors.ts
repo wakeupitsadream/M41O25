@@ -26,8 +26,10 @@ export class ChatTimeoutError extends Error {
 }
 
 const OVERLOADED = "Помощник перегружен, повтори через минуту";
-const NO_BALANCE = "У помощника закончился баланс — админ уже знает";
-const ADMIN_KNOWS = "Помощник сейчас недоступен — админ уже знает";
+// «Передай админу», а не «админ уже знает»: запись в app_errors он увидит, только открыв админку (карточка
+// «Диагностика»), пуша ему не приходит — обещать, что он в курсе, нечестно.
+const NO_BALANCE = "У помощника закончился баланс — передай админу";
+const TELL_ADMIN = "Помощник сейчас недоступен — передай админу";
 
 /** Тексты describeProviderError писались для OCR: подставляем переменные помощника и убираем «заполни вручную». */
 const forAssistant = (s: string) =>
@@ -50,7 +52,7 @@ export function describeChatError(e: unknown, model: string): ChatErrorInfo {
     // проверяет регулярку раньше статуса, поэтому detail для 429 свой.
     if (status === 429) return { message: OVERLOADED, detail: `Провайдер отвечает «слишком много запросов» (HTTP 429) для ${model}: ${msg.slice(0, 200)}`, notifyAdmin: false };
     if (/insufficient|balance|funds|недостаточно|quota/i.test(msg)) return { message: NO_BALANCE, detail, notifyAdmin: true };
-    if (status === 401 || status === 403 || status === 404) return { message: ADMIN_KNOWS, detail, notifyAdmin: true };
+    if (status === 401 || status === 403 || status === 404) return { message: TELL_ADMIN, detail, notifyAdmin: true };
     if (status >= 500) return { message: OVERLOADED, detail, notifyAdmin: false };
     if (status === 400 || status === 413) {
       if (/context|too long|too many tokens|maximum.*tokens|token limit|413|payload/i.test(msg) || status === 413) {

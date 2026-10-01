@@ -69,6 +69,8 @@ export function DayView({ data, now, today, date, onBack, onShiftDay }: Props) {
       <motion.div
         key={date}
         drag="x"
+        // Замок направления: вертикальная прокрутка не должна тащить день вбок (как и на экране недели).
+        dragDirectionLock
         dragConstraints={{ left: 0, right: 0 }}
         dragElastic={0.12}
         dragMomentum={false}

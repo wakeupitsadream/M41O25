@@ -3,7 +3,7 @@
 import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { AlertTriangle, Archive, Check, ChevronRight, CircleSlash, Users } from "lucide-react";
-import { useGuardedRouter } from "@/components/features/nav-guard";
+import { useRouter } from "next/navigation";
 import { importPeople } from "@/app/admin/actions/users";
 import { MAX_PEOPLE, planPeopleImport, type ExistingPerson, type PersonLine } from "@/lib/admin/people";
 import { Button } from "@/components/ui/button";
@@ -102,7 +102,7 @@ function Block({ title, icon, children }: { title: string; icon: React.ReactNode
  * а на сервер уходят ключи отмеченных строк: добавится ровно то, что админ видел на экране.
  */
 export function PeopleImport({ existing }: { existing: ExistingPerson[] }) {
-  const router = useGuardedRouter();
+  const router = useRouter();
   const toast = useToast();
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);

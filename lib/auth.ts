@@ -4,10 +4,15 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { cache } from "react";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { db } from "@/lib/db";
 import { deviceSessions, groups, users, type Group, type Role, type User } from "@/lib/db/schema";
 import { SESSION_COOKIE, SESSION_MAX_AGE, cookieOptions } from "@/lib/session-cookie";
+import { signScoped, verifyScoped } from "@/lib/files/token";
+import { normalizeInviteCode } from "@/lib/invite";
+import { ActionError } from "@/lib/actions";
+import { WRONG_PIN, lockMessage, lockMinutesForFailures } from "@/lib/auth-lock";
+import { asUuid } from "@/lib/utils";
 
 export const INVITE_COOKIE = "raspison_invite";
 
@@ -29,23 +34,30 @@ export const verifyPin = (pin: string, stored: string) => {
 
 const INVITE_MAX_AGE = 60 * 15;
 
-const inviteSig = (groupId: string) =>
-  createHash("sha256").update(`${groupId}:${process.env.AUTH_SECRET ?? ""}`).digest("base64url").slice(0, 32);
+/**
+ * Инвайт-код проверен → на 15 минут запоминаем группу в подписанной cookie (шаг «выбери себя»).
+ * Подпись — HMAC со сроком и хешем самого кода (lib/files/token.ts): скопированное значение cookie не живёт дольше
+ * 15 минут на сервере, а «Сменить код» в админке обесценивает и уже выданные cookie — раньше подпись зависела
+ * только от id группы и была бессрочным эквивалентом знания кода.
+ */
+const inviteScope = (groupId: string, inviteCode: string) => `invite:${groupId}:${hashToken(normalizeInviteCode(inviteCode)).slice(0, 32)}`;
 
-/** Инвайт-код проверен → на 15 минут запоминаем группу в подписанной cookie (шаг «выбери себя»). */
-export async function setInviteCookie(groupId: string) {
-  (await cookies()).set(INVITE_COOKIE, `${groupId}.${inviteSig(groupId)}`, cookieOptions(INVITE_MAX_AGE));
+export async function setInviteCookie(groupId: string, inviteCode: string) {
+  (await cookies()).set(INVITE_COOKIE, `${groupId}.${signScoped(inviteScope(groupId, inviteCode), INVITE_MAX_AGE * 1000)}`, cookieOptions(INVITE_MAX_AGE));
 }
 
+/** Группа из инвайт-cookie, если подпись верна для её ТЕКУЩЕГО кода и срок не вышел; иначе null. Один запрос к базе. */
 export async function readInviteGroupId(): Promise<string | null> {
   const raw = (await cookies()).get(INVITE_COOKIE)?.value;
   if (!raw) return null;
-  const [groupId, sig] = raw.split(".");
-  if (!groupId || !sig) return null;
-  const expected = inviteSig(groupId);
-  const a = Buffer.from(sig);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b) ? groupId : null;
+  const dot = raw.indexOf(".");
+  if (dot < 0) return null;
+  const groupId = asUuid(raw.slice(0, dot));
+  const token = raw.slice(dot + 1);
+  if (!groupId || !token) return null;
+  const [group] = await db.select({ inviteCode: groups.inviteCode }).from(groups).where(eq(groups.id, groupId));
+  if (!group) return null;
+  return verifyScoped(inviteScope(groupId, group.inviteCode), token) ? groupId : null;
 }
 
 export async function clearInviteCookie() {
@@ -69,6 +81,28 @@ export async function destroySession() {
       .where(eq(deviceSessions.tokenHash, hashToken(token)));
   }
   store.delete(SESSION_COOKIE);
+}
+
+/**
+ * Неверный PIN (вход или смена PIN): счётчик растёт прямо в базе (`pin_failed_count + 1 … returning`), и блокировка
+ * ставится по возвращённому значению. Читать-прибавлять-писать в JS нельзя: N одновременных запросов читали бы одно
+ * число и писали бы одно и то же +1 — замок на пятой попытке так и не наступал. Условие на `pin_locked_until`
+ * не даёт двум параллельным пятым попыткам продлить срок дважды. Возвращает текст для человека.
+ */
+export async function registerPinFailure(userId: string): Promise<string> {
+  const [row] = await db
+    .update(users)
+    .set({ pinFailedCount: sql`${users.pinFailedCount} + 1` })
+    .where(eq(users.id, userId))
+    .returning({ failed: users.pinFailedCount });
+  const minutes = lockMinutesForFailures(row?.failed ?? 1);
+  if (minutes === null) return WRONG_PIN;
+  const until = new Date(Date.now() + minutes * 60_000);
+  await db
+    .update(users)
+    .set({ pinLockedUntil: until })
+    .where(and(eq(users.id, userId), sql`(${users.pinLockedUntil} is null or ${users.pinLockedUntil} < ${until.toISOString()}::timestamptz)`));
+  return lockMessage(minutes);
 }
 
 export type SessionUser = User & { group: Group; sessionId: string };
@@ -128,7 +162,7 @@ export async function requireRole(min: Role): Promise<SessionUser> {
 /** Для server actions: возвращает пользователя или бросает понятную ошибку (без redirect внутри action). */
 export async function actionUser(min: Role = "student"): Promise<SessionUser> {
   const user = await getSessionUser();
-  if (!user) throw new Error("Сессия не найдена — войди заново");
-  if (!hasRole(user, min)) throw new Error("Недостаточно прав");
+  if (!user) throw new ActionError("Сессия не найдена — войди заново");
+  if (!hasRole(user, min)) throw new ActionError("Недостаточно прав");
   return user;
 }

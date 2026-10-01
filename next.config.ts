@@ -14,6 +14,9 @@ const withSerwist = withSerwistInit({
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  // Next 16 при `next dev` дописывает свой блок правил для ИИ-агентов прямо в CLAUDE.md проекта — он у нас свой.
+  // Единственное полезное из того блока: актуальная документация Next лежит в node_modules/next/dist/docs/.
+  agentRules: false,
   // web-push — обычный node-пакет (crypto, https, опциональные зависимости): пусть остаётся внешним, а не идёт в бандл.
   // unpdf, jszip — извлечение текста из вложений помощника (lib/assistant/extract.ts): тяжёлые, с динамическими
   // require и worker-ами, в бандле ломаются или раздувают функцию.
@@ -26,6 +29,10 @@ const nextConfig: NextConfig = {
         { key: "X-Robots-Tag", value: "noindex, nofollow" },
         { key: "X-Content-Type-Options", value: "nosniff" },
         { key: "Referrer-Policy", value: "same-origin" },
+        // Во фрейме чужого сайта приложению делать нечего (SameSite=Lax и так не отдаст туда cookie — это защита в глубину).
+        { key: "X-Frame-Options", value: "DENY" },
+        // Камеру и геолокацию приложение не запрашивает: файл выбирается системным пикером, погода — по координатам Оренбурга.
+        { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(), usb=()" },
       ],
     },
     {

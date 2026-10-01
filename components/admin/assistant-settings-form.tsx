@@ -8,7 +8,7 @@ import { SwitchRow } from "@/components/ui/switch";
 import { SubmitButton } from "@/components/admin/forms";
 import { budgetEstimate, type BudgetEstimate, type EstimateModels } from "@/lib/assistant/estimate";
 import { HISTORY_TOKENS } from "@/lib/assistant/context";
-import { PAYMENT_NOTE_MAX } from "@/lib/assistant/settings";
+import { PAYMENT_NOTE_MAX } from "@/lib/assistant/limit-rules";
 import type { AssistantSettings } from "@/lib/assistant/types";
 import { cn, pluralRu } from "@/lib/utils";
 
@@ -124,7 +124,7 @@ export function AssistantSettingsForm({
  * по честной цене вопроса с поиском по данным группы (два запроса к модели, lib/assistant/estimate.ts).
  */
 function EstimateLine({ estimate, models, rate, markup }: { estimate: BudgetEstimate | null; models: EstimateModels; rate: number; markup: number }) {
-  if (!estimate) return <p className="rounded-md bg-surface-2 px-3 py-2 text-[13px] text-dim">Оценка себестоимости появится, когда цена и лимиты — числа.</p>;
+  if (!estimate) return <p className="rounded-md bg-surface-2 px-3 py-2 text-[13px] text-muted">Оценка себестоимости появится, когда цена и лимиты — числа.</p>;
   const short = (m: string) => m.split("/").at(-1) ?? m;
   const markupPct = Math.round((markup - 1) * 100);
   const basis =
@@ -159,7 +159,7 @@ function EstimateLine({ estimate, models, rate, markup }: { estimate: BudgetEsti
           <span className="font-semibold text-fg tnum">{estimate.strongQuestions}</span> {pluralRu(estimate.strongQuestions, "сильный", "сильных", "сильных")}.
         </p>
       )}
-      <p className="text-[12px] text-dim">{basis}</p>
+      <p className="text-[12px] text-muted">{basis}</p>
     </div>
   );
 }

@@ -53,14 +53,39 @@ export async function login(page, { who = WHO, pin = PIN } = {}) {
   await page.waitForLoadState("networkidle");
 }
 
+/** STRICT_NAV=1 (CI): перезагрузка страницы в waitOrReload — падение скрипта, а не строка в логе. */
+const STRICT_NAV = process.env.STRICT_NAV === "1";
+/** Сколько раз за прогон экран не обновился сам и waitOrReload перезагружал страницу. В норме 0. */
+let reloads = 0;
+
 /**
  * Ждём появления locator; если за timeout не появился — перезагружаем страницу и ждём ещё раз.
- * Обход P0 (docs/ROADMAP.md): после server action обновление экрана может зависнуть, данные при этом уже сохранены.
+ * Раньше это был обход P0 (docs/ROADMAP.md): после server action обновление экрана могло зависнуть при уже
+ * сохранённых данных. Сторож навигации снят, и теперь перезагрузка — не норма, а симптом регрессии: считаем их,
+ * пишем в лог, а при STRICT_NAV=1 роняем скрипт сразу, чтобы зависание не прошло CI зелёным.
  */
 export async function waitOrReload(page, locator, timeout = 8000) {
   const first = await locator.first().waitFor({ timeout }).then(() => true).catch(() => false);
   if (first) return true;
-  console.log("waitOrReload: экран не обновился, перезагружаем страницу");
+  reloads++;
+  const where = page.url();
+  console.log(`waitOrReload: экран не обновился за ${timeout} мс на ${where}, перезагружаем страницу (перезагрузок за прогон: ${reloads})`);
+  if (STRICT_NAV) throw new Error(`STRICT_NAV: экран не обновился за ${timeout} мс на ${where} — обновление после server action зависло`);
   await page.reload({ waitUntil: "networkidle" });
   return locator.first().waitFor({ timeout }).then(() => true).catch(() => false);
 }
+
+/** Сколько раз за прогон waitOrReload перезагружал страницу. */
+export const reloadCount = () => reloads;
+
+/** В конце скрипта: при STRICT_NAV=1 любая перезагрузка — падение, без него — только строка в логе. */
+export function assertNoReloads() {
+  if (reloads === 0) return;
+  const msg = `перезагрузок страницы за прогон: ${reloads} — обновление экрана после server action зависало`;
+  if (STRICT_NAV) throw new Error(`STRICT_NAV: ${msg}`);
+  console.log(`waitOrReload: ${msg}`);
+}
+
+process.on("exit", () => {
+  if (reloads > 0) console.log(`waitOrReload: итого перезагрузок за прогон: ${reloads}`);
+});
