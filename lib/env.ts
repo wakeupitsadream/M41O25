@@ -20,6 +20,8 @@ export const env = {
   authSecret: process.env.AUTH_SECRET ?? "",
   anonPepper: process.env.ANON_PEPPER ?? "",
   cronSecret: process.env.CRON_SECRET ?? "",
+  /** Ключ личного бота в MAX (max-bot/): GET /api/bot/profile отдаёт ему группу и предметы. Пусто — роут выключен. */
+  botApiKey: process.env.BOT_API_KEY ?? "",
   /** healthchecks.io (или аналог): cron пингует после каждого запуска, /fail — при ошибке. */
   healthcheckUrl: process.env.HEALTHCHECK_URL ?? "",
   /**

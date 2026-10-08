@@ -4,6 +4,7 @@ import { SESSION_COOKIE, SESSION_MAX_AGE, cookieOptions } from "@/lib/session-co
 // Публичные пути: вход, служебные файлы PWA, cron, статика.
 // /api/files и /api/admin/backup сами проверяют cookie или подписанный токен в URL.
 // /api/health публичен намеренно: это проверка «сервер жив» с экрана ошибки, где сессия может быть уже мертва.
+// /api/bot/* — для бота в MAX (max-bot/): без cookie, роут сам сверяет ключ BOT_API_KEY.
 const PUBLIC = [
   /^\/enter(\/|$)/,
   /^\/~offline$/,
@@ -11,6 +12,7 @@ const PUBLIC = [
   /^\/api\/cron\//,
   /^\/api\/files\//,
   /^\/api\/health$/,
+  /^\/api\/bot\//,
   /^\/api\/admin\/backup$/,
   /^\/manifest\.webmanifest$/,
   /^\/sw\.js$/,

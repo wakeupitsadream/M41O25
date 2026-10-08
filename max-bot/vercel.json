@@ -1,0 +1,24 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "regions": [
+    "fra1"
+  ],
+  "ignoreCommand": "sh scripts/vercel-ignore-build.sh",
+  "functions": {
+    "api/webhook.ts": {
+      "maxDuration": 300
+    },
+    "api/health.ts": {
+      "maxDuration": 30
+    },
+    "api/cron.ts": {
+      "maxDuration": 60
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron",
+      "schedule": "17 3 * * *"
+    }
+  ]
+}

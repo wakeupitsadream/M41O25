@@ -19,6 +19,8 @@ const eslintConfig = [
       "public/sw.js",
       "public/swe-worker*.js",
       ".claude/**",
+      // Бот для MAX — отдельный проект Vercel со своим tsconfig и CI (.github/workflows/max-bot.yml).
+      "max-bot/**",
     ],
   },
 ];
