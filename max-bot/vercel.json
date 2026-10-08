@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "regions": [
-    "fra1"
+    "iad1"
   ],
   "ignoreCommand": "sh scripts/vercel-ignore-build.sh",
   "functions": {

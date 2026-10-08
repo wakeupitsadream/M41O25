@@ -180,13 +180,13 @@ test("вопрос текстом: заглушка, ответ с формул�
   assert.match(answer.body.text!, /<b>Ответ:<\/b> x = ±2/);
   assert.match(answer.body.text!, /x² = 4/);
   assert.ok(!answer.body.text!.includes("$"), "LaTeX не просочился");
-  assert.match(answer.body.text!, /<i>⚙️ Gemini 3\.5 Flash<\/i>$/);
+  assert.match(answer.body.text!, /<i>⚙️ Gemini 3\.8 Flash<\/i>$/);
   assert.equal(answer.body.format, "html");
   assert.ok(answer.body.link?.mid.startsWith("u-"), "ответ цитирует вопрос");
   const p = payloads(answer);
   assert.ok(p.some((x) => /^f:\w+:short$/.test(x)) && p.includes("new") && p.includes("menu"));
   assert.ok(max.deleted.includes(out[0]!.mid), "заглушка удалена");
-  assert.equal(llm.calls[0]!.model, "gemini-3.5-flash");
+  assert.equal(llm.calls[0]!.model, "gemini-3.8-flash");
   assert.match(llm.calls[0]!.system, /Режим «Решатель»/);
   const chat = await store.getChat(CHAT, OWNER);
   const hist = await store.history(CHAT, chat.topic, null, 10);
@@ -227,7 +227,7 @@ test("фото без подписи → кнопки; «Решить» → на
   const callsBefore = llm.calls.length;
   await handleUpdate(deps, callback(second, choice.mid));
   const solveCall = llm.calls[callsBefore]!;
-  assert.equal(solveCall.model, "gemini-3.5-flash");
+  assert.equal(solveCall.model, "gemini-3.8-flash");
   assert.ok(solveCall.parts.some((p: any) => p.inlineData?.mimeType === "image/jpeg"), "фото ушло в модель");
   assert.ok(solveCall.parts.some((p: any) => /Реши задание №2/.test(p.text ?? "")));
   assert.match(lastText(max.sent), /Ответ:/);
@@ -322,7 +322,7 @@ test("/status и /profile отвечают без ошибок", async () => {
   const deps = makeDeps(max.client, fakeGemini().fetch);
   await claim(deps);
   await handleUpdate(deps, message(OWNER, { text: "/status" }));
-  assert.match(lastText(max.sent), /Состояние[\s\S]*Gemini 3\.5 Flash[\s\S]*нет ключа/);
+  assert.match(lastText(max.sent), /Состояние[\s\S]*Gemini 3\.8 Flash[\s\S]*нет ключа/);
   await handleUpdate(deps, message(OWNER, { text: "/profile люблю статистику" }));
   assert.match(lastText(max.sent), /люблю статистику/);
 });

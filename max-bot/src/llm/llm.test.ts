@@ -6,7 +6,7 @@ import { CATALOG, modelFromKey } from "./catalog.js";
 import { LlmError, classifyHttp, parseDuration } from "./errors.js";
 import { callGemini, classifyGemini } from "./gemini.js";
 import { callOpenAI } from "./openai.js";
-import { AllModelsFailed, cooldownUntil, createRouter, describeFailure } from "./router.js";
+import { AllModelsFailed, cooldownUntil, createRouter, describeFailure, fitForModel } from "./router.js";
 import type { GenerateRequest } from "./types.js";
 
 type Seen = { url: string; headers: Record<string, string>; body: any };
@@ -28,7 +28,7 @@ function fakeFetch(handler: (s: Seen) => Response | Promise<Response>) {
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", ...headers } });
 
-const gemini35 = CATALOG["gemini:gemini-3.5-flash"]!;
+const gemini38 = CATALOG["gemini:gemini-3.8-flash"]!;
 const req: GenerateRequest = {
   system: (m) => `system for ${m.id}`,
   messages: [
@@ -56,14 +56,14 @@ test("Gemini: ключ в заголовке, мысли отброшены, с�
       usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5, thoughtsTokenCount: 50 },
     }),
   );
-  const r = await callGemini(gemini35, req, "KEY", { fetch: fn, signal: AbortSignal.timeout(5000) });
+  const r = await callGemini(gemini38, req, "KEY", { fetch: fn, signal: AbortSignal.timeout(5000) });
   assert.equal(r.text, "**Ответ:** 4");
   assert.deepEqual(r.usage, { input: 10, output: 55 });
   const s = seen[0]!;
-  assert.match(s.url, /models\/gemini-3\.5-flash:generateContent$/);
+  assert.match(s.url, /models\/gemini-3\.8-flash:generateContent$/);
   assert.equal(s.headers["x-goog-api-key"], "KEY");
   assert.ok(!s.url.includes("KEY"), "ключ не в URL");
-  assert.equal(s.body.systemInstruction.parts[0].text, "system for gemini-3.5-flash");
+  assert.equal(s.body.systemInstruction.parts[0].text, "system for gemini-3.8-flash");
   assert.equal(s.body.contents[0].role, "user", "диалог начинается с user");
   assert.deepEqual(s.body.contents.map((c: any) => c.role), ["user", "model", "user"]);
   assert.equal(s.body.contents[2].parts[0].inlineData.mimeType, "image/jpeg");
@@ -77,14 +77,14 @@ test("Gemini: 400 про thinking — повтор без настройки р�
       ? json(400, { error: { code: 400, status: "INVALID_ARGUMENT", message: "thinking_level is not supported for this model" } })
       : json(200, { candidates: [{ content: { parts: [{ text: "ok" }] }, finishReason: "STOP" }] }),
   );
-  const r = await callGemini(gemini35, req, "K", { fetch: fn, signal: AbortSignal.timeout(5000) });
+  const r = await callGemini(gemini38, req, "K", { fetch: fn, signal: AbortSignal.timeout(5000) });
   assert.equal(r.text, "ok");
   assert.equal(seen[1]!.body.generationConfig.thinkingConfig, undefined);
 });
 
 test("Gemini: Gemma без системной роли получает инструкции в первом сообщении", async () => {
   const { fn, seen } = fakeFetch(() => json(200, { candidates: [{ content: { parts: [{ text: "ok" }] } }] }));
-  await callGemini(CATALOG["gemini:gemma-3-27b-it"]!, req, "K", { fetch: fn, signal: AbortSignal.timeout(5000) });
+  await callGemini(CATALOG["gemini:gemma-4-31b-it"]!, req, "K", { fetch: fn, signal: AbortSignal.timeout(5000) });
   assert.equal(seen[0]!.body.systemInstruction, undefined);
   assert.match(seen[0]!.body.contents[0].parts[0].text, /^Инструкции:\nsystem for gemma/);
 });
@@ -124,9 +124,9 @@ test("Gemini: классификация ошибок — дневная и ми
 
 test("Gemini: пустой ответ из-за фильтра — safety, просто пустой — empty", async () => {
   const blocked = fakeFetch(() => json(200, { candidates: [{ content: { parts: [] }, finishReason: "SAFETY" }] }));
-  await assert.rejects(callGemini(gemini35, req, "K", { fetch: blocked.fn, signal: AbortSignal.timeout(5000) }), (e: unknown) => (e as LlmError).kind === "safety");
+  await assert.rejects(callGemini(gemini38, req, "K", { fetch: blocked.fn, signal: AbortSignal.timeout(5000) }), (e: unknown) => (e as LlmError).kind === "safety");
   const empty = fakeFetch(() => json(200, { candidates: [] }));
-  await assert.rejects(callGemini(gemini35, req, "K", { fetch: empty.fn, signal: AbortSignal.timeout(5000) }), (e: unknown) => (e as LlmError).kind === "empty");
+  await assert.rejects(callGemini(gemini38, req, "K", { fetch: empty.fn, signal: AbortSignal.timeout(5000) }), (e: unknown) => (e as LlmError).kind === "empty");
 });
 
 test("OpenAI-совместимый: картинки data-URL, system, <think> вырезается, лишние параметры убираются по жалобе", async () => {
@@ -137,7 +137,7 @@ test("OpenAI-совместимый: картинки data-URL, system, <think> 
     if (n === 2) return json(400, { error: { message: "Unsupported value: 'temperature' does not support 0.2" } });
     return json(200, { choices: [{ message: { content: "<think>хм</think>Ответ: 4" }, finish_reason: "stop" }], usage: { prompt_tokens: 3, completion_tokens: 2 } });
   });
-  const r = await callOpenAI(CATALOG["github:openai/gpt-4.1"]!, req, { base: "https://models.github.ai/inference", key: "TOK" }, { fetch: fn, signal: AbortSignal.timeout(5000) });
+  const r = await callOpenAI(CATALOG["mistral:mistral-medium-latest"]!, req, { base: "https://api.mistral.ai/v1", key: "TOK" }, { fetch: fn, signal: AbortSignal.timeout(5000) });
   assert.equal(r.text, "Ответ: 4");
   assert.equal(seen[0]!.headers.authorization, "Bearer TOK");
   assert.equal(seen[0]!.body.messages[0].role, "system");
@@ -163,7 +163,7 @@ test("OpenAI-совместимый: классификация 429 — днев
 
 test("cooldownUntil: Gemini ждёт полуночи по LA, остальные — UTC или retry-after", () => {
   const now = new Date("2026-10-08T10:00:00Z");
-  assert.equal(cooldownUntil(gemini35, new LlmError("quota_day", "x"), now, false)?.toISOString(), "2026-10-09T07:00:00.000Z");
+  assert.equal(cooldownUntil(gemini38, new LlmError("quota_day", "x"), now, false)?.toISOString(), "2026-10-09T07:00:00.000Z");
   const groq = CATALOG["groq:openai/gpt-oss-120b"]!;
   assert.equal(cooldownUntil(groq, new LlmError("quota_day", "x"), now, false)?.toISOString(), "2026-10-09T00:00:00.000Z");
   assert.equal(cooldownUntil(groq, new LlmError("quota_day", "x", { retryAfterMs: 3_600_000 }), now, false)?.toISOString(), "2026-10-08T11:00:00.000Z");
@@ -208,11 +208,11 @@ test("роутер: пропускает модели без ключа и бе�
   const config = loadConfig({
     GEMINI_API_KEY: "g",
     GROQ_API_KEY: "q",
-    CHAIN_SOLVE: "gemini:gemini-3.5-flash,groq:openai/gpt-oss-120b,mistral:mistral-medium-latest,gemini:gemini-2.5-flash",
+    CHAIN_SOLVE: "gemini:gemini-3.8-flash,groq:openai/gpt-oss-120b,mistral:mistral-medium-latest,gemini:gemini-3.6-flash",
   });
   const mem = memoryStates();
   const { fn, seen } = fakeFetch((s) => {
-    if (s.url.includes("gemini-3.5-flash")) {
+    if (s.url.includes("gemini-3.8-flash")) {
       return json(429, {
         error: {
           status: "RESOURCE_EXHAUSTED",
@@ -225,15 +225,15 @@ test("роутер: пропускает модели без ключа и бе�
   });
   const router = createRouter({ config, store: mem.store, fetch: fn, now: () => new Date("2026-10-08T10:00:00Z") });
   const r = await router.generate("solve", req, { deadline: Date.now() + 60_000 });
-  assert.equal(r.model.key, "gemini:gemini-2.5-flash", "gpt-oss без зрения и mistral без ключа пропущены");
+  assert.equal(r.model.key, "gemini:gemini-3.6-flash", "gpt-oss без зрения и mistral без ключа пропущены");
   assert.equal(seen.length, 2);
-  const st = mem.states.get("gemini:gemini-3.5-flash")!;
+  const st = mem.states.get("gemini:gemini-3.8-flash")!;
   assert.equal(st.reason, "quota_day");
   assert.equal(st.cooldownUntil?.toISOString(), "2026-10-09T07:00:00.000Z");
 
   // Второй запрос не тратит время на модель на паузе.
   const r2 = await router.generate("solve", req, { deadline: Date.now() + 60_000 });
-  assert.equal(r2.model.key, "gemini:gemini-2.5-flash");
+  assert.equal(r2.model.key, "gemini:gemini-3.6-flash");
   assert.equal(seen.length, 3);
 });
 
@@ -287,8 +287,9 @@ test("роутер: голос — Groq Whisper multipart с расширени�
   const router = createRouter({ config, store: mem.store, fetch: fn });
   const r = await router.transcribe({ data: Buffer.from("OggS"), mime: "audio/ogg" }, { deadline: Date.now() + 60_000 });
   assert.equal(r.text, "привет, реши задачу");
-  assert.equal(r.model.provider, "gemini");
-  assert.equal(seen[1]!.body.contents[0].parts[0].inlineData.mimeType, "audio/ogg");
+  assert.equal(r.model.key, "gemini:gemini-3.5-flash-lite");
+  assert.equal(seen.filter((s) => s.url.includes("groq.com")).length, 2, "обе модели Whisper у Groq");
+  assert.equal(seen.at(-1)!.body.contents[0].parts[0].inlineData.mimeType, "audio/ogg");
 });
 
 test("роутер: m4a не уходит в Gemini (формат не поддерживается) — только Whisper", async () => {
@@ -300,11 +301,58 @@ test("роутер: m4a не уходит в Gemini (формат не подд�
   assert.equal(seen.length, 0);
 });
 
-test("регрессия: Gemini получает запас токенов на размышления сверх длины ответа", async () => {
+test("регрессия: Gemini получает запас токенов на размышления сверх длины ответа и высокое разрешение фото", async () => {
   const { fn, seen } = fakeFetch(() => json(200, { candidates: [{ content: { parts: [{ text: "ok" }] } }] }));
-  await callGemini(CATALOG["gemini:gemini-2.5-flash"]!, { ...req, maxOutputTokens: 9000, reasoning: "high" }, "K", { fetch: fn, signal: AbortSignal.timeout(5000) });
-  assert.equal(seen[0]!.body.generationConfig.thinkingConfig.thinkingBudget, 12288);
-  assert.equal(seen[0]!.body.generationConfig.maxOutputTokens, 9000 + 12288);
-  await callGemini(gemini35, { ...req, maxOutputTokens: 30000, reasoning: "high" }, "K", { fetch: fn, signal: AbortSignal.timeout(5000) });
+  await callGemini(gemini38, { ...req, maxOutputTokens: 9000, reasoning: "high" }, "K", { fetch: fn, signal: AbortSignal.timeout(5000) });
+  assert.equal(seen[0]!.body.generationConfig.thinkingConfig.thinkingLevel, "high");
+  assert.equal(seen[0]!.body.generationConfig.maxOutputTokens, 9000 + 16384);
+  assert.equal(seen[0]!.body.generationConfig.mediaResolution, "MEDIA_RESOLUTION_HIGH");
+  await callGemini(gemini38, { ...req, maxOutputTokens: 30000, reasoning: "high" }, "K", { fetch: fn, signal: AbortSignal.timeout(5000) });
   assert.equal(seen[1]!.body.generationConfig.maxOutputTokens, 32768, "не больше потолка модели");
+  const textOnly: GenerateRequest = { system: "s", messages: [{ role: "user", parts: [{ type: "text", text: "x" }] }], maxOutputTokens: 100 };
+  await callGemini(gemini38, textOnly, "K", { fetch: fn, signal: AbortSignal.timeout(5000) });
+  assert.equal(seen[2]!.body.generationConfig.mediaResolution, undefined, "без фото разрешение не задаём");
+});
+
+test("Gemini: 400 про разрешение — повтор без mediaResolution", async () => {
+  let n = 0;
+  const { fn, seen } = fakeFetch(() =>
+    n++ === 0
+      ? json(400, { error: { status: "INVALID_ARGUMENT", message: "media_resolution is not supported for this model" } })
+      : json(200, { candidates: [{ content: { parts: [{ text: "ok" }] } }] }),
+  );
+  assert.equal((await callGemini(gemini38, req, "K", { fetch: fn, signal: AbortSignal.timeout(5000) })).text, "ok");
+  assert.equal(seen[1]!.body.generationConfig.mediaResolution, undefined);
+  assert.ok(seen[1]!.body.generationConfig.thinkingConfig, "размышления остались");
+});
+
+test("Groq (8K токенов в минуту): старая история подрезается, max_tokens — по остатку, огромный вопрос — пропуск", async () => {
+  const groq = CATALOG["groq:openai/gpt-oss-120b"]!;
+  const long = "очень длинное сообщение ".repeat(400);
+  const history: GenerateRequest["messages"] = Array.from({ length: 10 }, (_, i) => ({
+    role: i % 2 ? "assistant" : "user",
+    parts: [{ type: "text", text: long }],
+  }));
+  const r = fitForModel(groq, { system: "s", messages: [...history, { role: "user", parts: [{ type: "text", text: "вопрос" }] }], maxOutputTokens: 9000, reasoning: "high" })!;
+  assert.ok(r.messages.length < 11 && r.messages.at(-1)!.parts[0]!.type === "text");
+  assert.equal(r.messages[0]!.role, "user");
+  assert.ok(r.outputCap! >= 512 && r.outputCap! <= 8000);
+  assert.equal(fitForModel(groq, { system: "s", messages: [{ role: "user", parts: [{ type: "text", text: long.repeat(5) }] }], maxOutputTokens: 100 }), null);
+
+  const { fn, seen } = fakeFetch(() => json(200, { choices: [{ message: { content: "ok" } }] }));
+  await callOpenAI(groq, { ...r, maxOutputTokens: 9000, reasoning: "high" }, { base: "https://api.groq.com/openai/v1", key: "k" }, { fetch: fn, signal: AbortSignal.timeout(5000) });
+  assert.equal(seen[0]!.body.max_tokens, r.outputCap);
+  assert.equal(seen[0]!.body.reasoning_effort, "high");
+  assert.equal(fitForModel(CATALOG["gemini:gemini-3.8-flash"]!, r), r, "без tpm запрос не трогаем");
+});
+
+test("Groq Qwen: reasoning_format=hidden, а если не принят — повтор без него", async () => {
+  let n = 0;
+  const { fn, seen } = fakeFetch(() =>
+    n++ === 0 ? json(400, { error: { message: "'reasoning_format' is not supported with this model" } }) : json(200, { choices: [{ message: { content: "ok" } }] }),
+  );
+  const qwen = CATALOG["groq:qwen/qwen3.8-27b"]!;
+  await callOpenAI(qwen, req, { base: "https://api.groq.com/openai/v1", key: "k" }, { fetch: fn, signal: AbortSignal.timeout(5000) });
+  assert.equal(seen[0]!.body.reasoning_format, "hidden");
+  assert.equal(seen[1]!.body.reasoning_format, undefined);
 });

@@ -7,14 +7,12 @@ export function providerBase(provider: ProviderId, cloudflareAccountId: string):
   switch (provider) {
     case "groq":
       return "https://api.groq.com/openai/v1";
+    case "zai":
+      return "https://api.z.ai/api/paas/v4";
     case "openrouter":
       return "https://openrouter.ai/api/v1";
     case "mistral":
       return "https://api.mistral.ai/v1";
-    case "github":
-      return "https://models.github.ai/inference";
-    case "cerebras":
-      return "https://api.cerebras.ai/v1";
     case "cloudflare":
       return cloudflareAccountId ? `https://api.cloudflare.com/client/v4/accounts/${cloudflareAccountId}/ai/v1` : null;
     default:
@@ -71,7 +69,9 @@ export async function callOpenAI(
     max_tokens: Math.min(
       req.maxOutputTokens + (model.thinking === "effort" && req.reasoning && req.reasoning !== "off" ? { low: 2048, medium: 6144, high: 12288 }[req.reasoning] : 0),
       model.maxOutputTokens,
+      req.outputCap ?? Infinity,
     ),
+    ...(model.extraBody ?? {}),
     stream: false,
   };
   if (req.temperature !== undefined) body.temperature = req.temperature;
@@ -122,6 +122,11 @@ export async function callOpenAI(
         }
         if (/response_format|json/i.test(message) && "response_format" in body) {
           delete body.response_format;
+          continue;
+        }
+        const extra = Object.keys(model.extraBody ?? {}).find((k) => k in body && message.includes(k));
+        if (extra) {
+          delete body[extra];
           continue;
         }
       }

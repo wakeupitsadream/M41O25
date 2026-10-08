@@ -5,15 +5,7 @@ import { createHmac } from "node:crypto";
  * переданного env: тесты подставляют свой объект, а смена переменных в Vercel вступает в силу после Redeploy.
  */
 
-export const PROVIDERS = [
-  "gemini",
-  "groq",
-  "openrouter",
-  "mistral",
-  "github",
-  "cerebras",
-  "cloudflare",
-] as const;
+export const PROVIDERS = ["gemini", "groq", "cloudflare", "zai", "openrouter", "mistral"] as const;
 export type ProviderId = (typeof PROVIDERS)[number];
 
 /** Виды работы для моделей: у каждого своя цепочка (src/llm/catalog.ts). */
@@ -81,11 +73,10 @@ export function loadConfig(env: Env = process.env): Config {
   const keyVars: Record<ProviderId, string> = {
     gemini: "GEMINI_API_KEY",
     groq: "GROQ_API_KEY",
+    cloudflare: "CLOUDFLARE_API_TOKEN",
+    zai: "ZAI_API_KEY",
     openrouter: "OPENROUTER_API_KEY",
     mistral: "MISTRAL_API_KEY",
-    github: "GITHUB_MODELS_TOKEN",
-    cerebras: "CEREBRAS_API_KEY",
-    cloudflare: "CLOUDFLARE_API_TOKEN",
   };
   for (const p of PROVIDERS) {
     const v = str(env, keyVars[p]);

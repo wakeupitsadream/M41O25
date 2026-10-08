@@ -21,8 +21,8 @@
 
 ## Запуск (один раз, ~10 минут)
 
-1. **Проект Vercel** `max-bot` уже создан и смотрит на этот репозиторий, Root Directory — `max-bot`. Если его нет: Vercel → Add New → Project → репозиторий `m41o25` → Root Directory `max-bot` → Framework Preset «Other».
-2. **База.** Vercel → проект `max-bot` → Storage → Create Database → **Neon** (Free) → Connect to project. Переменная `DATABASE_URL` появится сама. Таблицы бот создаёт сам при первом запросе.
+1. **Проект Vercel** `max-study-bot` уже создан и смотрит на этот репозиторий, Root Directory — `max-bot`. Если его нет: Vercel → Add New → Project → репозиторий `m41o25` → Root Directory `max-bot` → Framework Preset «Other». Deployment Protection — только для preview: production-адрес должен быть открыт, иначе MAX получит 401.
+2. **База.** Vercel → проект → Storage → Create Database → **Neon** (Free), регион **Washington, D.C. (us-east-1)** — рядом с функциями бота (`iad1`) → Connect to project. Переменная `DATABASE_URL` появится сама. Таблицы бот создаёт сам при первом запросе.
 3. **Переменные** (Settings → Environment Variables, окружение **Production**):
    - `MAX_BOT_TOKEN` — токен бота из MAX (Master Bot или бизнес-кабинет);
    - ключи моделей — минимум `GEMINI_API_KEY`, лучше ещё 2–3 запасных. Где взять бесплатно — [docs/MODELS.md](docs/MODELS.md).
@@ -36,8 +36,9 @@
 |---|---|---|
 | `MAX_BOT_TOKEN` | да | токен бота; из него же выводится секрет вебхука |
 | `DATABASE_URL` | да | Postgres (Neon). Появляется сам при подключении Neon в Storage |
-| `GEMINI_API_KEY` | очень желательно | основная модель (Gemini 3.5 Flash и семейство) |
-| `GROQ_API_KEY`, `MISTRAL_API_KEY`, `OPENROUTER_API_KEY`, `GITHUB_MODELS_TOKEN`, `CEREBRAS_API_KEY`, `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` | нет | запасные бесплатные модели; Groq ещё и распознаёт голос. Подробно — `docs/MODELS.md` |
+| `GEMINI_API_KEY` | очень желательно | основные модели: Gemini 3.8 → 3.7 → 3.6 → 3.5 Flash (~80 сильных ответов в сутки), Flash-Lite, Gemma 4 |
+| `GROQ_API_KEY` | желательно | голосовые (Whisper) и запасные GPT-OSS 120B / Qwen 3.8 со зрением |
+| `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID`, `ZAI_API_KEY`, `OPENROUTER_API_KEY`, `MISTRAL_API_KEY` | нет | ещё запасные бесплатные модели. Подробно — [docs/MODELS.md](docs/MODELS.md) |
 | `MAX_OWNER_ID` | нет | id владельца в MAX вместо привязки кодом |
 | `CHAIN_SOLVE`, `CHAIN_VISION`, `CHAIN_CHAT`, `CHAIN_LIGHT`, `CHAIN_TRANSCRIBE` | нет | свой порядок моделей: `gemini:gemini-3.5-flash,groq:openai/gpt-oss-120b`. Модель не из каталога — с флагами: `openrouter:vendor/model:free#vision` |
 | `RASPISON_URL`, `RASPISON_BOT_KEY` (+ `RASPISON_GROUP`, если групп несколько) | нет | профиль: предметы группы из Raspison (`https://raspison.vercel.app` и тот же ключ, что `BOT_API_KEY` в Raspison) |
@@ -48,6 +49,7 @@
 
 ## Как устроено
 
+- Функции работают в `iad1` (США): из части европейских адресов Gemini отвечает «User location is not supported».
 - `api/webhook.ts` — вход событий MAX. Проверяет секрет `X-Max-Bot-Api-Secret`, сразу отвечает 200 и думает в фоне (`waitUntil`, до 300 с на Hobby): иначе MAX повторил бы событие. Повторы отсекаются по id сообщения/нажатия.
 - `src/llm/` — модели: Gemini через родной API (точно различает дневную и минутную квоту, принимает голос), остальные — через OpenAI-совместимый. Роутер идёт по цепочке (`src/llm/catalog.ts`), пропускает модели без ключа и без зрения, а после лимита ставит модель на паузу до сброса квоты (Gemini — полночь по Лос-Анджелесу, это 12:00 по Екатеринбургу, с ноября — 13:00).
 - `src/text/` — LaTeX → Unicode, markdown → HTML для MAX (только b/i/s/code/pre/a), нарезка длинных ответов на сообщения до 4000 символов.

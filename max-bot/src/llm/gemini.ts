@@ -115,8 +115,12 @@ export async function callGemini(
   const system = typeof req.system === "function" ? req.system(model) : req.system;
   // Размышления Gemini расходуют тот же лимит, что и ответ: без запаса трудная задача кончается пустым MAX_TOKENS.
   const generationConfig: Record<string, unknown> = {
-    maxOutputTokens: Math.min(req.maxOutputTokens + thinkingAllowance(model, req.reasoning), model.maxOutputTokens),
+    maxOutputTokens: Math.min(req.maxOutputTokens + thinkingAllowance(model, req.reasoning), model.maxOutputTokens, req.outputCap ?? Infinity),
   };
+  // Рукописный текст на фото читается заметно лучше в высоком разрешении (дороже по токенам, но не по запросам).
+  if (model.mediaResolution && req.messages.some((m) => m.parts.some((p) => p.type === "image"))) {
+    generationConfig.mediaResolution = "MEDIA_RESOLUTION_HIGH";
+  }
   if (req.temperature !== undefined) generationConfig.temperature = req.temperature;
   if (req.json && model.json) generationConfig.responseMimeType = "application/json";
   const thinking = thinkingConfig(model, req.reasoning);
@@ -154,15 +158,21 @@ export async function callGemini(
     return json as GeminiResponse;
   };
 
-  let data: GeminiResponse;
-  try {
-    data = await send(body);
-  } catch (err) {
-    // Модель не знает этот вид настройки размышления — повторяем без неё, а не теряем модель.
-    if (err instanceof LlmError && err.kind === "bad_request" && thinking && /thinking/i.test(err.message)) {
-      const { thinkingConfig: _drop, ...rest } = generationConfig;
-      data = await send({ ...body, generationConfig: rest });
-    } else throw err;
+  // Модель не знает какую-то из необязательных настроек — повторяем без неё, а не теряем модель целиком.
+  const optional: Array<[string, RegExp]> = [
+    ["thinkingConfig", /thinking/i],
+    ["mediaResolution", /resolution/i],
+    ["responseMimeType", /mime|json/i],
+  ];
+  let data: GeminiResponse | null = null;
+  for (let attempt = 0; data === null; attempt++) {
+    try {
+      data = await send(body);
+    } catch (err) {
+      const drop = optional.find(([field, re]) => field in generationConfig && err instanceof LlmError && err.kind === "bad_request" && re.test(err.message));
+      if (!drop || attempt >= optional.length) throw err;
+      delete generationConfig[drop[0]];
+    }
   }
 
   if (data.promptFeedback?.blockReason) throw new LlmError("safety", `запрос заблокирован: ${data.promptFeedback.blockReason}`);

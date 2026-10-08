@@ -7,6 +7,7 @@ import { CATALOG, DEFAULT_CHAINS, modelFromKey } from "./catalog.js";
 import { LlmError, classifyThrown, type ErrorKind } from "./errors.js";
 import { GEMINI_AUDIO, callGemini } from "./gemini.js";
 import { callOpenAI, providerBase } from "./openai.js";
+import { estimateMessages, fitMessages } from "./tokens.js";
 import { transcribeWith } from "./transcribe.js";
 import { hasAudio, type GenerateRequest, type GenerateResult, type LlmMessage, type ModelInfo } from "./types.js";
 
@@ -40,6 +41,21 @@ export type ChainStatus = Array<{ model: ModelInfo; state: "ok" | "no_key" | "co
 
 const fingerprint = (key: string) => createHash("sha256").update(key).digest("hex").slice(0, 8);
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+
+/**
+ * Запрос под модель с лимитом токенов в минуту (Groq: 8 000, и max_tokens туда входит): старая история
+ * подрезается так, чтобы на ответ осталось не меньше ~40 % лимита. null — не помещается даже текущий вопрос.
+ */
+export function fitForModel(model: ModelInfo, req: GenerateRequest): GenerateRequest | null {
+  if (!model.tpm) return req;
+  const system = typeof req.system === "function" ? req.system(model) : req.system;
+  const inputBudget = Math.floor(model.tpm * 0.6);
+  const messages = fitMessages(system, req.messages, inputBudget, model.imageTokens);
+  if (!messages) return null;
+  const used = estimateMessages(system, messages, model.imageTokens);
+  const outputCap = Math.max(512, model.tpm - used - 300);
+  return { ...req, system, messages, outputCap: Math.min(outputCap, req.outputCap ?? Infinity) };
+}
 
 /** Когда модель снова стоит пробовать после ошибки; null — пауза не нужна (дело в самом запросе). */
 export function cooldownUntil(model: ModelInfo, e: LlmError, now: Date, fullTimeout: boolean): Date | null {
@@ -155,6 +171,11 @@ export function createRouter(deps: RouterDeps) {
         skipped.push({ model, why: "cooldown", until: cd.cooldownUntil, reason: cd.reason });
         continue;
       }
+      const fitted = fitForModel(model, req);
+      if (!fitted) {
+        skipped.push({ model, why: "capability" });
+        continue;
+      }
       const remaining = opts.deadline - Date.now() - RESERVE_MS;
       if (remaining < MIN_ATTEMPT_MS) {
         outOfTime = true;
@@ -163,7 +184,7 @@ export function createRouter(deps: RouterDeps) {
       const timeout = Math.min(model.timeoutMs, remaining);
       const started = Date.now();
       try {
-        const r = await call(model, req, AbortSignal.timeout(timeout));
+        const r = await call(model, fitted, AbortSignal.timeout(timeout));
         await record(model, null, false);
         log("info", "llm_ok", { task, model: model.key, ms: Date.now() - started, finish: r.finishReason, usage: r.usage });
         return { ...r, model, ms: Date.now() - started };

@@ -39,6 +39,17 @@ export type ModelInfo = {
   json: boolean;
   /** Понимает системную роль. Gemma в Gemini API — нет: инструкции идут в начало первого сообщения. */
   systemRole: boolean;
+  /**
+   * Лимит токенов в минуту на бесплатном тарифе (Groq — 8 000, и в него входит max_tokens). Для таких моделей
+   * роутер подрезает старую историю и ставит max_tokens по остатку, иначе запрос отклоняется целиком.
+   */
+  tpm: number | null;
+  /** Токенов на одну картинку — для оценки размера запроса. */
+  imageTokens: number;
+  /** Gemini Flash: высокое разрешение картинок (рукописный текст). */
+  mediaResolution: boolean;
+  /** Дополнительные поля тела запроса (OpenAI-совместимые провайдеры). */
+  extraBody: Record<string, unknown> | null;
 };
 
 export type GenerateRequest = {
@@ -49,6 +60,8 @@ export type GenerateRequest = {
   temperature?: number;
   reasoning?: Reasoning;
   json?: boolean;
+  /** Жёсткий потолок max_tokens вместе с размышлениями (ставит роутер для моделей с tpm). */
+  outputCap?: number;
 };
 
 export type GenerateResult = {
