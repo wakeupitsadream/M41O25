@@ -1,0 +1,49 @@
+name: max-bot
+
+# Бот для MAX (папка max-bot/) — отдельный проект Vercel со своими зависимостями. Здесь — его типы и тесты
+# (unit и сценарии на настоящем Postgres); CI Raspison папку max-bot/ не проверяет.
+on:
+  push:
+    branches: [main, "claude/**"]
+    paths: ["max-bot/**", ".github/workflows/max-bot.yml"]
+  pull_request:
+    paths: ["max-bot/**", ".github/workflows/max-bot.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: max-bot-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: max-bot
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: maxbot_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/maxbot_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: max-bot/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test

@@ -27,6 +27,7 @@ npm run e2e:offline         # только против production-сборки 
 - Рабочие ветки `claude/*`; в `main` только после `typecheck`, `lint`, `db:check`, `test`, `build` и e2e. То же самое на каждый push и PR делает GitHub Actions (`.github/workflows/ci.yml`, с Postgres-сервисом и e2e против production-сборки). Никогда не force-push в `main`.
 - Секреты только в Vercel → Environment Variables. В репозитории публичном (решение Максима) — никаких ключей, скриншотов с реальными людьми, реальных сканов, значений `SEED_*`.
 - Регион функций `fra1` (`vercel.json`), cron `/api/cron/daily` в 23:00 UTC работает только на production.
+- Папка `max-bot/` — личный бот Максима для MAX, отдельный проект Vercel (Root Directory `max-bot`) со своими `package.json`, tsconfig и CI (`.github/workflows/max-bot.yml`). Корневые tsconfig и eslint её не видят, `scripts/vercel-ignore-build.sh` (ignoreCommand) пропускает сборку raspison, если с прошлой сборки менялась только `max-bot/`. Из Raspison бот читает только `/api/bot/profile` (группа и предметы, ключ `BOT_API_KEY`). Устройство и команды — `max-bot/README.md`.
 
 ## Время
 
