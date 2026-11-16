@@ -29,7 +29,7 @@ await form.getByRole("button", { name: "Сохранить" }).click();
 await waitOrReload(page, page.locator("text=Настройки помощника сохранены"));
 await shot("80-assistant-settings");
 
-// 2. Студент: плитка в хабе, пробная неделя.
+// 2. Студент: плитка в хабе, пробный период (по умолчанию три дня).
 await ctx.clearCookies();
 await login(page, { who: STUDENT });
 await page.goto(`${BASE}/group`, { waitUntil: "networkidle" });
@@ -38,7 +38,7 @@ await page.goto(`${BASE}/group/assistant`, { waitUntil: "networkidle" });
 const trialBtn = page.getByRole("button", { name: /Попробовать .* бесплатно/ });
 if (await trialBtn.count()) {
   await trialBtn.click();
-  await waitOrReload(page, page.locator("text=Пробная неделя"));
+  await waitOrReload(page, page.locator("text=Пробный период"));
 }
 await shot("81-assistant-home");
 const before = await limit("Сегодня");

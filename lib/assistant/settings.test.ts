@@ -19,7 +19,7 @@ test("withDefaults: пустой jsonb и null дают умолчания §1",
   assert.equal(DEFAULT_SETTINGS.dailyLimit, 15);
   assert.equal(DEFAULT_SETTINGS.weeklyLimit, 45);
   assert.equal(DEFAULT_SETTINGS.strongWeeklyLimit, 3);
-  assert.equal(DEFAULT_SETTINGS.trialDays, 7);
+  assert.equal(DEFAULT_SETTINGS.trialDays, 3);
   assert.equal(DEFAULT_SETTINGS.paymentNote, "");
 });
 

@@ -3,7 +3,8 @@ import { LIMIT_MAX, LIMIT_MIN, PAYMENT_NOTE_MAX, PRICE_MAX_RUB, TRIAL_MAX_DAYS }
 import type { AssistantSettings, AssistantSettingsStored } from "./types";
 
 /**
- * Умолчания из docs/AI-CHAT.md §1: выключен, 200 ₽/мес, 15 в день, 45 в неделю, 3 сильных, неделя триала.
+ * Умолчания из docs/AI-CHAT.md §1: выключен, 200 ₽/мес, 15 в день, 45 в неделю, 3 сильных, три дня триала
+ * (с 16.11.2026: недели было много — попробовать хватает трёх дней, а триал оплачивает владелец).
  * Неделя 45 и 3 сильных — не круглые числа ради красоты: при 200 ₽ и 50/4 худший случай давал маржу 57 %, ниже
  * требования владельца (≥ 60 %), а 45/3 дают 63 % с запасом. Инвариант закреплён тестом в estimate.test.ts.
  */
@@ -13,7 +14,7 @@ export const DEFAULT_SETTINGS: AssistantSettings = {
   dailyLimit: 15,
   weeklyLimit: 45,
   strongWeeklyLimit: 3,
-  trialDays: 7,
+  trialDays: 3,
   paymentNote: "",
 };
 

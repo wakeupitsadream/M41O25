@@ -84,7 +84,7 @@ export function AssistantSettingsForm({
   return (
     <ActionForm action={updateAssistantSettings} className="space-y-3">
       <div className="font-display text-[16px] font-bold">Помощник по учёбе</div>
-      <p className="text-[13px] text-muted">ИИ-чат во вкладке «Группа»: пробная неделя, потом доступ по оплате — продлеваешь в карточке человека.</p>
+      <p className="text-[13px] text-muted">ИИ-чат во вкладке «Группа»: пробный период, потом доступ по оплате — продлеваешь в карточке человека.</p>
       {/*
         Выключить можно и без ключа (ключ убрали, а помощник остался включён — иначе его было бы не погасить),
         включить — нет: студент увидел бы плитку, а ответить помощник не смог бы.
