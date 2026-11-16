@@ -77,3 +77,14 @@ test("toDraft: предмет без справочника — источник
   assert.equal(d[1].subjectId, "e");
   assert.equal(d[1].matchKind, "alias");
 });
+
+test("toDraft: пара без времени в сетке группы получает стандартное (5-я и 6-я при четырёх настроенных)", () => {
+  const four = [
+    { slot: 1, start: "08:30", end: "09:50" },
+    { slot: 2, start: "10:00", end: "11:20" },
+    { slot: 3, start: "11:30", end: "12:50" },
+    { slot: 4, start: "13:30", end: "14:50" },
+  ];
+  const d = toDraft(base([l({ slot: 5 }), l({ slot: 0, time_start: "16.30", subject: "Англ" })]), "2026-11-16", "lower", four, subjects);
+  assert.deepEqual(d.map((x) => [x.slot, x.startsAt, x.endsAt]), [[5, "15:00", "16:20"], [6, "16:30", "17:50"]]);
+});

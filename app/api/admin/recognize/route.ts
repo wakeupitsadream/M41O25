@@ -9,6 +9,7 @@ import { recognizeSchedule } from "@/lib/ocr/recognize";
 import { toDraft } from "@/lib/ocr/draft";
 import { shiftLessons } from "@/lib/ocr/diff";
 import { getPreviousPublishedWeek } from "@/lib/schedule/query";
+import { withDefaultSlots } from "@/lib/schedule/slots";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -61,7 +62,7 @@ export async function POST(req: Request) {
     .returning({ id: scheduleImports.id });
 
   try {
-    const { result, model, attempts, usage, durationMs, schemaFallback } = await recognizeSchedule({ images, groupShort: group.shortName, slotTimes: group.slotTimes, strong });
+    const { result, model, attempts, usage, durationMs, schemaFallback } = await recognizeSchedule({ images, groupShort: group.shortName, slotTimes: withDefaultSlots(group.slotTimes), strong });
     const [subjectList, previous] = await Promise.all([
       db
         .select({ id: subjects.id, name: subjects.name, shortName: subjects.shortName, aliases: subjects.aliases, defaultTeacher: subjects.defaultTeacher, defaultRoom: subjects.defaultRoom })

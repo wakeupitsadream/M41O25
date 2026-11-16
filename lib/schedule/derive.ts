@@ -13,8 +13,23 @@ export type NowState =
   | { kind: "none" }
   | { kind: "before"; next: ScheduleLesson; minutesUntil: number }
   | { kind: "during"; current: ScheduleLesson; progress: number; minutesLeft: number; index: number; total: number }
-  | { kind: "break"; next: ScheduleLesson; minutesUntil: number; index: number; total: number }
+  /** gapMinutes — длина всего разрыва между парами (а не остаток до следующей): по ней отличаем перемену от окна. */
+  | { kind: "break"; next: ScheduleLesson; minutesUntil: number; gapMinutes: number; index: number; total: number }
   | { kind: "done"; total: number };
+
+/**
+ * Разрыв от часа — уже «окно», а не перемена: в сетке филиала перемены по 10 минут, обед 40, а пропущенная пара —
+ * 80 минут плюс перемены вокруг (в среду нижней недели между 2-й и 5-й парой 3 ч 40 мин).
+ */
+export const WINDOW_MINUTES = 60;
+
+/**
+ * Номер идущей пары для карточки «Сейчас». Обычный день, где пары идут подряд с первой, — «2-я пара из 3».
+ * День не с первой пары или с окном — официальный номер по сетке звонков и место в дне: «5-я пара · 3 из 4».
+ * Иначе пара в 11:30 подписывалась бы «1-я пара из 2», хотя по звонкам и в деканате она третья.
+ */
+export const lessonOrdinalLabel = (slot: number | null | undefined, index: number, total: number) =>
+  !slot || slot === index + 1 ? `${index + 1}-я пара из ${total}` : `${slot}-я пара · ${index + 1} из ${total}`;
 
 /** Что сейчас происходит по расписанию дня. */
 export function nowState(dayLessons: ScheduleLesson[], minutes: number): NowState {
@@ -23,6 +38,9 @@ export function nowState(dayLessons: ScheduleLesson[], minutes: number): NowStat
   const active = dayLessons.filter((l) => !l.isCancelled).sort((a, b) => toMinutes(a.startsAt) - toMinutes(b.startsAt));
   if (active.length === 0) return { kind: "none" };
   const total = active.length;
+  // Конец самой поздней из уже прошедших пар: у подгрупп две пары идут в одно время, и «предыдущая по списку»
+  // могла закончиться раньше соседней.
+  let prevEnd = 0;
   for (let i = 0; i < active.length; i++) {
     const l = active[i];
     const s = toMinutes(l.startsAt);
@@ -30,11 +48,12 @@ export function nowState(dayLessons: ScheduleLesson[], minutes: number): NowStat
     if (minutes < s) {
       return i === 0
         ? { kind: "before", next: l, minutesUntil: s - minutes }
-        : { kind: "break", next: l, minutesUntil: s - minutes, index: i, total };
+        : { kind: "break", next: l, minutesUntil: s - minutes, gapMinutes: Math.max(0, s - prevEnd), index: i, total };
     }
     if (minutes >= s && minutes < e) {
       return { kind: "during", current: l, progress: (minutes - s) / (e - s), minutesLeft: e - minutes, index: i, total };
     }
+    prevEnd = Math.max(prevEnd, e);
   }
   return { kind: "done", total };
 }

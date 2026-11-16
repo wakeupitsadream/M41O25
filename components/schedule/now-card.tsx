@@ -3,11 +3,9 @@
 import { motion } from "motion/react";
 import { ChevronRight, MapPin } from "lucide-react";
 import type { ScheduleLesson } from "@/lib/schedule/types";
-import { nowState } from "@/lib/schedule/derive";
+import { WINDOW_MINUTES, lessonOrdinalLabel, nowState } from "@/lib/schedule/derive";
 import { fmtDuration } from "@/lib/schedule/time";
 import { pluralRu } from "@/lib/utils";
-
-const ordinal = (i: number) => `${i + 1}-я`;
 
 /** Живая плашка «Сейчас идёт»: считается на клиенте из расписания дня, ноль бэкенда. */
 export function NowCard({ lessons, minutes, onOpen }: { lessons: ScheduleLesson[]; minutes: number; onOpen: () => void }) {
@@ -23,7 +21,7 @@ export function NowCard({ lessons, minutes, onOpen }: { lessons: ScheduleLesson[
   switch (st.kind) {
     case "during":
       accent = true;
-      label = `Сейчас идёт · ${ordinal(st.index)} пара из ${st.total}`;
+      label = `Сейчас идёт · ${lessonOrdinalLabel(st.current.slot, st.index, st.total)}`;
       title = st.current.title;
       sub = (
         <>
@@ -38,7 +36,7 @@ export function NowCard({ lessons, minutes, onOpen }: { lessons: ScheduleLesson[
       progress = st.progress;
       break;
     case "break":
-      label = `Перемена · следующая через ${fmtDuration(st.minutesUntil)}`;
+      label = `${st.gapMinutes >= WINDOW_MINUTES ? "Окно" : "Перемена"} · следующая через ${fmtDuration(st.minutesUntil)}`;
       title = st.next.title;
       sub = st.next.room ? (
         <span className="inline-flex items-center gap-1">

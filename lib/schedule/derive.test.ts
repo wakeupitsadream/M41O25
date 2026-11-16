@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { isSessionWeek, mergeWeeks, nowState, semesterMondays, semesterPhase, semestersOf } from "./derive";
+import { WINDOW_MINUTES, isSessionWeek, lessonOrdinalLabel, mergeWeeks, nowState, semesterMondays, semesterPhase, semestersOf } from "./derive";
 import type { ScheduleLesson, ScheduleSemester, ScheduleWeek } from "./types";
 
 const lesson = (startsAt: string, endsAt: string, extra: Partial<ScheduleLesson> = {}) =>
@@ -50,6 +50,51 @@ test("nowState: пара со слотом 2 перенесена раньше �
   const b = nowState(swapped, min(10, 5));
   assert.equal(b.kind, "break");
   if (b.kind === "break") assert.equal(b.next.startsAt, "10:10");
+});
+
+// Среда нижней недели из расписания 3-го семестра: 1-я и 2-я пары, окно, потом 5-я и 6-я.
+const wednesday = [
+  lesson("08:30", "09:50", { slot: 1 }),
+  lesson("10:00", "11:20", { slot: 2 }),
+  lesson("15:00", "16:20", { slot: 5 }),
+  lesson("16:30", "17:50", { slot: 6 }),
+];
+
+test("nowState: перемена и окно различаются длиной разрыва, а не остатком до пары", () => {
+  const short = nowState(wednesday, min(9, 55));
+  assert.equal(short.kind, "break");
+  if (short.kind === "break") {
+    assert.equal(short.gapMinutes, 10);
+    assert.ok(short.gapMinutes < WINDOW_MINUTES);
+  }
+  // За десять минут до 5-й пары это всё ещё окно: разрыв 3 ч 40 мин, хотя ждать осталось мало.
+  const late = nowState(wednesday, min(14, 50));
+  assert.equal(late.kind, "break");
+  if (late.kind === "break") {
+    assert.equal(late.minutesUntil, 10);
+    assert.equal(late.gapMinutes, 220);
+    assert.ok(late.gapMinutes >= WINDOW_MINUTES);
+    assert.equal(late.next.slot, 5);
+  }
+});
+
+test("nowState: разрыв считается от конца самой поздней прошедшей пары (подгруппы в одно время)", () => {
+  const subgroups = [lesson("08:30", "09:50", { id: "a", slot: 1 }), lesson("08:30", "11:20", { id: "b", slot: 1 }), lesson("11:30", "12:50", { slot: 3 })];
+  const b = nowState(subgroups, min(11, 25));
+  assert.equal(b.kind, "break");
+  if (b.kind === "break") assert.equal(b.gapMinutes, 10);
+});
+
+test("lessonOrdinalLabel: обычный день — «N-я из M», день с окном или не с первой пары — номер по сетке", () => {
+  assert.equal(lessonOrdinalLabel(2, 1, 3), "2-я пара из 3");
+  assert.equal(lessonOrdinalLabel(1, 0, 4), "1-я пара из 4");
+  assert.equal(lessonOrdinalLabel(5, 2, 4), "5-я пара · 3 из 4");
+  assert.equal(lessonOrdinalLabel(3, 0, 2), "3-я пара · 1 из 2");
+  // Старый офлайн-кеш без номера пары не должен дать «undefined-я пара».
+  assert.equal(lessonOrdinalLabel(undefined, 0, 2), "1-я пара из 2");
+  const s = nowState(wednesday, min(15, 30));
+  assert.equal(s.kind, "during");
+  if (s.kind === "during") assert.equal(lessonOrdinalLabel(s.current.slot, s.index, s.total), "5-я пара · 3 из 4");
 });
 
 // Семестры: осень с сессией 12.01–25.01, каникулы до 09.02, весна.

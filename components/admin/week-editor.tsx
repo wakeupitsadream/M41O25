@@ -1,10 +1,12 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Ban, Check, Plus, Trash2, Undo2 } from "lucide-react";
 import type { SlotTime } from "@/lib/db/schema";
 import { addDaysIso, capitalize, fmtDayMonth, fmtRangeShort, fmtWeekday } from "@/lib/schedule/time";
+import { DEFAULT_SLOT_TIMES, EDITOR_SLOTS, editorSlots, slotTime } from "@/lib/schedule/slots";
 import { KIND_LABEL, PARITY_LABEL, type LessonKind } from "@/lib/schedule/types";
 import { deleteLesson, deleteWeek, setWeekStatus, toggleCancelLesson, updateWeekMeta, upsertLesson, type LessonInput } from "@/app/admin/actions/schedule";
 import { Button } from "@/components/ui/button";
@@ -53,6 +55,12 @@ const KINDS: LessonKind[] = ["lecture", "practice", "lab", "consultation", "cred
 const DELETE_PUBLISHED_CONFIRM =
   "Удалить насовсем? Пара исчезнет из расписания — студентам уйдут только уведомление и строка в «Что нового». Если пару отменили, лучше «Отменить»: она останется зачёркнутой.";
 
+/** «5-й пары», «5-й и 6-й пар» — для подсказки о парах без времени в настройках. */
+const slotList = (slots: number[]) => {
+  const items = slots.map((n) => `${n}-й`);
+  return items.length === 1 ? `${items[0]} пары` : `${items.slice(0, -1).join(", ")} и ${items[items.length - 1]} пар`;
+};
+
 export function WeekEditor({ week, lessons, subjects, semesters, slotTimes }: Props) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -63,20 +71,29 @@ export function WeekEditor({ week, lessons, subjects, semesters, slotTimes }: Pr
     () => [...[0, 1, 2, 3, 4, 5].map((i) => addDaysIso(week.startsOn, i)), ...(lessons.some((l) => l.date === sunday) ? [sunday] : [])],
     [week.startsOn, lessons, sunday],
   );
-  const baseSlots = slotTimes.length ? slotTimes : [1, 2, 3, 4, 5, 6].map((s) => ({ slot: s, start: "", end: "" }));
-  // Пары со слотом вне сетки звонков (например, из скана) тоже должны быть видны и кликабельны.
-  const extraSlots = [...new Set(lessons.map((l) => l.slot).filter((sl) => !baseSlots.some((b) => b.slot === sl)))].map((sl) => {
-    const l = lessons.find((x) => x.slot === sl)!;
-    return { slot: sl, start: l.startsAt, end: l.endsAt };
-  });
-  const slots = [...baseSlots, ...extraSlots].sort((a, b) => a.slot - b.slot);
+  // Всегда шесть пар (с осени 2026 в сетке филиала их шесть), даже если в настройках время задано не для всех;
+  // пары со слотом вне сетки (например, 7-я из скана) тоже видны и кликабельны (lib/schedule/slots.ts).
+  const slots = editorSlots(slotTimes, lessons);
+  const unconfigured = slots.filter((s) => !s.configured && s.slot <= EDITOR_SLOTS).map((s) => s.slot);
   const published = week.status === "published";
   const activeCount = lessons.filter((l) => !l.isCancelled).length;
 
   const openNew = (date: string, slot: number) => {
-    const st = slots.find((s) => s.slot === slot);
+    // Время из настроек группы, без него — из стандартной сетки; совсем без времени (9-я пара) — как у первой.
+    const st = slotTime(slot, slotTimes) ?? slots.find((s) => s.slot === slot);
     setError(null);
-    setDraft({ date, slot, startsAt: st?.start || "08:30", endsAt: st?.end || "10:00", subjectId: null, title: "", room: null, teacherName: null, kind: "practice", note: null });
+    setDraft({
+      date,
+      slot,
+      startsAt: st?.start || DEFAULT_SLOT_TIMES[0].start,
+      endsAt: st?.end || DEFAULT_SLOT_TIMES[0].end,
+      subjectId: null,
+      title: "",
+      room: null,
+      teacherName: null,
+      kind: "practice",
+      note: null,
+    });
   };
   const openEdit = (l: EditorLesson) => {
     setError(null);
@@ -165,6 +182,15 @@ export function WeekEditor({ week, lessons, subjects, semesters, slotTimes }: Pr
         {published && <p className="text-[12px] text-muted">Неделя опубликована: правки видны студентам сразу и помечаются бейджем «изменение».</p>}
       </header>
 
+      {unconfigured.length > 0 && (
+        <p className="text-[13px] leading-relaxed text-muted">
+          Для {slotList(unconfigured)} время в настройках не задано — подставляется стандартное (сетка филиала с осени 2026).{" "}
+          <Link href="/admin/settings" className="underline decoration-dim underline-offset-4">
+            Задать в настройках
+          </Link>
+        </p>
+      )}
+
       <div className="space-y-4">
         {days.map((date) => {
           const dayLessons = lessons.filter((l) => l.date === date);
@@ -183,7 +209,7 @@ export function WeekEditor({ week, lessons, subjects, semesters, slotTimes }: Pr
                     <li key={st.slot} className="flex items-stretch">
                       <div className="flex w-14 shrink-0 flex-col items-center justify-center border-r border-border py-2 text-center tnum">
                         <span className="text-[13px] font-semibold">{st.slot}</span>
-                        <span className="text-[11px] text-dim">{st.start}</span>
+                        <span className={cn("text-[11px] text-dim", !st.configured && "opacity-60")}>{st.start}</span>
                       </div>
                       <div className="flex min-w-0 flex-1 flex-col">
                         {inSlot.map((l) => (

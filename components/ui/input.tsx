@@ -68,7 +68,7 @@ type TimeInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "valu
  * системы показывает «8:30 AM», занимает лишнюю ширину и вылезает из карточки.
  * Здесь цифровая клавиатура и маска ЧЧ:ММ: «830» → «08:30». Наружу всегда «ЧЧ:ММ» или пусто.
  */
-export function TimeInput({ value, defaultValue, onChange, name, className, onBlur, ...props }: TimeInputProps) {
+export function TimeInput({ value, defaultValue, onChange, name, className, onBlur, placeholder = "ЧЧ:ММ", ...props }: TimeInputProps) {
   const [text, setText] = useState(() => maskTime(value ?? defaultValue ?? ""));
   // Что мы сами отдали наружу: пока `value` совпадает с этим, набранное «08:3» не затирается.
   const [emitted, setEmitted] = useState(() => toHm(value ?? defaultValue ?? ""));
@@ -94,7 +94,7 @@ export function TimeInput({ value, defaultValue, onChange, name, className, onBl
         inputMode="numeric"
         autoComplete="off"
         maxLength={5}
-        placeholder="ЧЧ:ММ"
+        placeholder={placeholder}
         value={text}
         className={cn("tnum", className)}
         onChange={(e) => {

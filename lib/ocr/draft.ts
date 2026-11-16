@@ -2,6 +2,7 @@ import type { SlotTime } from "@/lib/db/schema";
 import type { LessonKind } from "@/lib/schedule/types";
 import type { OcrLesson, OcrResult } from "./schema";
 import { DAY_CODES, KIND_FROM_OCR } from "./consts";
+import { withDefaultSlots } from "@/lib/schedule/slots";
 import { matchSubjectDetailed, type MatchKind, type SubjectRef as MatchSubjectRef } from "./match";
 
 export { matchSubject, matchSubjectDetailed, normalizeTitle } from "./match";
@@ -77,15 +78,17 @@ export const daysBetween = (a: string, b: string) => Math.round((Date.parse(`${b
 export function toDraft(result: OcrResult, weekStartsOn: string, weekParity: "upper" | "lower" | null, slotTimes: SlotTime[], subjects: SubjectRef[]): DraftLesson[] {
   const out: DraftLesson[] = [];
   const perDay: Record<string, number> = {};
+  // Пары, для которых у группы нет времени (5-я и 6-я при сетке из четырёх), берут номер и время из стандартной сетки.
+  const grid = withDefaultSlots(slotTimes);
   result.lessons.forEach((l: OcrLesson, i) => {
     const dayIdx = DAY_CODES.indexOf(l.day);
     if (dayIdx < 0) return;
     perDay[l.day] = (perDay[l.day] ?? 0) + 1;
-    const byTime = l.time_start ? slotByTime(l.time_start, slotTimes) : null;
-    const slotTime = slotTimes.find((s) => s.slot === (l.slot > 0 ? l.slot : byTime ?? -1));
+    const byTime = l.time_start ? slotByTime(l.time_start, grid) : null;
+    const slotTime = grid.find((s) => s.slot === (l.slot > 0 ? l.slot : byTime ?? -1));
     const slot = Math.min(10, Math.max(1, l.slot > 0 ? l.slot : byTime ?? perDay[l.day]));
-    const startsAt = l.time_start ? pad(l.time_start) : slotTime?.start ?? "08:30";
-    const endsAt = l.time_end ? pad(l.time_end) : slotTime?.end ?? "10:00";
+    const startsAt = l.time_start ? pad(l.time_start) : slotTime?.start ?? grid[0].start;
+    const endsAt = l.time_end ? pad(l.time_end) : slotTime?.end ?? grid[0].end;
     const foreignParity = weekParity !== null && l.week_type !== "both" && l.week_type !== weekParity;
     const match = matchSubjectDetailed(l.subject, subjects);
     const subject = match ? subjects.find((s) => s.id === match.id) ?? null : null;

@@ -64,6 +64,13 @@
       "when": 1790831697289,
       "tag": "0008_review_indexes_schedule_topic",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794828530765,
+      "tag": "0009_six_slots",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,5 @@
 import type { SlotTime } from "@/lib/db/schema";
+import { DEFAULT_SLOT_TIMES } from "@/lib/schedule/slots";
 import { slotByTime } from "./draft";
 import { normalizeTitle } from "./match";
 import type { DayCode, OcrResult } from "./schema";
@@ -27,14 +28,8 @@ export type EvalMetrics = {
   extra: string[];
 };
 
-export const DEFAULT_SLOT_TIMES: SlotTime[] = [
-  { slot: 1, start: "08:30", end: "10:00" },
-  { slot: 2, start: "10:10", end: "11:40" },
-  { slot: 3, start: "12:10", end: "13:40" },
-  { slot: 4, start: "13:50", end: "15:20" },
-  { slot: 5, start: "15:30", end: "17:00" },
-  { slot: 6, start: "17:10", end: "18:40" },
-];
+/** Сетка по умолчанию для фикстур без своей — стандартная сетка филиала; сканы с другой сеткой указывают её в expected.json. */
+export { DEFAULT_SLOT_TIMES };
 
 const canon = (subject: string, synonyms: Record<string, string>) => {
   const t = normalizeTitle(subject);

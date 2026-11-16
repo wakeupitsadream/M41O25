@@ -13,6 +13,7 @@ import { isoDate } from "@/lib/validation";
 import { invitePrefix } from "@/lib/invite";
 import type { FormState } from "@/lib/form";
 import { MAX_ALIASES, MAX_ALIAS_LENGTH } from "@/lib/ocr/match";
+import { DEFAULT_SLOT_TIMES, MAX_SLOTS } from "@/lib/schedule/slots";
 
 // ---------- Предметы ----------
 
@@ -187,7 +188,7 @@ export async function updateSlotTimes(_prev: FormState, formData: FormData): Pro
   return wrapForm(async () => {
     const admin = await actionUser("admin");
     const rows: SlotTime[] = [];
-    for (let slot = 1; slot <= 8; slot++) {
+    for (let slot = 1; slot <= MAX_SLOTS; slot++) {
       const start = String(formData.get(`start${slot}`) ?? "").trim();
       const end = String(formData.get(`end${slot}`) ?? "").trim();
       if (/^\d{2}:\d{2}$/.test(start) && /^\d{2}:\d{2}$/.test(end)) rows.push({ slot, start, end });
@@ -198,6 +199,17 @@ export async function updateSlotTimes(_prev: FormState, formData: FormData): Pro
     revalidatePath("/admin/settings");
     revalidatePath("/s", "layout");
     return { success: "Время пар сохранено" };
+  });
+}
+
+/** Стандартная сетка филиала (шесть пар по 80 минут) одной кнопкой — вместо двенадцати полей вручную. */
+export async function applyDefaultSlotTimes(): Promise<ActionResult> {
+  return wrapAction(async () => {
+    const admin = await actionUser("admin");
+    await db.update(groups).set({ slotTimes: DEFAULT_SLOT_TIMES.map((s) => ({ ...s })) }).where(eq(groups.id, admin.groupId));
+    revalidatePath("/admin/settings");
+    revalidatePath("/s", "layout");
+    return ok();
   });
 }
 

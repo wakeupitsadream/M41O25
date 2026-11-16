@@ -7,6 +7,7 @@ import { eq } from "drizzle-orm";
 import * as schema from "../lib/db/schema";
 import { USER_COLORS, firstName, generateInviteSuffix } from "../lib/utils";
 import { invitePrefix } from "../lib/invite";
+import { DEFAULT_SLOT_TIMES } from "../lib/schedule/slots";
 import { addDays, format, startOfWeek } from "date-fns";
 
 /**
@@ -22,14 +23,8 @@ const INVITE =
 const ADMIN_NAME = process.env.SEED_ADMIN_NAME ?? "Батутин Максим";
 const GROUP_NAME = process.env.SEED_GROUP_NAME ?? "М41О25";
 
-const SLOT_TIMES: schema.SlotTime[] = [
-  { slot: 1, start: "08:30", end: "10:00" },
-  { slot: 2, start: "10:10", end: "11:40" },
-  { slot: 3, start: "12:10", end: "13:40" },
-  { slot: 4, start: "13:50", end: "15:20" },
-  { slot: 5, start: "15:30", end: "17:00" },
-  { slot: 6, start: "17:10", end: "18:40" },
-];
+/** Сетка звонков новой группы — стандартная сетка филиала (шесть пар по 80 минут), меняется в Настройках. */
+const SLOT_TIMES: schema.SlotTime[] = DEFAULT_SLOT_TIMES;
 
 const DEMO_STUDENTS = [
   "Абрамова Дарья", "Белов Артём", "Волкова Полина", "Гусев Никита", "Дмитриева Алина",

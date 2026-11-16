@@ -6,6 +6,7 @@ import { lessons, subjects, weeks } from "@/lib/db/schema";
 import { getSessionUser } from "@/lib/auth";
 import { capitalize, fmtDayMonth, fmtWeekday, isIso } from "@/lib/schedule/time";
 import { KIND_LABEL } from "@/lib/schedule/types";
+import { SHARE_BAR_WIDTH, SHARE_CARD_GAP_X, SHARE_CARD_PAD_X, SHARE_MAX_LESSONS, roomLabel, shareDensity } from "@/lib/schedule/share-layout";
 import { UNBOUNDED_BOLD_B64 } from "@/lib/fonts/unbounded-bold";
 
 export const runtime = "nodejs";
@@ -30,7 +31,17 @@ export async function GET(req: Request) {
     .leftJoin(subjects, eq(subjects.id, lessons.subjectId))
     .where(and(eq(lessons.groupId, user.groupId), eq(lessons.date, date), eq(lessons.isCancelled, false)))
     .orderBy(asc(lessons.slot), asc(lessons.startsAt));
-  const day = rows.map((l) => ({ ...l, startsAt: l.startsAt.slice(0, 5), endsAt: l.endsAt.slice(0, 5) }));
+  const day = rows.map((l) => ({
+    ...l,
+    startsAt: l.startsAt.slice(0, 5),
+    endsAt: l.endsAt.slice(0, 5),
+    sub: [KIND_LABEL[l.kind], roomLabel(l.room), l.teacherName].filter(Boolean).join(" · "),
+  }));
+  const shown = day.slice(0, SHARE_MAX_LESSONS);
+  // Плотность по числу пар и длине названий: день на шесть пар должен поместиться, а не обрезаться снизу.
+  const d = shareDensity(shown);
+  /** Обрезка многоточием на N строках; null — текст целиком. В satori lineClamp работает только с display: block. */
+  const clamp = (lines: number | null) => (lines ? ({ display: "block", lineClamp: lines } as const) : {});
   const family = "Unbounded";
 
   return new ImageResponse(
@@ -47,31 +58,34 @@ export async function GET(req: Request) {
           fontFamily: family,
         }}
       >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
-          <div style={{ display: "flex", flexDirection: "column" }}>
+        {/* Логотип — в строке с датой, а не рядом с днём недели: «Понедельник» и «Воскресенье» 96-м кеглем занимают
+            почти всю ширину и наезжали на него. */}
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div style={{ fontSize: 30, color: "#9C9CA8", letterSpacing: 2, textTransform: "uppercase" }}>{`${fmtDayMonth(date)} · ${user.group.shortName}`}</div>
-            <div style={{ fontSize: 96, fontWeight: 700, lineHeight: 1, marginTop: 12 }}>{capitalize(fmtWeekday(date))}</div>
+            <div style={{ display: "flex", fontSize: 34, fontWeight: 700 }}>
+              <span>Raspis</span>
+              <span style={{ color: "#C8FF2E" }}>on</span>
+            </div>
           </div>
-          <div style={{ display: "flex", fontSize: 34, fontWeight: 700 }}>
-            <span>Raspis</span>
-            <span style={{ color: "#C8FF2E" }}>on</span>
-          </div>
+          <div style={{ fontSize: 96, fontWeight: 700, lineHeight: 1, marginTop: 12 }}>{capitalize(fmtWeekday(date))}</div>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 20, marginTop: 64, flex: 1 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: d.gap, marginTop: 64, flex: 1 }}>
           {day.length === 0 && <div style={{ fontSize: 48, color: "#9C9CA8" }}>Пар нет 🎉</div>}
-          {day.slice(0, 7).map((l) => (
-            <div key={l.id} style={{ display: "flex", alignItems: "center", gap: 28, background: "#141419", borderRadius: 28, padding: "26px 32px", border: "1px solid #26262F" }}>
-              <div style={{ display: "flex", flexDirection: "column", width: 150 }}>
-                <div style={{ fontSize: 40, fontWeight: 700 }}>{l.startsAt}</div>
-                <div style={{ fontSize: 26, color: "#82828E" }}>{l.endsAt}</div>
+          {shown.map((l) => (
+            <div
+              key={l.id}
+              style={{ display: "flex", alignItems: "center", gap: SHARE_CARD_GAP_X, background: "#141419", borderRadius: 28, padding: `${d.padY}px ${SHARE_CARD_PAD_X}px`, border: "1px solid #26262F" }}
+            >
+              <div style={{ display: "flex", flexDirection: "column", width: d.timeCol, flexShrink: 0 }}>
+                <div style={{ fontSize: d.time, fontWeight: 700 }}>{l.startsAt}</div>
+                <div style={{ fontSize: d.end, color: "#82828E" }}>{l.endsAt}</div>
               </div>
-              <div style={{ width: 8, height: 88, borderRadius: 4, background: l.subjectColor ?? "#9C9CA8" }} />
+              <div style={{ width: SHARE_BAR_WIDTH, height: d.bar, borderRadius: 4, flexShrink: 0, background: l.subjectColor ?? "#9C9CA8" }} />
               <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
-                <div style={{ fontSize: 40, fontWeight: 700, lineHeight: 1.15 }}>{l.title}</div>
-                <div style={{ fontSize: 26, color: "#9C9CA8", marginTop: 8 }}>
-                  {[KIND_LABEL[l.kind], l.room && `ауд. ${l.room}`, l.teacherName].filter(Boolean).join(" · ")}
-                </div>
+                <div style={{ fontSize: d.title, fontWeight: 700, lineHeight: 1.15, ...clamp(d.titleLines) }}>{l.title}</div>
+                {l.sub && <div style={{ fontSize: d.sub, color: "#9C9CA8", marginTop: 8, ...clamp(d.subLines) }}>{l.sub}</div>}
               </div>
             </div>
           ))}

@@ -23,6 +23,11 @@ await page.waitForURL(/\/admin\/schedule\/[0-9a-f-]{36}$/, { timeout: 20000 });
 await page.waitForLoadState("networkidle");
 await shot("22-admin-editor");
 
+// С осени 2026 в сетке филиала шесть пар: у первого дня шесть строк, даже если в настройках время задано не для всех.
+const firstDayRows = await page.locator("section").first().locator("ul > li").count();
+console.log("slot rows on first day:", firstDayRows);
+assert.ok(firstDayRows >= 6, `в редакторе у дня меньше шести пар: ${firstDayRows}`);
+
 // Добавляем пару в первый свободный слот понедельника
 const addBtn = page.locator('button:has-text("добавить")').first();
 await addBtn.click();
